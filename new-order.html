@@ -72,7 +72,7 @@
         <div class="grid-2">
           <div class="form-group" style="margin-bottom:0">
             <label>Total Harga (Rp)</label>
-            <input type="number" id="totalPrice" placeholder="0" min="0">
+            <input type="number" id="totalPrice" placeholder="0" min="0" oninput="checkPriceTierLive()">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label>DP Sudah Dibayar (Rp)</label>
@@ -81,6 +81,15 @@
         </div>
         <div id="sisaInfo" style="font-size:13px;color:rgba(3,69,67,.6);margin-top:10px;display:none">
           Sisa: <strong style="color:#b91c1c" id="sisaVal"></strong>
+        </div>
+        <!-- Price tier indicator -->
+        <div id="priceTierInfo" style="display:none;margin-top:12px;padding:12px;border-radius:10px">
+          <div id="priceTierMsg"></div>
+          <div id="approvalReasonWrap" style="display:none;margin-top:10px">
+            <label style="font-size:12px;font-weight:600;color:rgba(3,69,67,.6);display:block;margin-bottom:4px">Alasan / Justifikasi Diskon <span style="color:red">*</span></label>
+            <input type="text" id="approvalReason" placeholder="cth: pelanggan lama, order besar, promosi khusus…" style="font-size:13px">
+          </div>
+          <div id="priceRefWrap" style="margin-top:8px;font-size:11px;color:rgba(3,69,67,.45)" id="priceRefWrap"></div>
         </div>
       </div>
 
@@ -105,8 +114,68 @@
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency } from './js/utils.js'
+  import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
   let selectedDiv = ''
+  let currentPriceList = null
+  let currentPriceTier = 'normal'
+
+  async function loadPriceList(division) {
+    try {
+      const snap = await getDoc(fsDoc(db, 'price_list', division))
+      currentPriceList = snap.exists() ? snap.data() : null
+    } catch { currentPriceList = null }
+    checkPriceTierLive()
+  }
+
+  window.checkPriceTierLive = function() {
+    const price = Number(document.getElementById('totalPrice').value) || 0
+    const infoEl = document.getElementById('priceTierInfo')
+    const msgEl = document.getElementById('priceTierMsg')
+    const reasonWrap = document.getElementById('approvalReasonWrap')
+
+    if (!price || !currentPriceList?.items?.length) {
+      infoEl.style.display = 'none'; return
+    }
+
+    // Find lowest prices across all items for each tier
+    const items = currentPriceList.items
+    const minNormal = Math.min(...items.map(i=>i.priceNormal||Infinity).filter(x=>x!==Infinity))
+    const minPromo  = Math.min(...items.map(i=>i.pricePromo ||Infinity).filter(x=>x!==Infinity))
+    const minAdmin  = Math.min(...items.map(i=>i.priceAdmin ||Infinity).filter(x=>x!==Infinity))
+
+    const profile = getProfile()
+    const isOwnerOrManager = profile?.role === 'owner' || profile?.role === 'manager'
+
+    if (!isFinite(minNormal) || price >= minNormal) {
+      // Normal tier
+      currentPriceTier = 'normal'
+      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0'
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#059669">✓ Harga Normal — Langsung disetujui</span>`
+      reasonWrap.style.display = 'none'
+    } else if (isFinite(minPromo) && price >= minPromo) {
+      // Promo tier
+      currentPriceTier = 'promo'
+      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a'
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#d97706">⚠ Harga Promo — Perlu approval Kepala Cabang</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval sebelum diproses</span>`
+      reasonWrap.style.display = ''
+    } else if (isFinite(minAdmin) && price >= minAdmin) {
+      // Admin tier
+      currentPriceTier = 'admin'
+      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f2;border:1px solid #fecdd3'
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🔒 Harga Admin — Perlu approval Owner</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval Owner sebelum diproses</span>`
+      reasonWrap.style.display = ''
+    } else if (isFinite(minAdmin) && price < minAdmin) {
+      // Blocked
+      currentPriceTier = 'blocked'
+      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fee2e2;border:1px solid #fca5a5'
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${minAdmin.toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
+      reasonWrap.style.display = 'none'
+    } else {
+      currentPriceTier = 'normal'
+      infoEl.style.display = 'none'
+    }
+  }
 
   // Build division grid
   const grid = document.getElementById('divGrid')
@@ -128,6 +197,7 @@
       b.style.borderColor = x===d ? '#034543' : 'rgba(3,69,67,.12)'
       b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
     })
+    loadPriceList(d)
   }
 
   // Set today
@@ -202,6 +272,10 @@
     if (!selectedDiv) { errEl.textContent = 'Pilih divisi terlebih dahulu'; errEl.style.display=''; return }
     const dueDate = document.getElementById('dueDate').value
     if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
+    if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
+    if ((currentPriceTier==='promo'||currentPriceTier==='admin') && !document.getElementById('approvalReason').value.trim()) {
+      errEl.textContent = 'Alasan/justifikasi diskon harus diisi'; errEl.style.display=''; return
+    }
 
     const btn = document.getElementById('submitBtn')
     btn.disabled = true; btn.textContent = 'Menyimpan…'
@@ -227,7 +301,7 @@
         orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
         dueDate,
         designFiles,
-        status: 'pending',
+        status: currentPriceTier==='normal' ? 'pending' : 'pending-approval',
         progressPercentage: 0,
         totalPrice: Number(document.getElementById('totalPrice').value)||0,
         depositPaid: Number(document.getElementById('depositPaid').value)||0,
@@ -235,6 +309,12 @@
         createdBy: profile.id,
         createdAt: now,
         updatedAt: now,
+        // Price approval
+        priceApprovalStatus: currentPriceTier === 'normal' ? 'approved' : 'pending',
+        priceApprovalTier: currentPriceTier === 'normal' ? null : currentPriceTier,
+        priceApprovalReason: document.getElementById('approvalReason')?.value.trim() || '',
+        priceApprovalBy: null,
+        priceApprovalAt: null,
       })
 
       window.location.href = `order.html?id=${orderId}`

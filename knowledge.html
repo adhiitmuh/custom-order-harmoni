@@ -8,10 +8,16 @@
   <style>
     .price-table { width:100%; border-collapse:collapse; font-size:13px; }
     .price-table th { text-align:left; padding:8px 10px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); }
-    .price-table td { padding:8px 10px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); }
+    .price-table td { padding:8px 10px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; }
     .price-table tr:last-child td { border-bottom:none; }
     .price-table tr:hover td { background:rgba(3,69,67,.02); }
-    .price-range { font-weight:700; color:var(--green); }
+    .tier-normal { font-weight:700; color:#059669; }
+    .tier-promo  { font-weight:700; color:#d97706; }
+    .tier-admin  { font-weight:700; color:#b91c1c; }
+    .tier-badge { display:inline-flex; align-items:center; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; margin-left:4px; }
+    .tb-normal { background:#dcfce7; color:#166534; }
+    .tb-promo  { background:#fef3c7; color:#92400e; }
+    .tb-admin  { background:#fee2e2; color:#991b1b; }
   </style>
 </head>
 <body>
@@ -149,23 +155,34 @@
                 <h3 style="font-size:14px;font-weight:700;color:var(--green)">💰 Daftar Harga</h3>
                 ${canEdit ? `<button onclick="openPriceEdit('${d}')" class="btn btn-ghost btn-sm">Edit Harga</button>` : ''}
               </div>
+              <div style="display:flex;gap:8px;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
+                <span class="tier-badge tb-normal">● Normal — Staff langsung pakai</span>
+                <span class="tier-badge tb-promo">● Promo — Perlu approval Kepala Cabang</span>
+                <span class="tier-badge tb-admin">● Admin — Perlu approval Owner (batas bawah)</span>
+              </div>
               ${prices.length ? `
+                <div style="overflow-x:auto">
                 <table class="price-table">
                   <thead><tr>
                     <th>LAYANAN / PRODUK</th>
-                    <th>HARGA</th>
+                    <th>HARGA NORMAL</th>
+                    <th>HARGA PROMO</th>
+                    <th>HARGA ADMIN</th>
                     <th>SATUAN</th>
-                    ${prices[0]?.note !== undefined ? '<th>KETERANGAN</th>' : ''}
+                    <th>KETERANGAN</th>
                   </tr></thead>
                   <tbody>
                     ${prices.map(p => `<tr>
                       <td style="font-weight:600">${p.name}</td>
-                      <td class="price-range">${p.priceMin ? (p.priceMax && p.priceMax !== p.priceMin ? `Rp ${Number(p.priceMin).toLocaleString('id-ID')} – ${Number(p.priceMax).toLocaleString('id-ID')}` : `Rp ${Number(p.priceMin).toLocaleString('id-ID')}`) : '—'}</td>
+                      <td class="tier-normal">${p.priceNormal ? `Rp ${Number(p.priceNormal).toLocaleString('id-ID')}` : '—'}</td>
+                      <td class="tier-promo">${p.pricePromo  ? `Rp ${Number(p.pricePromo).toLocaleString('id-ID')}` : '—'}</td>
+                      <td class="tier-admin">${p.priceAdmin  ? `Rp ${Number(p.priceAdmin).toLocaleString('id-ID')}` : '—'}</td>
                       <td style="color:rgba(3,69,67,.5)">${p.unit||'—'}</td>
-                      ${p.note !== undefined ? `<td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>` : ''}
+                      <td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>
                     </tr>`).join('')}
                   </tbody>
-                </table>` :
+                </table>
+                </div>` :
                 `<p style="font-size:13px;color:rgba(3,69,67,.35)">${canEdit ? 'Belum ada daftar harga. Klik "Edit Harga" untuk menambahkan.' : 'Belum ada daftar harga.'}</p>`}
             </div>
 
@@ -253,40 +270,52 @@
     editingPriceDiv = division
     const snap = await getDoc(doc(db,'price_list',division))
     const items = snap.exists() ? snap.data().items || [] : []
-    document.getElementById('priceModalTitle').textContent = `Edit Harga — ${DIVISION_META[division]?.label}`
+    document.getElementById('priceModalTitle').textContent = `Edit Daftar Harga — ${DIVISION_META[division]?.label}`
     renderPriceRows(items)
     document.getElementById('priceModal').style.display = 'flex'
   }
 
   function renderPriceRows(items) {
-    document.getElementById('priceRows').innerHTML = items.length === 0
-      ? '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:8px">Belum ada item. Klik "Tambah Baris".</p>'
-      : items.map((item, i) => `
-          <div style="background:var(--beige-soft);border-radius:10px;padding:12px;margin-bottom:8px;position:relative" id="priceRow-${i}">
-            <button onclick="removePriceRow(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;font-size:14px;color:rgba(3,69,67,.35);padding:2px">✕</button>
-            <div class="grid-2" style="gap:8px">
-              <div class="form-group" style="margin-bottom:6px;grid-column:1/-1">
-                <label style="font-size:11px">Nama Layanan / Produk</label>
-                <input type="text" value="${item.name||''}" oninput="updatePriceRow(${i},'name',this.value)" placeholder="cth: Bordir Kecil (s/d 5cm)">
-              </div>
-              <div class="form-group" style="margin-bottom:6px">
-                <label style="font-size:11px">Harga Min (Rp)</label>
-                <input type="number" value="${item.priceMin||''}" oninput="updatePriceRow(${i},'priceMin',this.value)" placeholder="15000">
-              </div>
-              <div class="form-group" style="margin-bottom:6px">
-                <label style="font-size:11px">Harga Max (Rp) — opsional</label>
-                <input type="number" value="${item.priceMax||''}" oninput="updatePriceRow(${i},'priceMax',this.value)" placeholder="25000">
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label style="font-size:11px">Satuan</label>
-                <input type="text" value="${item.unit||''}" oninput="updatePriceRow(${i},'unit',this.value)" placeholder="cth: pcs, set, lembar">
-              </div>
-              <div class="form-group" style="margin-bottom:0">
-                <label style="font-size:11px">Keterangan (opsional)</label>
-                <input type="text" value="${item.note||''}" oninput="updatePriceRow(${i},'note',this.value)" placeholder="cth: belum termasuk bahan">
-              </div>
+    document.getElementById('priceRows').innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(3,69,67,.04);border-radius:8px;font-size:11px;font-weight:700">
+        <span class="tier-normal">● Harga Normal<br><span style="font-weight:400;font-size:10px">Staff bisa langsung pakai</span></span>
+        <span class="tier-promo">● Harga Promo<br><span style="font-weight:400;font-size:10px">Perlu approval Kepala Cabang</span></span>
+        <span class="tier-admin">● Harga Admin<br><span style="font-weight:400;font-size:10px">Batas bawah, perlu approval Owner</span></span>
+      </div>
+      ${items.length === 0 ? '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:8px">Belum ada item. Klik "Tambah Baris".</p>' :
+      items.map((item, i) => `
+        <div style="background:var(--beige-soft);border-radius:10px;padding:12px;margin-bottom:8px;position:relative">
+          <button onclick="removePriceRow(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;font-size:14px;color:rgba(3,69,67,.35)">✕</button>
+          <div class="form-group" style="margin-bottom:8px">
+            <label style="font-size:11px">Nama Layanan / Produk</label>
+            <input type="text" value="${item.name||''}" oninput="updatePriceRow(${i},'name',this.value)" placeholder="cth: Bordir Kecil (s/d 5cm)">
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+            <div>
+              <label style="font-size:11px;color:#059669;font-weight:700">Harga Normal (Rp)</label>
+              <input type="number" value="${item.priceNormal||''}" oninput="updatePriceRow(${i},'priceNormal',this.value)" placeholder="misal: 25000" style="border-color:rgba(5,150,105,.3)">
             </div>
-          </div>`).join('')
+            <div>
+              <label style="font-size:11px;color:#d97706;font-weight:700">Harga Promo (Rp)</label>
+              <input type="number" value="${item.pricePromo||''}" oninput="updatePriceRow(${i},'pricePromo',this.value)" placeholder="misal: 20000" style="border-color:rgba(217,119,6,.3)">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#b91c1c;font-weight:700">Harga Admin (Rp)</label>
+              <input type="number" value="${item.priceAdmin||''}" oninput="updatePriceRow(${i},'priceAdmin',this.value)" placeholder="misal: 15000" style="border-color:rgba(185,28,28,.3)">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-size:11px">Satuan</label>
+              <input type="text" value="${item.unit||''}" oninput="updatePriceRow(${i},'unit',this.value)" placeholder="cth: pcs, set, lembar">
+            </div>
+            <div>
+              <label style="font-size:11px">Keterangan</label>
+              <input type="text" value="${item.note||''}" oninput="updatePriceRow(${i},'note',this.value)" placeholder="cth: belum termasuk bahan">
+            </div>
+          </div>
+        </div>`).join('')}
+    `
     window._priceItems = [...items]
   }
 

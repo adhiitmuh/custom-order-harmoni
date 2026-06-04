@@ -15,21 +15,23 @@ export const DIVISION_META = {
 export const DIVISIONS = ['bordir', 'butik', 'jersey', 'jilbab', 'sablon', 'konveksi', 'papan-nama', 'pin-fiber', 'pin-logam', 'sewa-kostum', 'tailor']
 
 export const STATUS_LABEL = {
-  'pending':       'Menunggu Konfirmasi',
-  'in-progress':   'Sedang Dikerjakan',
-  'quality-check': 'Quality Check',
-  'done':          'Selesai',
-  'delivered':     'Sudah Dikirim',
-  'cancelled':     'Dibatalkan',
+  'pending':          'Menunggu Konfirmasi',
+  'pending-approval': 'Menunggu Approval Harga',
+  'in-progress':      'Sedang Dikerjakan',
+  'quality-check':    'Quality Check',
+  'done':             'Selesai',
+  'delivered':        'Sudah Dikirim',
+  'cancelled':        'Dibatalkan',
 }
 
 export const STATUS_CLASS = {
-  'pending':       'status-pending',
-  'in-progress':   'status-in-progress',
-  'quality-check': 'status-quality-check',
-  'done':          'status-done',
-  'delivered':     'status-delivered',
-  'cancelled':     'status-cancelled',
+  'pending':          'status-pending',
+  'pending-approval': 'status-approval',
+  'in-progress':      'status-in-progress',
+  'quality-check':    'status-quality-check',
+  'done':             'status-done',
+  'delivered':        'status-delivered',
+  'cancelled':        'status-cancelled',
 }
 
 export function fmtCurrency(n) {
@@ -83,4 +85,30 @@ export function timeAgo(s) {
 
 export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
+}
+
+export const ROLE_LABEL = {
+  owner:      'Owner',
+  manager:    'Kepala Cabang',
+  cs:         'CS',
+  production: 'Tim Produksi',
+}
+
+// Check which price tier a given price falls into for a division
+// Returns: 'normal' | 'promo' | 'admin' | 'blocked'
+export function checkPriceTier(totalPrice, priceList) {
+  if (!priceList || !priceList.items?.length) return 'normal'
+  // Use the lowest priceNormal as reference for the division minimum
+  const normals = priceList.items.map(i => i.priceNormal).filter(Boolean)
+  const promos  = priceList.items.map(i => i.pricePromo).filter(Boolean)
+  const admins  = priceList.items.map(i => i.priceAdmin).filter(Boolean)
+  const minNormal = normals.length ? Math.min(...normals) : 0
+  const minPromo  = promos.length  ? Math.min(...promos)  : 0
+  const minAdmin  = admins.length  ? Math.min(...admins)  : 0
+  if (!minNormal) return 'normal'
+  if (totalPrice >= minNormal) return 'normal'
+  if (minPromo && totalPrice >= minPromo) return 'promo'
+  if (minAdmin && totalPrice >= minAdmin) return 'admin'
+  if (minAdmin && totalPrice < minAdmin) return 'blocked'
+  return 'promo'
 }

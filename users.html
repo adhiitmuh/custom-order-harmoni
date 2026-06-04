@@ -30,6 +30,7 @@
           <label>Role <span class="req">*</span></label>
           <select id="newRole">
             <option value="cs">CS (Customer Service)</option>
+            <option value="manager">Kepala Cabang</option>
             <option value="production">Tim Produksi</option>
             <option value="owner">Owner</option>
           </select>
@@ -54,7 +55,7 @@
   import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 
-  const ROLE_LABEL = { owner: 'Owner', cs: 'CS', production: 'Tim Produksi' }
+  const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }

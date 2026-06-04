@@ -67,6 +67,10 @@ export function renderSidebar(profile) {
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
         <span class="icon">＋</span>Order Baru
       </a>` : ''}
+      ${(profile.role==='manager'||profile.role==='owner') ? `
+      <a href="orders.html?approval=promo" class="sidebar-link ${page==='orders.html'?'':''}">
+        <span class="icon">🔑</span>Approval Harga
+      </a>` : ''}
     </div>
 
     <div class="sidebar-section">

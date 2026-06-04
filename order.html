@@ -79,6 +79,36 @@
         <button onclick="showInvoice()" class="btn btn-primary no-print">📄 Invoice</button>
       </div>
 
+      <!-- Price approval banner -->
+      ${order.priceApprovalStatus === 'pending' ? `
+      <div style="background:${order.priceApprovalTier==='admin'?'#fff1f2':'#fffbeb'};border:1.5px solid ${order.priceApprovalTier==='admin'?'#fecdd3':'#fde68a'};border-radius:12px;padding:14px 18px;margin-bottom:20px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:${order.priceApprovalTier==='admin'?'#b91c1c':'#d97706'}">
+              ${order.priceApprovalTier==='admin'?'🔒 Menunggu Approval Owner':'⚠ Menunggu Approval Kepala Cabang'}
+            </div>
+            <div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:3px">
+              Alasan diskon: <em>${order.priceApprovalReason||'—'}</em>
+            </div>
+            <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">
+              ${order.priceApprovalTier==='admin'?'Hanya Owner yang dapat menyetujui harga ini':'Hanya Kepala Cabang atau Owner yang dapat menyetujui'}
+            </div>
+          </div>
+          ${(order.priceApprovalTier==='promo' && (profile.role==='manager'||profile.role==='owner')) ||
+            (order.priceApprovalTier==='admin' && profile.role==='owner') ? `
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button onclick="rejectPrice()" class="btn btn-danger btn-sm">✕ Tolak</button>
+            <button onclick="approvePrice()" class="btn btn-green btn-sm" id="approvePriceBtn">✓ Setujui Harga</button>
+          </div>` : ''}
+        </div>
+      </div>` : ''}
+      ${order.priceApprovalStatus === 'rejected' ? `
+      <div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:12px;padding:14px 18px;margin-bottom:20px">
+        <div style="font-weight:700;font-size:14px;color:#b91c1c">❌ Harga Ditolak</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:3px">Alasan: ${order.priceApprovalReason||'—'}</div>
+        ${canEdit?`<button onclick="location.href='new-order.html'" class="btn btn-ghost btn-sm" style="margin-top:8px">Buat Order Baru</button>`:''}
+      </div>` : ''}
+
       <div style="display:grid;grid-template-columns:1fr 300px;gap:20px" class="no-print">
         <!-- Left -->
         <div>
@@ -376,6 +406,38 @@
       })
       await loadOrder(getProfile())
     } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Tandai Lunas' } }
+  }
+
+  window.approvePrice = async function() {
+    const btn = document.getElementById('approvePriceBtn')
+    if (btn) { btn.disabled=true; btn.textContent='Menyetujui…' }
+    try {
+      const profile = getProfile()
+      await updateDoc(doc(db,'orders',orderId), {
+        priceApprovalStatus: 'approved',
+        priceApprovalBy: profile.id,
+        priceApprovalByName: profile.name,
+        priceApprovalAt: Timestamp.now(),
+        status: 'pending',
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(profile)
+    } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Setujui Harga' } }
+  }
+
+  window.rejectPrice = async function() {
+    const reason = prompt('Alasan penolakan:')
+    if (reason === null) return
+    const profile = getProfile()
+    await updateDoc(doc(db,'orders',orderId), {
+      priceApprovalStatus: 'rejected',
+      priceApprovalReason: reason,
+      priceApprovalBy: profile.id,
+      priceApprovalAt: Timestamp.now(),
+      status: 'cancelled',
+      updatedAt: Timestamp.now(),
+    })
+    await loadOrder(profile)
   }
 
   window.changeStatus = async function(status) {

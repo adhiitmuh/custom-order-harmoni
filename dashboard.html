@@ -22,6 +22,9 @@
       <div class="card" style="text-align:center"><div class="loading">…</div></div>
     </div>
 
+    <!-- Approval alerts -->
+    <div id="approvalAlerts" style="margin-bottom:4px"></div>
+
     <!-- Target omzet -->
     <div class="card" id="targetCard" style="margin-bottom:20px"><div class="loading">…</div></div>
 
@@ -53,7 +56,9 @@
       getDoc(doc(db, 'settings', 'monthly_target'))
     ])
     const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-    const active = orders.filter(o => !['done','delivered','cancelled'].includes(o.status))
+    const active = orders.filter(o => !['done','delivered','cancelled','pending-approval'].includes(o.status))
+    const pendingPromo  = orders.filter(o => o.priceApprovalStatus==='pending' && o.priceApprovalTier==='promo')
+    const pendingAdmin  = orders.filter(o => o.priceApprovalStatus==='pending' && o.priceApprovalTier==='admin')
     const unpaid = orders.filter(o => (o.totalPrice||0) > 0 && (o.depositPaid||0) < (o.totalPrice||0) && o.status !== 'cancelled')
 
     // Omzet bulan ini
@@ -81,6 +86,27 @@
         <div style="font-size:32px;font-weight:800;color:#b91c1c">${unpaid.length}</div>
         <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">Belum Lunas</div>
       </div>`
+
+    // Approval alerts
+    const canApprovePromo = profile.role==='manager'||profile.role==='owner'
+    const canApproveAdmin = profile.role==='owner'
+    const alertHtml = [
+      canApprovePromo && pendingPromo.length > 0 ? `
+        <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div><div style="font-weight:700;font-size:14px;color:#d97706">⚠ ${pendingPromo.length} order menunggu approval Harga Promo</div>
+          <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:2px">Perlu disetujui oleh Kepala Cabang</div></div>
+          <a href="orders.html?approval=promo" class="btn btn-sm" style="background:#d97706;color:white;border:none;flex-shrink:0">Lihat</a>
+        </div>` : '',
+      canApproveAdmin && pendingAdmin.length > 0 ? `
+        <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:12px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div><div style="font-weight:700;font-size:14px;color:#b91c1c">🔒 ${pendingAdmin.length} order menunggu approval Harga Admin</div>
+          <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:2px">Hanya Owner yang dapat menyetujui</div></div>
+          <a href="orders.html?approval=admin" class="btn btn-sm" style="background:#b91c1c;color:white;border:none;flex-shrink:0">Lihat</a>
+        </div>` : '',
+    ].filter(Boolean).join('')
+    if (alertHtml) {
+      document.getElementById('approvalAlerts').innerHTML = alertHtml
+    }
 
     // Target omzet card
     const targetCard = document.getElementById('targetCard')
