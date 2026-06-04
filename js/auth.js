@@ -8,6 +8,7 @@ let _profile = null
 
 export const getUser = () => _user
 export const getProfile = () => _profile
+export const canViewContact = (role) => role === 'owner'
 
 export function requireAuth(callback) {
   onAuthStateChanged(auth, async (user) => {

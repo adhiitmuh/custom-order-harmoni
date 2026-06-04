@@ -87,6 +87,23 @@ export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
+export function generateChatToken() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  return Array.from({length: 24}, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
+export function hasContactInfo(text) {
+  const t = text
+  if (/\b0\d{8,12}\b/.test(t)) return true           // 08xx phone
+  if (/\+62\d{7,12}/.test(t)) return true             // +62 phone
+  if (/\b62\d{8,12}\b/.test(t)) return true           // 62xx phone
+  if (/\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/.test(t)) return true // 10+ digit number
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(t)) return true // email
+  if (/wa\.me|t\.me|line\.me|wa\.link|bit\.ly|tinyurl|fb\.me/.test(t.toLowerCase())) return true // links
+  if (/@[a-zA-Z0-9_.]{3,}/.test(t)) return true      // @username
+  return false
+}
+
 export const ROLE_LABEL = {
   owner:      'Owner',
   manager:    'Kepala Cabang',

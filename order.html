@@ -26,9 +26,9 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
-  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo } from './js/utils.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -49,11 +49,13 @@
     order.progressUpdates = updSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
     renderPage(profile)
+    if (chatUnsub) chatUnsub()
+    setTimeout(() => initChat(), 200)
   }
 
   function renderPage(profile) {
     const meta = DIVISION_META[order.division] || {}
-    const showContact = profile.role !== 'production'
+    const showContact = profile.role === 'owner'
     const canEdit = profile.role === 'owner' || profile.role === 'cs'
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const pStatus = paymentStatus(order.totalPrice, order.depositPaid)
@@ -263,6 +265,40 @@
             Dibuat: ${fmtDate(order.createdAt)}<br>
             Diupdate: ${timeAgo(order.updatedAt)}
           </p>
+        </div>
+      </div>
+
+      <!-- Chat Panel -->
+      <div class="card no-print" style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <h2 style="font-size:14px;font-weight:700">💬 Chat Design</h2>
+            <span id="chatUnread" style="display:none;background:#b91c1c;color:white;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px"></span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${order.chatToken ? `
+            <button onclick="copyChatLink('${order.chatToken}')" class="btn btn-ghost btn-sm" id="copyLinkBtn">
+              🔗 Copy Link Customer
+            </button>` : `
+            <button onclick="generateToken()" class="btn btn-ghost btn-sm">🔗 Buat Link Chat</button>`}
+          </div>
+        </div>
+        <div id="chatMessages" style="height:320px;overflow-y:auto;padding:4px;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:rgba(3,69,67,.01)">
+          <div class="loading">Memuat chat…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div style="flex:1">
+            <textarea id="chatInput" placeholder="Tulis pesan diskusi desain…" rows="2"
+              style="margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg()}"></textarea>
+            <p style="font-size:10px;color:rgba(3,69,67,.35);margin-top:3px">⚠ Dilarang mengirim nomor HP, email, atau kontak apapun</p>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="background:var(--beige-soft);border:1.5px solid rgba(3,69,67,.15);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px;text-align:center" title="Kirim foto desain">
+              📎 <input type="file" id="chatFileInput" accept="image/*,.pdf" style="display:none" onchange="sendChatFile(this)">
+            </label>
+            <button onclick="sendChatMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px">Kirim</button>
+          </div>
         </div>
       </div>
 
@@ -539,6 +575,102 @@
       <button onclick="sendWA()" class="btn" style="background:#25D366;color:white;border:none;font-size:13px;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer">📱 WhatsApp</button>`
     document.body.prepend(bar)
     window.scrollTo(0,0)
+  }
+
+  // ===== CHAT =====
+  let chatUnsub = null
+
+  function initChat() {
+    if (!order.chatToken) return
+    const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
+    const chatQ = query(chatCol, orderBy('createdAt'))
+    chatUnsub = onSnapshot(chatQ, (snap) => {
+      const el = document.getElementById('chatMessages')
+      if (!el) return
+      if (snap.empty) {
+        el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan. Mulai diskusi desain.</p>'
+        return
+      }
+      const profile = getProfile()
+      el.innerHTML = snap.docs.map(d => {
+        const m = d.data()
+        const isMe = m.senderId === profile?.id
+        const isCustomer = m.senderRole === 'customer'
+        const bg = isCustomer ? '#f0fdf4' : isMe ? 'var(--green)' : 'var(--beige-soft)'
+        const color = isMe ? 'white' : 'var(--black)'
+        const align = isMe ? 'flex-end' : 'flex-start'
+        const name = isCustomer ? `👤 ${m.senderName}` : m.senderName
+        return `<div style="display:flex;flex-direction:column;align-items:${align};max-width:80%">
+          <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px;${isMe?'text-align:right':''}">${name} · ${timeAgo(m.createdAt)}</span>
+          <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${isMe?'12px 12px 2px 12px':'12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word">
+            ${m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:6px;display:block"></a>` : ''}
+            ${m.text ? m.text.replace(/\n/g,'<br>') : ''}
+          </div>
+        </div>`
+      }).join('')
+      el.scrollTop = el.scrollHeight
+    })
+  }
+
+  window.sendChatMsg = async function() {
+    const input = document.getElementById('chatInput')
+    const text = input.value.trim()
+    if (!text || !order.chatToken) return
+    if (hasContactInfo(text)) {
+      alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan.\n\nHapus nomor HP, email, atau link kontak dari pesan Anda.')
+      return
+    }
+    const profile = getProfile()
+    input.value = ''
+    await addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
+      text, imageUrl: null, type: 'text',
+      senderId: profile.id,
+      senderName: profile.name,
+      senderRole: profile.role,
+      createdAt: Timestamp.now(),
+    })
+  }
+
+  window.sendChatFile = async function(input) {
+    if (!input.files[0] || !order.chatToken) return
+    const file = input.files[0]
+    const profile = getProfile()
+    const storRef = ref(storage, `chats/${order.chatToken}/${Date.now()}_${file.name}`)
+    const snap = await new Promise((res,rej) => {
+      const task = uploadBytesResumable(storRef, file)
+      task.on('state_changed', null, rej, () => res(task.snapshot))
+    })
+    const imageUrl = await getDownloadURL(snap.ref)
+    await addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
+      text: '', imageUrl, type: 'image',
+      senderId: profile.id,
+      senderName: profile.name,
+      senderRole: profile.role,
+      createdAt: Timestamp.now(),
+    })
+    input.value = ''
+  }
+
+  window.copyChatLink = function(token) {
+    const url = `${location.origin}${location.pathname.replace('order.html','chat.html')}?t=${token}`
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('copyLinkBtn')
+      btn.textContent = '✓ Link Tersalin!'
+      setTimeout(() => btn.textContent='🔗 Copy Link Customer', 2000)
+    })
+  }
+
+  window.generateToken = async function() {
+    const token = generateChatToken()
+    await updateDoc(doc(db,'orders',orderId), { chatToken: token, updatedAt: Timestamp.now() })
+    await setDoc(doc(db,'public_order_info',token), {
+      orderId, orderNumber: order.orderNumber,
+      division: order.division,
+      customerName: order.customerName,
+      status: order.status, chatToken: token,
+      createdAt: Timestamp.now(),
+    })
+    await loadOrder(getProfile())
   }
 
   window.backFromInvoice = function() { location.reload() }

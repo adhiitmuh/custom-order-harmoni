@@ -113,7 +113,7 @@
   import { collection, doc, setDoc, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META, DIVISIONS, fmtCurrency } from './js/utils.js'
+  import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken } from './js/utils.js'
   import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
   let selectedDiv = ''
@@ -284,6 +284,7 @@
       const profile = getProfile()
       const files = document.getElementById('designFiles').files
       const orderId = doc(collection(db,'orders')).id
+      const chatToken = generateChatToken()
       const orderNumber = await generateOrderNumber(selectedDiv)
       const now = Timestamp.now()
 
@@ -315,6 +316,18 @@
         priceApprovalReason: document.getElementById('approvalReason')?.value.trim() || '',
         priceApprovalBy: null,
         priceApprovalAt: null,
+        chatToken,
+      })
+
+      // Create public order info for customer chat
+      await setDoc(doc(db,'public_order_info', chatToken), {
+        orderId,
+        orderNumber,
+        division: selectedDiv,
+        customerName: document.getElementById('customerName').value.trim(),
+        status: 'pending',
+        chatToken,
+        createdAt: now,
       })
 
       window.location.href = `order.html?id=${orderId}`

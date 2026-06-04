@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat — Harmoni</title>
+  <style>
+    *{ box-sizing:border-box; margin:0; padding:0; }
+    body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f4f0; min-height:100vh; }
+
+    /* Top bar */
+    .topbar{ background:#034543; padding:14px 20px; display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:10; }
+    .topbar-logo{ font-weight:800; font-size:18px; color:#FFFBD5; letter-spacing:-.02em; }
+    .topbar-sub{ font-size:9px; color:#FFFBD5; opacity:.4; letter-spacing:.1em; font-family:monospace; }
+    .status-dot{ width:8px; height:8px; border-radius:50%; background:#4ade80; flex-shrink:0; }
+
+    /* Order info bar */
+    .orderbar{ background:white; border-bottom:1px solid rgba(3,69,67,.1); padding:12px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .order-num{ font-family:monospace; font-size:11px; color:rgba(3,69,67,.45); }
+    .status-badge{ padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .st-pending { background:#fef9c3; color:#854d0e; }
+    .st-in-progress { background:#dbeafe; color:#1e40af; }
+    .st-quality-check{ background:#f3e8ff; color:#7e22ce; }
+    .st-done { background:#dcfce7; color:#166534; }
+    .st-delivered { background:#f1f5f9; color:#475569; }
+
+    /* Tabs */
+    .tabs{ display:flex; border-bottom:2px solid rgba(3,69,67,.08); background:white; }
+    .tab{ flex:1; padding:12px; text-align:center; font-size:13px; font-weight:600; color:rgba(3,69,67,.5); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .12s; }
+    .tab.active{ color:#034543; border-bottom-color:#034543; }
+
+    /* Chat */
+    .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 160px); max-width:700px; margin:0 auto; background:white; }
+    .messages{ flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23034543' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); }
+    .input-area{ padding:12px 16px; border-top:1px solid rgba(3,69,67,.08); background:white; display:flex; gap:8px; align-items:flex-end; }
+    .msg-input{ flex:1; border:1.5px solid rgba(3,69,67,.15); border-radius:20px; padding:10px 16px; font-size:14px; font-family:inherit; resize:none; outline:none; max-height:120px; }
+    .msg-input:focus{ border-color:#034543; }
+    .send-btn{ background:#034543; color:#FFFBD5; border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+    .send-btn:disabled{ opacity:.4; }
+    .attach-btn{ background:rgba(3,69,67,.07); border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+
+    /* Info tab */
+    .info-wrap{ max-width:700px; margin:0 auto; padding:16px; overflow-y:auto; max-height:calc(100vh - 160px); background:white; }
+    .section-card{ background:#FAFAFA; border-radius:12px; border:1px solid rgba(3,69,67,.08); padding:16px; margin-bottom:12px; }
+    .section-title{ font-size:14px; font-weight:700; color:#282828; margin-bottom:8px; }
+    .section-content{ font-size:13px; line-height:1.75; color:rgba(3,69,67,.8); white-space:pre-wrap; }
+    .price-card{ background:#f0fdf4; border-radius:12px; border:1.5px solid #bbf7d0; padding:16px; margin-bottom:12px; }
+    .price-table{ width:100%; border-collapse:collapse; font-size:13px; }
+    .price-table th{ text-align:left; padding:7px 8px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); }
+    .price-table td{ padding:7px 8px; border-bottom:1px solid rgba(3,69,67,.06); }
+    .price-table tr:last-child td{ border-bottom:none; }
+    .price-val{ font-weight:700; color:#059669; }
+
+    /* Loading */
+    .loading{ text-align:center; padding:40px; color:rgba(3,69,67,.4); font-size:14px; }
+    .error-page{ text-align:center; padding:60px 24px; }
+
+    /* Bubbles */
+    .bubble-wrap{ display:flex; flex-direction:column; }
+    .bubble-wrap.me{ align-items:flex-end; }
+    .bubble-wrap.other{ align-items:flex-start; }
+    .bubble-name{ font-size:10px; color:rgba(3,69,67,.4); margin-bottom:3px; }
+    .bubble{ padding:10px 14px; border-radius:16px; font-size:13px; line-height:1.5; max-width:80%; word-break:break-word; }
+    .bubble.me{ background:#034543; color:#FFFBD5; border-radius:16px 16px 4px 16px; }
+    .bubble.other{ background:#f0f4f0; color:#282828; border-radius:16px 16px 16px 4px; }
+    .bubble.customer{ background:#dcfce7; color:#166534; border-radius:16px 16px 16px 4px; }
+    .bubble img{ max-width:200px; max-height:160px; border-radius:8px; display:block; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <svg viewBox="0 0 100 100" width="28" height="28">
+    <circle cx="74" cy="20" r="11" fill="#FFFBD5"/>
+    <rect x="22" y="8" width="22" height="80" fill="#FFFBD5"/>
+    <path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#FFFBD5"/>
+  </svg>
+  <div>
+    <div class="topbar-logo">harmoni</div>
+    <div class="topbar-sub">PT CITRA HARMONIS</div>
+  </div>
+  <div style="flex:1"></div>
+  <div class="status-dot"></div>
+  <span style="font-size:12px;color:#FFFBD5;opacity:.6">Online</span>
+</div>
+
+<div id="app"><div class="loading">Memuat…</div></div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+  import { getFirestore, collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAy4w2mhgZQfMBto7a9A8dhsrK2Envprf4",
+    authDomain: "harmoni-custom-order.firebaseapp.com",
+    projectId: "harmoni-custom-order",
+    storageBucket: "harmoni-custom-order.firebasestorage.app",
+    messagingSenderId: "230484579154",
+    appId: "1:230484579154:web:929f7772c2db041466608b",
+  }
+  const app = initializeApp(firebaseConfig)
+  const db  = getFirestore(app)
+  const storage = getStorage(app)
+
+  const STATUS_LABEL = {
+    'pending':'Menunggu Konfirmasi','pending-approval':'Menunggu Approval',
+    'in-progress':'Sedang Dikerjakan','quality-check':'Quality Check',
+    'done':'Selesai','delivered':'Sudah Dikirim','cancelled':'Dibatalkan',
+  }
+  const STATUS_CLASS = {
+    'pending':'st-pending','in-progress':'st-in-progress','quality-check':'st-quality-check',
+    'done':'st-done','delivered':'st-delivered','pending-approval':'st-pending','cancelled':'st-pending',
+  }
+
+  const params = new URLSearchParams(location.search)
+  const token  = params.get('t')
+
+  if (!token) {
+    document.getElementById('app').innerHTML = `<div class="error-page"><div style="font-size:48px">🔗</div><p style="font-size:16px;font-weight:700;margin-top:12px;color:#034543">Link tidak valid</p><p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:6px">Minta link chat dari tim Harmoni</p></div>`
+  } else {
+    init()
+  }
+
+  async function init() {
+    // Load public order info
+    const snap = await getDoc(doc(db,'public_order_info',token))
+    if (!snap.exists()) {
+      document.getElementById('app').innerHTML = `<div class="error-page"><div style="font-size:48px">❌</div><p style="font-size:16px;font-weight:700;margin-top:12px;color:#034543">Order tidak ditemukan</p></div>`
+      return
+    }
+    const orderInfo = snap.data()
+
+    // Load price list & knowledge
+    const [priceSnap, knowledgeSnap] = await Promise.all([
+      getDoc(doc(db,'price_list',orderInfo.division)),
+      getDocs_division(orderInfo.division),
+    ])
+    const priceList  = priceSnap.exists() ? priceSnap.data() : null
+    const knowledge  = knowledgeSnap
+
+    renderApp(orderInfo, priceList, knowledge)
+  }
+
+  async function getDocs_division(division) {
+    const { getDocs, query: q, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    const snap = await getDocs(q(collection(db,'product_knowledge'), where('division','==',division)))
+    return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
+  }
+
+  let activeTab = 'chat'
+
+  function renderApp(orderInfo, priceList, knowledge) {
+    const divLabel = {
+      bordir:'Bordir',butik:'Butik',jersey:'Jersey',jilbab:'Jilbab',
+      sablon:'Kaos & Sablon',konveksi:'Konveksi','papan-nama':'Papan Nama',
+      'pin-fiber':'Pin Fiber','pin-logam':'Pin Logam','sewa-kostum':'Sewa Kostum',tailor:'Tailor',
+    }[orderInfo.division] || orderInfo.division
+
+    document.getElementById('app').innerHTML = `
+      <!-- Order bar -->
+      <div class="orderbar">
+        <span class="order-num">${orderInfo.orderNumber}</span>
+        <span class="${STATUS_CLASS[orderInfo.status]||'st-pending'} status-badge">${STATUS_LABEL[orderInfo.status]||orderInfo.status}</span>
+        <span style="font-size:12px;color:rgba(3,69,67,.5)">${divLabel}</span>
+        <span style="font-size:12px;font-weight:600;color:#282828;margin-left:auto">Halo, ${orderInfo.customerName} 👋</span>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <div class="tab active" id="tabChat" onclick="switchTab('chat')">💬 Chat</div>
+        <div class="tab" id="tabInfo" onclick="switchTab('info')">📋 Info Produk & Harga</div>
+      </div>
+
+      <!-- Chat view -->
+      <div id="viewChat" class="chat-wrap">
+        <div class="messages" id="chatMessages">
+          <div style="text-align:center;padding:20px">
+            <div style="font-size:32px;margin-bottom:8px">👋</div>
+            <p style="font-size:13px;color:rgba(3,69,67,.5)">Halo <strong>${orderInfo.customerName}</strong>! Silakan diskusikan kebutuhan desain Anda di sini.</p>
+            <p style="font-size:11px;color:rgba(3,69,67,.35);margin-top:6px">⚠ Dilarang mengirim nomor HP, email, atau kontak</p>
+          </div>
+        </div>
+        <div class="input-area">
+          <textarea class="msg-input" id="chatInput" placeholder="Tulis pesan soal desain…" rows="1"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+          <label class="attach-btn" title="Kirim foto desain">
+            📎 <input type="file" id="fileInput" accept="image/*,.pdf" style="display:none" onchange="sendFile(this)">
+          </label>
+          <button class="send-btn" onclick="sendMsg()" id="sendBtn">➤</button>
+        </div>
+      </div>
+
+      <!-- Info view -->
+      <div id="viewInfo" class="info-wrap" style="display:none">
+        ${priceList?.items?.length ? `
+          <div class="price-card">
+            <div style="font-size:14px;font-weight:700;color:#059669;margin-bottom:12px">💰 Daftar Harga ${divLabel}</div>
+            <div style="overflow-x:auto">
+            <table class="price-table">
+              <thead><tr><th>LAYANAN / PRODUK</th><th>HARGA</th><th>SATUAN</th><th>KETERANGAN</th></tr></thead>
+              <tbody>
+                ${priceList.items.map(p=>`<tr>
+                  <td style="font-weight:600">${p.name}</td>
+                  <td class="price-val">${p.priceNormal ? `Rp ${Number(p.priceNormal).toLocaleString('id-ID')}` : '—'}</td>
+                  <td style="color:rgba(3,69,67,.5)">${p.unit||'—'}</td>
+                  <td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+            </div>
+          </div>` : ''}
+
+        ${knowledge.length ? knowledge.map(s=>`
+          <div class="section-card">
+            <div class="section-title">${s.title}</div>
+            <div class="section-content">${renderMD(s.content)}</div>
+          </div>`).join('') : `<div style="text-align:center;padding:32px;color:rgba(3,69,67,.4)">Belum ada info produk</div>`}
+      </div>`
+
+    window.switchTab = function(tab) {
+      activeTab = tab
+      document.getElementById('tabChat').className = `tab ${tab==='chat'?'active':''}`
+      document.getElementById('tabInfo').className  = `tab ${tab==='info'?'active':''}`
+      document.getElementById('viewChat').style.display = tab==='chat' ? 'flex' : 'none'
+      document.getElementById('viewInfo').style.display = tab==='info' ? 'block' : 'none'
+    }
+
+    initChatListener(orderInfo)
+  }
+
+  function renderMD(t) {
+    return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>')
+  }
+
+  function hasContact(text) {
+    if (/\b0\d{8,12}\b/.test(text)) return true
+    if (/\+62\d{7,12}/.test(text)) return true
+    if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) return true
+    if (/wa\.me|t\.me|line\.me|wa\.link/.test(text.toLowerCase())) return true
+    if (/@[a-zA-Z0-9_.]{3,}/.test(text)) return true
+    if (/\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/.test(text)) return true
+    return false
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return ''
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    const diff = Date.now() - d.getTime()
+    const m = Math.floor(diff/60000)
+    if (m<1) return 'baru saja'
+    if (m<60) return `${m} mnt lalu`
+    const h = Math.floor(m/60)
+    if (h<24) return `${h} jam lalu`
+    return d.toLocaleDateString('id-ID',{day:'numeric',month:'short'})
+  }
+
+  function initChatListener(orderInfo) {
+    const q = query(collection(db,'chat_messages',token,'messages'), orderBy('createdAt'))
+    onSnapshot(q, snap => {
+      const el = document.getElementById('chatMessages')
+      if (!el) return
+      const msgEls = snap.docs.map(d => {
+        const m = d.data()
+        const isMe = m.senderRole === 'customer'
+        const isStaff = m.senderRole !== 'customer'
+        const cls = isMe ? 'me' : 'customer' // customer's own = right, staff = left with green
+        const displayCls = isMe ? 'me' : ''
+        const bubbleCls = isMe ? 'me' : 'other'
+        const senderLabel = isStaff ? '👷 Tim Harmoni' : `👤 ${m.senderName}`
+        return `<div class="bubble-wrap ${isMe?'me':'other'}">
+          <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}</span>
+          <div class="bubble ${bubbleCls}">
+            ${m.imageUrl?`<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}"></a>`:''}
+            ${m.text?m.text.replace(/\n/g,'<br>'):''}
+          </div>
+        </div>`
+      })
+      // Keep welcome message if empty
+      if (msgEls.length > 0) {
+        el.innerHTML = msgEls.join('')
+      }
+      el.scrollTop = el.scrollHeight
+    })
+  }
+
+  window.sendMsg = async function() {
+    const input = document.getElementById('chatInput')
+    const text = input.value.trim()
+    if (!text) return
+    if (hasContact(text)) {
+      alert('⚠ Pesan tidak dapat dikirim.\n\nPesan mengandung informasi kontak (nomor HP, email, atau link) yang tidak boleh dibagikan di sini.')
+      return
+    }
+    const btn = document.getElementById('sendBtn')
+    btn.disabled = true
+    input.value = ''
+    input.style.height = 'auto'
+    try {
+      const snap = await getDoc(doc(db,'public_order_info',token))
+      const name = snap.exists() ? snap.data().customerName : 'Customer'
+      await addDoc(collection(db,'chat_messages',token,'messages'), {
+        text, imageUrl:null, type:'text',
+        senderId: token, // use token as customer ID
+        senderName: name,
+        senderRole: 'customer',
+        createdAt: Timestamp.now(),
+      })
+    } finally { btn.disabled = false }
+  }
+
+  window.sendFile = async function(input) {
+    if (!input.files[0]) return
+    const file = input.files[0]
+    const btn = document.getElementById('sendBtn')
+    btn.disabled = true
+    try {
+      const snap = await getDoc(doc(db,'public_order_info',token))
+      const name = snap.exists() ? snap.data().customerName : 'Customer'
+      const storRef = ref(storage, `chats/${token}/${Date.now()}_${file.name}`)
+      const uploadSnap = await new Promise((res,rej) => {
+        const task = uploadBytesResumable(storRef, file)
+        task.on('state_changed',null,rej,()=>res(task.snapshot))
+      })
+      const imageUrl = await getDownloadURL(uploadSnap.ref)
+      await addDoc(collection(db,'chat_messages',token,'messages'), {
+        text:'', imageUrl, type:'image',
+        senderId: token,
+        senderName: name,
+        senderRole: 'customer',
+        createdAt: Timestamp.now(),
+      })
+    } finally { btn.disabled=false; input.value='' }
+  }
+</script>
+</body>
+</html>

@@ -93,7 +93,7 @@
     document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
 
     const profile = getProfile()
-    const showContact = profile?.role !== 'production'
+    const showContact = profile?.role === 'owner'
 
     const filtered = allOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
