@@ -22,6 +22,9 @@
       <div class="card" style="text-align:center"><div class="loading">…</div></div>
     </div>
 
+    <!-- Target omzet -->
+    <div class="card" id="targetCard" style="margin-bottom:20px"><div class="loading">…</div></div>
+
     <!-- Recent orders -->
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -35,24 +38,35 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth } from './js/auth.js'
-  import { collection, query, orderBy, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDateShort, paymentStatus, daysDiff } from './js/utils.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, paymentStatus, daysDiff } from './js/utils.js'
 
   requireAuth(async (profile) => {
-    await loadStats()
+    await loadStats(profile)
     await loadRecent()
   })
 
-  async function loadStats() {
-    const snap = await getDocs(collection(db, 'orders'))
-    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  async function loadStats(profile) {
+    const [ordersSnap, targetSnap] = await Promise.all([
+      getDocs(collection(db, 'orders')),
+      getDoc(doc(db, 'settings', 'monthly_target'))
+    ])
+    const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
     const active = orders.filter(o => !['done','delivered','cancelled'].includes(o.status))
-    const unpaid = orders.filter(o => {
-      const total = o.totalPrice || 0
-      const paid = o.depositPaid || 0
-      return total > 0 && paid < total && o.status !== 'cancelled'
+    const unpaid = orders.filter(o => (o.totalPrice||0) > 0 && (o.depositPaid||0) < (o.totalPrice||0) && o.status !== 'cancelled')
+
+    // Omzet bulan ini
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthOrders = orders.filter(o => {
+      if (o.status === 'cancelled') return false
+      const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt)
+      return d >= monthStart
     })
+    const omzetBulan = monthOrders.reduce((s,o) => s + (o.totalPrice||0), 0)
+    const target = targetSnap.exists() ? targetSnap.data().amount : 0
+    const pct = target > 0 ? Math.min(Math.round((omzetBulan/target)*100), 100) : 0
 
     document.getElementById('statsGrid').innerHTML = `
       <div class="card" style="text-align:center">
@@ -67,6 +81,56 @@
         <div style="font-size:32px;font-weight:800;color:#b91c1c">${unpaid.length}</div>
         <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">Belum Lunas</div>
       </div>`
+
+    // Target omzet card
+    const targetCard = document.getElementById('targetCard')
+    targetCard.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:14px;font-weight:700">🎯 Target Omzet Bulan Ini</h2>
+        ${profile.role==='owner' ? `<button onclick="editTarget()" class="btn btn-ghost btn-sm" id="targetEditBtn">${target?'Edit':'Set Target'}</button>` : ''}
+      </div>
+      <div id="targetView">
+        ${target ? `
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+            <span style="font-weight:700;color:var(--green);font-size:16px">${fmtCurrency(omzetBulan)}</span>
+            <span style="color:rgba(3,69,67,.5)">dari ${fmtCurrency(target)}</span>
+          </div>
+          <div class="progress-track" style="height:12px;margin-bottom:6px">
+            <div class="progress-fill" style="width:${pct}%;background:${pct>=100?'#059669':pct>=70?'var(--green)':'#f59e0b'};transition:width 1s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(3,69,67,.5)">
+            <span>${pct}% tercapai · ${monthOrders.length} order bulan ini</span>
+            <span style="font-weight:700;color:${pct>=100?'#059669':'#b91c1c'}">${pct>=100?'✅ Target tercapai!':'kurang '+fmtCurrency(target-omzetBulan)}</span>
+          </div>` :
+          `<p style="font-size:13px;color:rgba(3,69,67,.4);text-align:center;padding:8px 0">Belum ada target bulan ini</p>`}
+      </div>
+      <div id="targetEditForm" style="display:none">
+        <label style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);display:block;margin-bottom:6px">Target Omzet (Rp)</label>
+        <div style="display:flex;gap:8px">
+          <input type="number" id="targetInput" value="${target||''}" placeholder="Contoh: 50000000" style="flex:1;padding:8px 12px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:14px">
+          <button onclick="saveTarget()" class="btn btn-primary btn-sm" id="saveTargetBtn">Simpan</button>
+          <button onclick="cancelTarget()" class="btn btn-ghost btn-sm">Batal</button>
+        </div>
+      </div>`
+
+    window.editTarget = () => {
+      document.getElementById('targetView').style.display = 'none'
+      document.getElementById('targetEditForm').style.display = ''
+      document.getElementById('targetEditBtn').style.display = 'none'
+    }
+    window.cancelTarget = () => {
+      document.getElementById('targetView').style.display = ''
+      document.getElementById('targetEditForm').style.display = 'none'
+      document.getElementById('targetEditBtn').style.display = ''
+    }
+    window.saveTarget = async () => {
+      const btn = document.getElementById('saveTargetBtn')
+      btn.disabled=true; btn.textContent='Menyimpan…'
+      const amount = Number(document.getElementById('targetInput').value)||0
+      await setDoc(doc(db,'settings','monthly_target'), { amount, updatedAt: new Date().toISOString() })
+      await loadStats(getProfile())
+      btn.disabled=false; btn.textContent='Simpan'
+    }
   }
 
   async function loadRecent() {

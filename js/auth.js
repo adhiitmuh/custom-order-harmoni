@@ -75,6 +75,13 @@ export function renderSidebar(profile) {
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">PRODUKSI</div>
+      <a href="kalender.html" class="sidebar-link ${page==='kalender.html'?'active':''}">
+        <span class="icon">📅</span>Kalender Produksi
+      </a>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
       <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
         <span class="icon">👥</span>CRM Pelanggan

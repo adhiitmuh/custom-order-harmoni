@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalender Produksi — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+    .cal-day-header { text-align:center; font-size:11px; font-weight:700; color:rgba(3,69,67,.4); padding:6px 0; letter-spacing:.04em; }
+    .cal-cell { min-height:90px; border-radius:10px; padding:6px; border:1px solid rgba(3,69,67,.07); background:var(--white); position:relative; }
+    .cal-cell.today { border-color:var(--green); border-width:2px; }
+    .cal-cell.other-month { opacity:.35; background:rgba(3,69,67,.02); }
+    .cal-date { font-size:12px; font-weight:700; color:rgba(3,69,67,.5); margin-bottom:4px; }
+    .cal-date.today-date { background:var(--green); color:var(--beige); width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; }
+    .order-chip { font-size:10px; font-weight:600; padding:2px 6px; border-radius:5px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; display:block; text-decoration:none; }
+    .chip-late { background:#fee2e2; color:#b91c1c; }
+    .chip-urgent { background:#fef3c7; color:#92400e; }
+    .chip-ok { background:rgba(3,69,67,.08); color:var(--green); }
+    .chip-done { background:#f1f5f9; color:#64748b; }
+    .more-chip { font-size:10px; color:rgba(3,69,67,.4); padding:2px 4px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:1100px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PRODUKSI</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kalender Produksi</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button onclick="prevMonth()" class="btn btn-ghost btn-sm">‹ Prev</button>
+        <span id="monthLabel" style="font-size:15px;font-weight:700;color:var(--black);min-width:140px;text-align:center"></span>
+        <button onclick="nextMonth()" class="btn btn-ghost btn-sm">Next ›</button>
+        <button onclick="goToday()" class="btn btn-primary btn-sm">Hari Ini</button>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;font-weight:600">
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fee2e2;display:inline-block"></span>Terlambat</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;display:inline-block"></span>Deadline ≤ 2 hari</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:rgba(3,69,67,.08);display:inline-block"></span>On track</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#f1f5f9;display:inline-block"></span>Selesai</span>
+    </div>
+
+    <div id="calendarGrid"><div class="loading">Memuat…</div></div>
+
+    <!-- Week view orders -->
+    <div class="card" style="margin-top:20px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">📋 Deadline Minggu Ini</h2>
+      <div id="weekOrders"><div class="loading">Memuat…</div></div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth } from './js/auth.js'
+  import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
+
+  let currentDate = new Date()
+  let allOrders = []
+
+  requireAuth(async () => {
+    const snap = await getDocs(collection(db,'orders'))
+    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(o => !['cancelled'].includes(o.status))
+    render()
+    renderWeek()
+  })
+
+  function getOrderDate(o) {
+    if (!o.dueDate) return null
+    return o.dueDate.toDate ? o.dueDate.toDate() : new Date(o.dueDate)
+  }
+
+  function render() {
+    const y = currentDate.getFullYear()
+    const m = currentDate.getMonth()
+    document.getElementById('monthLabel').textContent =
+      new Date(y, m, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+
+    const firstDay = new Date(y, m, 1).getDay()
+    const daysInMonth = new Date(y, m+1, 0).getDate()
+    const today = new Date(); today.setHours(0,0,0,0)
+
+    // Build day map: orders by due date
+    const ordersByDay = {}
+    for (const o of allOrders) {
+      const d = getOrderDate(o)
+      if (!d) continue
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      if (!ordersByDay[key]) ordersByDay[key] = []
+      ordersByDay[key].push(o)
+    }
+
+    // Days header
+    const headers = ['Min','Sen','Sel','Rab','Kam','Jum','Sab']
+    let html = `<div class="cal-grid">${headers.map(h=>`<div class="cal-day-header">${h}</div>`).join('')}</div><div class="cal-grid" style="margin-top:4px">`
+
+    // Prev month padding
+    const prevMonthDays = new Date(y, m, 0).getDate()
+    for (let i = firstDay - 1; i >= 0; i--) {
+      html += `<div class="cal-cell other-month"><div class="cal-date">${prevMonthDays - i}</div></div>`
+    }
+
+    // Current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cellDate = new Date(y, m, d); cellDate.setHours(0,0,0,0)
+      const isToday = cellDate.getTime() === today.getTime()
+      const key = `${y}-${m}-${d}`
+      const dayOrders = ordersByDay[key] || []
+
+      html += `<div class="cal-cell ${isToday?'today':''}">
+        <div class="cal-date">${isToday ? `<span class="today-date">${d}</span>` : d}</div>`
+
+      const shown = dayOrders.slice(0, 3)
+      for (const o of shown) {
+        const dLeft = daysDiff(o.dueDate)
+        const isDone = ['done','delivered'].includes(o.status)
+        const chipClass = isDone ? 'chip-done' : dLeft < 0 ? 'chip-late' : dLeft <= 2 ? 'chip-urgent' : 'chip-ok'
+        const meta = DIVISION_META[o.division]||{}
+        html += `<a href="order.html?id=${o.id}" class="order-chip ${chipClass}" title="${o.customerName} · ${STATUS_LABEL[o.status]}">
+          ${meta.icon} ${o.customerName}
+        </a>`
+      }
+      if (dayOrders.length > 3) html += `<span class="more-chip">+${dayOrders.length-3} lagi</span>`
+
+      html += `</div>`
+    }
+
+    // Next month padding
+    const totalCells = firstDay + daysInMonth
+    const remaining = 7 - (totalCells % 7 === 0 ? 7 : totalCells % 7)
+    for (let d = 1; d <= remaining; d++) {
+      html += `<div class="cal-cell other-month"><div class="cal-date">${d}</div></div>`
+    }
+
+    html += '</div>'
+    document.getElementById('calendarGrid').innerHTML = html
+  }
+
+  function renderWeek() {
+    const today = new Date(); today.setHours(0,0,0,0)
+    const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
+
+    const weekOrders = allOrders
+      .filter(o => {
+        const d = getOrderDate(o)
+        return d && d >= today && d <= weekEnd && !['done','delivered'].includes(o.status)
+      })
+      .sort((a,b) => getOrderDate(a) - getOrderDate(b))
+
+    const el = document.getElementById('weekOrders')
+    if (!weekOrders.length) {
+      el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px">Tidak ada deadline minggu ini</p>'
+      return
+    }
+    el.innerHTML = weekOrders.map(o => {
+      const meta = DIVISION_META[o.division]||{}
+      const dLeft = daysDiff(o.dueDate)
+      const urgent = dLeft <= 1
+      return `<a href="order.html?id=${o.id}" style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;border:1px solid ${urgent?'rgba(239,68,68,.2)':'rgba(3,69,67,.07)'};margin-bottom:8px;text-decoration:none;background:${urgent?'#fff5f5':''}">
+        <span style="font-size:22px">${meta.icon||'📦'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px;color:var(--black)">${o.customerName}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap">
+            <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber}</span>
+            <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:12px;font-weight:700;color:${dLeft===0?'#b91c1c':dLeft<=2?'#92400e':'var(--green)'}">
+            ${dLeft===0?'⏰ Hari ini':dLeft===1?'⚠ Besok':`${dLeft} hari lagi`}
+          </div>
+          <div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">${fmtCurrency(o.totalPrice)}</div>
+        </div>
+      </a>`
+    }).join('')
+  }
+
+  window.prevMonth = () => { currentDate.setMonth(currentDate.getMonth()-1); render() }
+  window.nextMonth = () => { currentDate.setMonth(currentDate.getMonth()+1); render() }
+  window.goToday = () => { currentDate = new Date(); render() }
+</script>
+</body>
+</html>

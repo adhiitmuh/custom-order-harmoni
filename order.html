@@ -94,6 +94,26 @@
             ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
           </div>
 
+          <!-- Ukuran -->
+          ${['tailor','butik','jilbab','jersey','konveksi','sewa-kostum'].includes(order.division) ? `
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700">📐 Ukuran</h2>
+              ${canEdit ? `<button onclick="toggleUkuran()" class="btn btn-ghost btn-sm" id="ukuranEditBtn">Edit</button>` : ''}
+            </div>
+            <div id="ukuranView">
+              ${order.measurements && Object.keys(order.measurements).length ? `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+                  ${Object.entries(order.measurements).filter(([,v])=>v).map(([k,v])=>`
+                    <div><p style="font-size:10px;color:rgba(3,69,67,.45);margin-bottom:1px">${k}</p><p style="font-weight:600">${v}</p></div>`).join('')}
+                </div>` : '<p style="font-size:13px;color:rgba(3,69,67,.35)">Belum ada data ukuran</p>'}
+            </div>
+            <div id="ukuranEdit" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="ukuranFields"></div>
+              <button onclick="saveUkuran()" class="btn btn-primary btn-sm" style="margin-top:10px;width:100%;justify-content:center" id="saveUkuranBtn">Simpan Ukuran</button>
+            </div>
+          </div>` : ''}
+
           <!-- Files -->
           ${order.designFiles?.length ? `
           <div class="card" style="margin-bottom:16px">
@@ -128,6 +148,12 @@
                 oninput="document.getElementById('rangeLabel').textContent=this.value"
                 style="width:100%;accent-color:var(--green);margin-bottom:10px">
               <textarea id="progressNote" placeholder="Keterangan update progress…" rows="2" style="margin-bottom:8px"></textarea>
+              <div style="margin-bottom:10px">
+                <label style="font-size:11px;font-weight:600;color:rgba(3,69,67,.5);display:block;margin-bottom:4px">📸 Foto Progress (opsional)</label>
+                <input type="file" id="progressFiles" multiple accept="image/*" onchange="previewProgressFiles(this)"
+                  style="font-size:12px;width:100%;border:1.5px dashed rgba(3,69,67,.2);padding:8px;border-radius:8px;background:white;cursor:pointer">
+                <div id="progressFilePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+              </div>
               <div style="display:flex;gap:8px">
                 <button onclick="toggleProgressForm()" class="btn btn-ghost btn-sm" style="flex:1">Batal</button>
                 <button onclick="saveProgress()" class="btn btn-primary btn-sm" style="flex:1" id="saveProgressBtn">Simpan</button>
@@ -144,6 +170,7 @@
                       <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${u.updatedByName||'tim'}</span>
                     </div>
                     <p style="font-size:13px;margin-top:2px">${u.note}</p>
+                    ${u.photos?.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`).join('')}</div>` : ''}
                   </div>
                 </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px 0">Belum ada update progress</p>'}
             </div>
@@ -274,6 +301,13 @@
     f.style.display = f.style.display === 'none' ? '' : 'none'
   }
 
+  window.previewProgressFiles = function(input) {
+    const preview = document.getElementById('progressFilePreview')
+    preview.innerHTML = [...input.files].map(f =>
+      `<span style="font-size:11px;background:rgba(3,69,67,.08);color:var(--green);padding:3px 8px;border-radius:6px">📸 ${f.name}</span>`
+    ).join('')
+  }
+
   window.saveProgress = async function() {
     const note = document.getElementById('progressNote').value.trim()
     const pct = Number(document.getElementById('progressRange').value)
@@ -283,8 +317,19 @@
     try {
       const profile = getProfile()
       const now = Timestamp.now()
+      // Upload foto jika ada
+      const files = document.getElementById('progressFiles')?.files || []
+      const photos = []
+      for (const f of files) {
+        const storRef = ref(storage, `orders/${orderId}/progress/${Date.now()}_${f.name}`)
+        const snap = await new Promise((res, rej) => {
+          const task = uploadBytesResumable(storRef, f)
+          task.on('state_changed', null, rej, () => res(task.snapshot))
+        })
+        photos.push(await getDownloadURL(snap.ref))
+      }
       await addDoc(collection(db,'orders',orderId,'progress_updates'), {
-        note, percentage: pct,
+        note, percentage: pct, photos,
         updatedBy: profile.id,
         updatedByName: profile.name,
         createdAt: now,
@@ -336,6 +381,83 @@
   window.changeStatus = async function(status) {
     await updateDoc(doc(db,'orders',orderId), { status, updatedAt: Timestamp.now() })
     await loadOrder(getProfile())
+    showWAToast(status)
+  }
+
+  function showWAToast(status) {
+    const msgs = {
+      'in-progress': `Pesanan *${order.orderNumber}* sudah mulai dikerjakan ✂️\nEstimasi selesai: ${fmtDate(order.dueDate)}\n\nTerima kasih atas kepercayaan Anda kepada *Harmoni* 🙏`,
+      'quality-check': `Pesanan *${order.orderNumber}* selesai diproduksi dan sedang quality check 🔍\nKami pastikan sempurna sebelum diserahkan.`,
+      'done': `Pesanan *${order.orderNumber}* sudah selesai! ✅\n\n${(order.totalPrice||0)-(order.depositPaid||0)>0?`Sisa pembayaran: *${fmtCurrency((order.totalPrice||0)-(order.depositPaid||0))}*\n\n`:''}Silakan hubungi kami untuk pengambilan. Terima kasih 🙏`,
+      'delivered': `Pesanan *${order.orderNumber}* sudah dikirim/diserahkan 📦\n\nTerima kasih telah berbelanja di *Harmoni*! Semoga puas dengan hasilnya 😊`,
+      'cancelled': `Pesanan *${order.orderNumber}* telah dibatalkan.\nMohon maaf atas ketidaknyamanannya. Hubungi kami untuk info lebih lanjut 🙏`,
+    }
+    const msg = msgs[status]
+    if (!msg || !order.customerContact) return
+
+    // Remove existing toast
+    document.getElementById('waToast')?.remove()
+
+    const contact = order.customerContact.replace(/\D/g,'').replace(/^0/,'62')
+    const fullMsg = `Halo *${order.customerName}*,\n\n` + msg + `\n\n_PT Citra Harmonis · Makassar_`
+    const waUrl = contact.startsWith('62')
+      ? `https://wa.me/${contact}?text=${encodeURIComponent(fullMsg)}`
+      : `https://wa.me/?text=${encodeURIComponent(fullMsg)}`
+
+    const toast = document.createElement('div')
+    toast.id = 'waToast'
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--white);border:1.5px solid #bbf7d0;border-radius:14px;padding:14px 18px;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:999;max-width:300px;animation:slideUp .3s ease'
+    toast.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px">💬 Kirim notifikasi ke customer?</div>
+      <div style="font-size:11px;color:rgba(3,69,67,.6);margin-bottom:10px;line-height:1.5">${STATUS_LABEL[status]}</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="document.getElementById('waToast').remove()" style="flex:1;padding:7px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);background:none;cursor:pointer;font-size:12px">Nanti</button>
+        <a href="${waUrl}" target="_blank" onclick="setTimeout(()=>document.getElementById('waToast')?.remove(),1000)" style="flex:1;padding:7px;border-radius:8px;background:#25D366;color:white;font-size:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">📱 Kirim WA</a>
+      </div>`
+    document.body.appendChild(toast)
+    setTimeout(() => toast?.remove(), 12000)
+  }
+
+  // UKURAN
+  const UKURAN_FIELDS = {
+    tailor: ['Lingkar Dada','Lingkar Pinggang','Lingkar Pinggul','Panjang Baju','Panjang Lengan','Panjang Celana','Lebar Bahu','Tinggi Badan'],
+    butik:  ['Lingkar Dada','Lingkar Pinggang','Lingkar Pinggul','Panjang Baju','Panjang Lengan','Lebar Bahu','Tinggi Badan'],
+    jilbab: ['Lingkar Kepala','Catatan Ukuran'],
+    jersey: ['Tinggi Badan','Berat Badan','Lingkar Dada','Panjang Baju','Panjang Celana'],
+    konveksi: ['Tinggi Badan','Berat Badan','Lingkar Dada','Lingkar Pinggang'],
+    'sewa-kostum': ['Tinggi Badan','Berat Badan','Lingkar Dada','Lingkar Pinggang','Lingkar Pinggul'],
+  }
+
+  window.toggleUkuran = function() {
+    const view = document.getElementById('ukuranView')
+    const edit = document.getElementById('ukuranEdit')
+    const btn = document.getElementById('ukuranEditBtn')
+    const isEditing = edit.style.display !== 'none'
+    view.style.display = isEditing ? '' : 'none'
+    edit.style.display = isEditing ? 'none' : ''
+    btn.textContent = isEditing ? 'Edit' : 'Batal'
+    if (!isEditing) {
+      const fields = UKURAN_FIELDS[order.division] || []
+      const current = order.measurements || {}
+      document.getElementById('ukuranFields').innerHTML = fields.map(f => `
+        <div class="form-group" style="margin-bottom:8px">
+          <label style="font-size:11px;font-weight:600;color:rgba(3,69,67,.5)">${f}</label>
+          <input type="text" placeholder="cth: 90 cm" value="${current[f]||''}"
+            data-field="${f}" style="padding:8px 10px;font-size:13px;border-radius:8px">
+        </div>`).join('')
+    }
+  }
+
+  window.saveUkuran = async function() {
+    const btn = document.getElementById('saveUkuranBtn')
+    btn.disabled=true; btn.textContent='Menyimpan…'
+    const inputs = document.querySelectorAll('#ukuranFields input[data-field]')
+    const measurements = {}
+    inputs.forEach(inp => { if (inp.value.trim()) measurements[inp.dataset.field] = inp.value.trim() })
+    try {
+      await updateDoc(doc(db,'orders',orderId), { measurements, updatedAt: Timestamp.now() })
+      await loadOrder(getProfile())
+    } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
   }
 
   window.showInvoice = function() {

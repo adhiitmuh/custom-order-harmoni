@@ -128,6 +128,12 @@ hr.sep { border: none; border-top: 1px solid rgba(3,69,67,.07); margin: 16px 0; 
   .card { border: none !important; border-radius: 0 !important; }
 }
 
+/* Toast animation */
+@keyframes slideUp {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
 /* Login page */
 .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
