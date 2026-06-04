@@ -7,7 +7,7 @@
   --black: #282828;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--beige-soft); color: var(--black); min-height: 100vh; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(150deg, #edfaf3 0%, #fffde8 35%, #fff8c2 100%); background-attachment: fixed; color: var(--black); min-height: 100vh; }
 
 /* Layout */
 .layout { display: flex; min-height: 100vh; }
@@ -131,7 +131,7 @@ hr.sep { border: none; border-top: 1px solid rgba(3,69,67,.07); margin: 16px 0; 
 /* Login page */
 .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: var(--green);
+  background: linear-gradient(150deg, #023432 0%, #034543 50%, #056b5e 100%);
 }
 .login-card {
   background: var(--white); border-radius: 20px; padding: 40px; width: 100%; max-width: 380px;
