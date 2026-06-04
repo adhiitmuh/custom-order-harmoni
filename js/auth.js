@@ -16,7 +16,7 @@ export function requireAuth(callback) {
     _user = user
     try {
       const snap = await getDoc(doc(db, 'users', user.uid))
-      _profile = snap.exists() ? { id: snap.id, ...snap.data() } : { id: user.uid, name: user.email, role: 'cs' }
+      _profile = snap.exists() ? { id: snap.id, ...snap.data() } : { id: user.uid, name: user.email, role: 'cs', branch: '' }
     } catch {
       _profile = { id: user.uid, name: user.email, role: 'cs' }
     }
@@ -111,7 +111,7 @@ export function renderSidebar(profile) {
       <div class="avatar">${(profile.name||'U')[0].toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="user-name">${profile.name}</div>
-        <div class="user-role">${(profile.role||'').toUpperCase()}</div>
+        <div class="user-role">${(profile.role||'').toUpperCase()}${profile.branch ? ' · ' + profile.branch : ''}</div>
       </div>
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
     </div>`

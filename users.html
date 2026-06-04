@@ -37,6 +37,7 @@
         </div>
         <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" id="newEmail" placeholder="email@harmoni.id"></div>
         <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Cabang / Divisi</label><input type="text" id="newBranch" placeholder="cth: Cabang Makassar, Tim Bordir, CS Online…"></div>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="hideAddForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
@@ -78,6 +79,7 @@
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
+          ${u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : ''}
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
         ${u.id !== getProfile()?.id ? `<button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
@@ -112,7 +114,8 @@
       const newUid = cred.user.uid
 
       // Save to Firestore
-      await setDoc(doc(db,'users',newUid), { name, email, role, createdAt: Timestamp.now() })
+      const branch = document.getElementById('newBranch').value.trim()
+      await setDoc(doc(db,'users',newUid), { name, email, role, branch, createdAt: Timestamp.now() })
 
       // Re-sign in as owner
       if (currentEmail) {

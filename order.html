@@ -599,7 +599,8 @@
         const bg = isCustomer ? '#f0fdf4' : isMe ? 'var(--green)' : 'var(--beige-soft)'
         const color = isMe ? 'white' : 'var(--black)'
         const align = isMe ? 'flex-end' : 'flex-start'
-        const name = isCustomer ? `👤 ${m.senderName}` : m.senderName
+        const staffLabel = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
+        const name = isCustomer ? `👤 ${m.senderName}` : `👷 Tim Harmoni — ${staffLabel}`
         return `<div style="display:flex;flex-direction:column;align-items:${align};max-width:80%">
           <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px;${isMe?'text-align:right':''}">${name} · ${timeAgo(m.createdAt)}</span>
           <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${isMe?'12px 12px 2px 12px':'12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word">
@@ -627,6 +628,7 @@
       senderId: profile.id,
       senderName: profile.name,
       senderRole: profile.role,
+      senderBranch: profile.branch || '',
       createdAt: Timestamp.now(),
     })
   }
@@ -646,6 +648,7 @@
       senderId: profile.id,
       senderName: profile.name,
       senderRole: profile.role,
+      senderBranch: profile.branch || '',
       createdAt: Timestamp.now(),
     })
     input.value = ''

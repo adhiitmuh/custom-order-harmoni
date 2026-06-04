@@ -123,8 +123,21 @@
     init()
   }
 
+  const DIVISIONS_ALL = ['batik','bordir','butik','jersey','jilbab','sablon','konveksi','lanyard','medali-pin','papan-nama','pin-fiber','printing-jersey','sewa-kostum','tailor']
+  const DIV_LABEL = {
+    batik:'Batik',bordir:'Bordir',butik:'Butik',jersey:'Jersey',jilbab:'Jilbab',
+    sablon:'Kaos & Sablon',konveksi:'Konveksi',lanyard:'Lanyard',
+    'medali-pin':'Medali & Pin Logam','papan-nama':'Papan Nama',
+    'pin-fiber':'Pin Fiber','printing-jersey':'Printing Jersey',
+    'sewa-kostum':'Sewa Kostum',tailor:'Tailor',
+  }
+  const DIV_ICON = {
+    batik:'🎨',bordir:'🪡',butik:'👗',jersey:'⚽',jilbab:'🧕',sablon:'🖨️',
+    konveksi:'👕',lanyard:'🪪','medali-pin':'🏅','papan-nama':'🏷️',
+    'pin-fiber':'📌','printing-jersey':'🖼️','sewa-kostum':'🎭',tailor:'✂️',
+  }
+
   async function init() {
-    // Load public order info
     const snap = await getDoc(doc(db,'public_order_info',token))
     if (!snap.exists()) {
       document.getElementById('app').innerHTML = `<div class="error-page"><div style="font-size:48px">❌</div><p style="font-size:16px;font-weight:700;margin-top:12px;color:#034543">Order tidak ditemukan</p></div>`
@@ -132,31 +145,27 @@
     }
     const orderInfo = snap.data()
 
-    // Load price list & knowledge
-    const [priceSnap, knowledgeSnap] = await Promise.all([
-      getDoc(doc(db,'price_list',orderInfo.division)),
-      getDocs_division(orderInfo.division),
+    // Load ALL knowledge & price lists (batch)
+    const { getDocs: gd, query: q, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    const [knowledgeSnap, ...priceSnaps] = await Promise.all([
+      gd(collection(db,'product_knowledge')),
+      ...DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))),
     ])
-    const priceList  = priceSnap.exists() ? priceSnap.data() : null
-    const knowledge  = knowledgeSnap
+    const allKnowledge = knowledgeSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
+    const allPrices = {}
+    DIVISIONS_ALL.forEach((d,i) => {
+      if (priceSnaps[i].exists()) allPrices[d] = priceSnaps[i].data()
+    })
 
-    renderApp(orderInfo, priceList, knowledge)
-  }
-
-  async function getDocs_division(division) {
-    const { getDocs, query: q, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
-    const snap = await getDocs(q(collection(db,'product_knowledge'), where('division','==',division)))
-    return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
+    renderApp(orderInfo, allKnowledge, allPrices)
   }
 
   let activeTab = 'chat'
+  let activeDivInfo = null
 
-  function renderApp(orderInfo, priceList, knowledge) {
-    const divLabel = {
-      bordir:'Bordir',butik:'Butik',jersey:'Jersey',jilbab:'Jilbab',
-      sablon:'Kaos & Sablon',konveksi:'Konveksi','papan-nama':'Papan Nama',
-      'pin-fiber':'Pin Fiber','pin-logam':'Pin Logam','sewa-kostum':'Sewa Kostum',tailor:'Tailor',
-    }[orderInfo.division] || orderInfo.division
+  function renderApp(orderInfo, allKnowledge, allPrices) {
+    const divLabel = DIV_LABEL[orderInfo.division] || orderInfo.division
+    activeDivInfo = orderInfo.division
 
     document.getElementById('app').innerHTML = `
       <!-- Order bar -->
@@ -193,32 +202,62 @@
         </div>
       </div>
 
-      <!-- Info view -->
+      <!-- Info view — ALL divisions -->
       <div id="viewInfo" class="info-wrap" style="display:none">
-        ${priceList?.items?.length ? `
-          <div class="price-card">
-            <div style="font-size:14px;font-weight:700;color:#059669;margin-bottom:12px">💰 Daftar Harga ${divLabel}</div>
+        <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:12px;text-align:center">
+          Pilih divisi untuk melihat info produk dan daftar harga
+        </p>
+        <!-- Division tabs -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="divInfoTabs">
+          ${DIVISIONS_ALL.map(d => `
+            <button onclick="showDivInfo('${d}')" id="divBtn-${d}"
+              class="div-tab-btn"
+              style="padding:5px 10px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid rgba(3,69,67,.15);background:${d===orderInfo.division?'#034543':'white'};color:${d===orderInfo.division?'#FFFBD5':'rgba(3,69,67,.7)'};transition:all .12s">
+              ${DIV_ICON[d]} ${DIV_LABEL[d]}
+            </button>`).join('')}
+        </div>
+        <div id="divInfoContent"></div>
+      </div>`
+
+    // Render info for initial division
+    window.showDivInfo = function(div) {
+      activeDivInfo = div
+      document.querySelectorAll('.div-tab-btn').forEach(b => {
+        const d = b.id.replace('divBtn-','')
+        b.style.background = d===div ? '#034543' : 'white'
+        b.style.color = d===div ? '#FFFBD5' : 'rgba(3,69,67,.7)'
+      })
+      const prices = allPrices[div]
+      const knowledge = allKnowledge.filter(s => s.division === div)
+      const label = DIV_LABEL[div] || div
+      document.getElementById('divInfoContent').innerHTML = `
+        ${prices?.items?.length ? `
+          <div class="price-card" style="margin-bottom:12px">
+            <div style="font-size:13px;font-weight:700;color:#059669;margin-bottom:10px">💰 Daftar Harga ${label}</div>
             <div style="overflow-x:auto">
             <table class="price-table">
               <thead><tr><th>LAYANAN / PRODUK</th><th>HARGA</th><th>SATUAN</th><th>KETERANGAN</th></tr></thead>
               <tbody>
-                ${priceList.items.map(p=>`<tr>
+                ${prices.items.map(p=>`<tr>
                   <td style="font-weight:600">${p.name}</td>
                   <td class="price-val">${p.priceNormal ? `Rp ${Number(p.priceNormal).toLocaleString('id-ID')}` : '—'}</td>
                   <td style="color:rgba(3,69,67,.5)">${p.unit||'—'}</td>
-                  <td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>
+                  <td style="color:rgba(3,69,67,.5);font-size:11px">${p.note||''}</td>
                 </tr>`).join('')}
               </tbody>
             </table>
             </div>
           </div>` : ''}
-
-        ${knowledge.length ? knowledge.map(s=>`
+        ${knowledge.map(s=>`
           <div class="section-card">
             <div class="section-title">${s.title}</div>
             <div class="section-content">${renderMD(s.content)}</div>
-          </div>`).join('') : `<div style="text-align:center;padding:32px;color:rgba(3,69,67,.4)">Belum ada info produk</div>`}
-      </div>`
+          </div>`).join('')}
+        ${!prices?.items?.length && !knowledge.length ? `<div style="text-align:center;padding:32px;color:rgba(3,69,67,.4)">Belum ada info untuk divisi ini</div>` : ''}
+      `
+    }
+    // Auto-show order's division
+    setTimeout(() => window.showDivInfo(orderInfo.division), 100)
 
     window.switchTab = function(tab) {
       activeTab = tab
@@ -269,7 +308,8 @@
         const cls = isMe ? 'me' : 'customer' // customer's own = right, staff = left with green
         const displayCls = isMe ? 'me' : ''
         const bubbleCls = isMe ? 'me' : 'other'
-        const senderLabel = isStaff ? '👷 Tim Harmoni' : `👤 ${m.senderName}`
+        const staffName = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
+        const senderLabel = isStaff ? `👷 Tim Harmoni — ${staffName}` : `👤 ${m.senderName}`
         return `<div class="bubble-wrap ${isMe?'me':'other'}">
           <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}</span>
           <div class="bubble ${bubbleCls}">
