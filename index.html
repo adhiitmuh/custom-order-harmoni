@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Harmoni Order System</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:28px">
+      <svg viewBox="0 0 100 100" width="44" height="44" style="margin-bottom:10px">
+        <circle cx="74" cy="20" r="11" fill="#034543"/>
+        <rect x="22" y="8" width="22" height="80" fill="#034543"/>
+        <path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#034543"/>
+      </svg>
+      <div style="font-weight:800;font-size:22px;color:#034543;letter-spacing:-.03em">harmoni</div>
+      <div style="font-size:10px;color:#034543;opacity:.4;letter-spacing:.1em;font-family:monospace">ORDER SYSTEM</div>
+    </div>
+
+    <div id="error" class="alert alert-error" style="display:none"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="email@harmoni.id" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:4px;justify-content:center" id="submitBtn">
+        Masuk
+      </button>
+    </form>
+
+    <p style="text-align:center;font-size:11px;color:rgba(3,69,67,.35);margin-top:20px">
+      PT Citra Harmonis · Makassar
+    </p>
+  </div>
+</div>
+
+<script type="module">
+  import { auth } from './js/config.js'
+  import { signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+
+  onAuthStateChanged(auth, user => {
+    if (user) window.location.href = 'dashboard.html'
+  })
+
+  document.getElementById('loginForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const btn = document.getElementById('submitBtn')
+    const errEl = document.getElementById('error')
+    errEl.style.display = 'none'
+    btn.disabled = true
+    btn.textContent = 'Memproses...'
+
+    try {
+      await signInWithEmailAndPassword(auth,
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value
+      )
+      window.location.href = 'dashboard.html'
+    } catch (err) {
+      const msgs = {
+        'auth/user-not-found': 'Email tidak terdaftar',
+        'auth/wrong-password': 'Password salah',
+        'auth/invalid-email': 'Format email tidak valid',
+        'auth/invalid-credential': 'Email atau password salah',
+        'auth/too-many-requests': 'Terlalu banyak percobaan, coba lagi nanti',
+      }
+      errEl.textContent = msgs[err.code] || 'Login gagal, coba lagi'
+      errEl.style.display = 'block'
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Masuk'
+    }
+  })
+</script>
+</body>
+</html>

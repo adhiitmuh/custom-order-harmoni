@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:24px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">MENU</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Dashboard</h1>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid-3" style="margin-bottom:20px" id="statsGrid">
+      <div class="card" style="text-align:center"><div class="loading">…</div></div>
+      <div class="card" style="text-align:center"><div class="loading">…</div></div>
+      <div class="card" style="text-align:center"><div class="loading">…</div></div>
+    </div>
+
+    <!-- Recent orders -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700">Order Terbaru</h2>
+        <a href="orders.html" class="btn btn-ghost btn-sm">Lihat Semua</a>
+      </div>
+      <div id="recentOrders"><div class="loading">Memuat…</div></div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth } from './js/auth.js'
+  import { collection, query, orderBy, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDateShort, paymentStatus, daysDiff } from './js/utils.js'
+
+  requireAuth(async (profile) => {
+    await loadStats()
+    await loadRecent()
+  })
+
+  async function loadStats() {
+    const snap = await getDocs(collection(db, 'orders'))
+    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const active = orders.filter(o => !['done','delivered','cancelled'].includes(o.status))
+    const unpaid = orders.filter(o => {
+      const total = o.totalPrice || 0
+      const paid = o.depositPaid || 0
+      return total > 0 && paid < total && o.status !== 'cancelled'
+    })
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px;font-weight:800;color:var(--green)">${orders.length}</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">Total Order</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px;font-weight:800;color:#1e40af">${active.length}</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">Sedang Berjalan</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px;font-weight:800;color:#b91c1c">${unpaid.length}</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">Belum Lunas</div>
+      </div>`
+  }
+
+  async function loadRecent() {
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(8))
+    const snap = await getDocs(q)
+    const el = document.getElementById('recentOrders')
+
+    if (snap.empty) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>Belum ada order</p></div>`
+      return
+    }
+
+    el.innerHTML = snap.docs.map(d => {
+      const o = { id: d.id, ...d.data() }
+      const meta = DIVISION_META[o.division] || {}
+      const dLeft = daysDiff(o.dueDate)
+      const isLate = dLeft < 0 && !['done','delivered','cancelled'].includes(o.status)
+      const pStatus = paymentStatus(o.totalPrice, o.depositPaid)
+      const sisa = (o.totalPrice || 0) - (o.depositPaid || 0)
+
+      return `<a href="order.html?id=${o.id}" style="display:block;text-decoration:none;padding:12px;border-radius:10px;border:1px solid rgba(3,69,67,.07);margin-bottom:8px;transition:background .1s" onmouseover="this.style.background='#f8f7f0'" onmouseout="this.style.background=''">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:38px;height:38px;border-radius:10px;background:var(--beige-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${meta.icon||'📦'}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">
+              <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber}</span>
+              <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
+              ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
+            </div>
+            <div style="font-weight:700;font-size:14px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;font-weight:700;color:${isLate?'#b91c1c':'rgba(3,69,67,.4)'}">${isLate?`⚠ ${Math.abs(dLeft)}h`:dLeft===0?'⏰ Hari ini':`${dLeft}h lagi`}</div>
+            <div style="font-size:11px;font-weight:700;color:var(--black);margin-top:2px">${fmtCurrency(o.totalPrice)}</div>
+            ${sisa>0&&o.totalPrice>0?`<div style="font-size:10px;color:#b91c1c">sisa ${fmtCurrency(sisa)}</div>`:''}
+          </div>
+        </div>
+      </a>`
+    }).join('')
+  }
+</script>
+</body>
+</html>

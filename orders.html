@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semua Order — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PESANAN</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Semua Order</h1>
+        <p id="orderCount" style="font-size:12px;color:rgba(3,69,67,.4);margin-top:3px;font-family:monospace">—</p>
+      </div>
+      <a href="new-order.html" class="btn btn-primary no-print" id="newOrderBtn" style="display:none">＋ Order Baru</a>
+    </div>
+
+    <!-- Filter -->
+    <div class="card no-print" style="margin-bottom:16px;padding:14px 16px">
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <input id="searchInput" placeholder="🔍 Cari nama / no. order…" style="flex:1 1 180px;border-radius:999px;padding:8px 14px;font-size:13px">
+        <select id="divFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Divisi</option>
+        </select>
+        <select id="statusFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Status</option>
+          <option value="pending">Menunggu Konfirmasi</option>
+          <option value="in-progress">Sedang Dikerjakan</option>
+          <option value="quality-check">Quality Check</option>
+          <option value="done">Selesai</option>
+          <option value="delivered">Sudah Dikirim</option>
+          <option value="cancelled">Dibatalkan</option>
+        </select>
+        <select id="payFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Pembayaran</option>
+          <option value="belum">Belum Bayar</option>
+          <option value="dp">DP</option>
+          <option value="lunas">Lunas</option>
+        </select>
+        <button id="resetBtn" class="btn btn-ghost btn-sm" style="display:none">Reset</button>
+      </div>
+    </div>
+
+    <div id="orderList"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { collection, query, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
+
+  let allOrders = []
+
+  // Populate division filter
+  const divSel = document.getElementById('divFilter')
+  DIVISIONS.forEach(d => {
+    const opt = document.createElement('option')
+    opt.value = d; opt.textContent = DIVISION_META[d].label
+    divSel.appendChild(opt)
+  })
+
+  requireAuth(async (profile) => {
+    if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
+
+    const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))
+    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    render()
+
+    ;['searchInput','divFilter','statusFilter','payFilter'].forEach(id =>
+      document.getElementById(id).addEventListener('input', render)
+    )
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      document.getElementById('searchInput').value = ''
+      document.getElementById('divFilter').value = ''
+      document.getElementById('statusFilter').value = ''
+      document.getElementById('payFilter').value = ''
+      render()
+    })
+  })
+
+  function render() {
+    const search = document.getElementById('searchInput').value.toLowerCase()
+    const div = document.getElementById('divFilter').value
+    const status = document.getElementById('statusFilter').value
+    const pay = document.getElementById('payFilter').value
+    const isFiltered = search || div || status || pay
+    document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
+
+    const profile = getProfile()
+    const showContact = profile?.role !== 'production'
+
+    const filtered = allOrders.filter(o => {
+      if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
+      if (div && o.division !== div) return false
+      if (status && o.status !== status) return false
+      if (pay) {
+        const total = o.totalPrice||0, paid = o.depositPaid||0
+        if (pay==='belum' && !(total>0 && paid===0)) return false
+        if (pay==='dp' && !(paid>0 && paid<total)) return false
+        if (pay==='lunas' && !(total>0 && paid>=total)) return false
+      }
+      return true
+    })
+
+    document.getElementById('orderCount').textContent = `${filtered.length} order ${isFiltered?'ditemukan':'total'}`
+
+    const el = document.getElementById('orderList')
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>Tidak ada order ditemukan</p></div>`
+      return
+    }
+
+    el.innerHTML = filtered.map(o => {
+      const meta = DIVISION_META[o.division] || {}
+      const dLeft = daysDiff(o.dueDate)
+      const isLate = dLeft < 0 && !['done','delivered','cancelled'].includes(o.status)
+      const isUrgent = dLeft >= 0 && dLeft <= 1 && !['done','delivered','cancelled'].includes(o.status)
+      const pStatus = paymentStatus(o.totalPrice, o.depositPaid)
+      const sisa = (o.totalPrice||0) - (o.depositPaid||0)
+      const borderColor = isLate ? 'rgba(239,68,68,.2)' : isUrgent ? 'rgba(245,158,11,.25)' : 'rgba(3,69,67,.08)'
+
+      return `<a href="order.html?id=${o.id}" style="display:block;text-decoration:none;background:var(--white);border-radius:14px;border:1px solid ${borderColor};margin-bottom:8px;overflow:hidden;transition:box-shadow .12s" onmouseover="this.style.boxShadow='0 2px 12px rgba(3,69,67,.08)'" onmouseout="this.style.boxShadow=''">
+        <div style="padding:14px 16px">
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="width:44px;height:44px;border-radius:12px;background:var(--beige-soft);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${meta.icon||'📦'}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+                <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber||''}</span>
+                <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
+                <span style="font-size:11px;color:rgba(3,69,67,.4)">${meta.label||''}</span>
+              </div>
+              <div style="font-weight:700;font-size:15px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
+              ${showContact && o.customerContact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace;margin-top:1px">${o.customerContact}</div>` : ''}
+            </div>
+            <div style="text-align:right;flex-shrink:0;font-size:11px;font-weight:700;color:${isLate?'#b91c1c':isUrgent?'#92400e':'rgba(3,69,67,.4)'}">
+              ${isLate?`⚠ ${Math.abs(dLeft)}h terlambat`:dLeft===0?'⏰ Hari ini':`${dLeft} hari lagi`}
+              <div style="font-weight:400;opacity:.6;font-size:10px;margin-top:2px">${o.dueDate ? new Date(o.dueDate.toDate ? o.dueDate.toDate() : o.dueDate).toLocaleDateString('id-ID',{day:'numeric',month:'short'}) : ''}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(3,69,67,.06)">
+            <div style="flex:1;display:flex;align-items:center;gap:8px">
+              <div class="progress-track" style="flex:1;max-width:120px">
+                <div class="progress-fill" style="width:${o.progressPercentage||0}%"></div>
+              </div>
+              <span class="mono" style="font-size:11px;font-weight:600;color:var(--green);opacity:.7">${o.progressPercentage||0}%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;text-align:right;font-size:12px">
+              ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
+              <div>
+                <div style="font-weight:700;color:var(--black)">${fmtCurrency(o.totalPrice)}</div>
+                ${sisa>0&&o.totalPrice>0?`<div style="color:#b91c1c;font-weight:600;font-size:11px">sisa ${fmtCurrency(sisa)}</div>`:''}
+              </div>
+            </div>
+          </div>
+        </div>
+      </a>`
+    }).join('')
+  }
+</script>
+</body>
+</html>

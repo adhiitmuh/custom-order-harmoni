@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Pengguna — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:700px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">REFERENSI</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Pengguna</h1>
+      </div>
+      <button onclick="showAddForm()" class="btn btn-primary">＋ Tambah Pengguna</button>
+    </div>
+
+    <div id="error" class="alert alert-error" style="display:none"></div>
+    <div id="success" class="alert alert-success" style="display:none"></div>
+
+    <!-- Add user form -->
+    <div id="addForm" class="card" style="display:none;margin-bottom:20px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Tambah Pengguna Baru</h2>
+      <div class="grid-2">
+        <div class="form-group"><label>Nama Lengkap <span class="req">*</span></label><input type="text" id="newName" placeholder="Nama pengguna"></div>
+        <div class="form-group">
+          <label>Role <span class="req">*</span></label>
+          <select id="newRole">
+            <option value="cs">CS (Customer Service)</option>
+            <option value="production">Tim Produksi</option>
+            <option value="owner">Owner</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" id="newEmail" placeholder="email@harmoni.id"></div>
+        <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="hideAddForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+        <button onclick="addUser()" class="btn btn-primary" style="flex:1;justify-content:center" id="addBtn">Buat Akun</button>
+      </div>
+    </div>
+
+    <!-- User list -->
+    <div id="userList"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { auth, db } from './js/config.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+
+  const ROLE_LABEL = { owner: 'Owner', cs: 'CS', production: 'Tim Produksi' }
+
+  requireAuth(async (profile) => {
+    if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
+    await loadUsers()
+  })
+
+  async function loadUsers() {
+    const snap = await getDocs(collection(db,'users'))
+    const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const el = document.getElementById('userList')
+
+    if (!users.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>Belum ada pengguna</p></div>'
+      return
+    }
+
+    el.innerHTML = users.map(u => `
+      <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:14px">
+        <div class="avatar" style="width:40px;height:40px;font-size:16px;background:rgba(3,69,67,.1);color:var(--green)">${(u.name||'U')[0].toUpperCase()}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
+          <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
+        </div>
+        <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
+        ${u.id !== getProfile()?.id ? `<button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
+      </div>`).join('')
+  }
+
+  window.showAddForm = () => { document.getElementById('addForm').style.display = ''; document.getElementById('newName').focus() }
+  window.hideAddForm = () => { document.getElementById('addForm').style.display = 'none' }
+
+  window.addUser = async function() {
+    const name = document.getElementById('newName').value.trim()
+    const email = document.getElementById('newEmail').value.trim()
+    const password = document.getElementById('newPassword').value
+    const role = document.getElementById('newRole').value
+    const errEl = document.getElementById('error')
+    const sucEl = document.getElementById('success')
+    errEl.style.display='none'; sucEl.style.display='none'
+
+    if (!name||!email||!password) { errEl.textContent='Semua field harus diisi'; errEl.style.display=''; return }
+    if (password.length<6) { errEl.textContent='Password minimal 6 karakter'; errEl.style.display=''; return }
+
+    const btn = document.getElementById('addBtn')
+    btn.disabled=true; btn.textContent='Membuat akun…'
+
+    // Save current session
+    const currentUser = auth.currentUser
+    const currentEmail = currentUser?.email
+
+    try {
+      // Create new user (this signs in as new user)
+      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      const newUid = cred.user.uid
+
+      // Save to Firestore
+      await setDoc(doc(db,'users',newUid), { name, email, role, createdAt: Timestamp.now() })
+
+      // Re-sign in as owner
+      if (currentEmail) {
+        // We can't re-auth without password, so reload will trigger onAuthStateChanged
+        // Store a flag and reload
+        sessionStorage.setItem('reauth_needed', '1')
+      }
+
+      sucEl.textContent = `Akun ${name} berhasil dibuat! Silakan login ulang jika diperlukan.`
+      sucEl.style.display=''
+      hideAddForm()
+      await loadUsers()
+    } catch(err) {
+      const msgs = {
+        'auth/email-already-in-use': 'Email sudah digunakan',
+        'auth/invalid-email': 'Format email tidak valid',
+        'auth/weak-password': 'Password terlalu lemah',
+      }
+      errEl.textContent = msgs[err.code] || err.message
+      errEl.style.display=''
+    } finally { btn.disabled=false; btn.textContent='Buat Akun' }
+  }
+
+  window.deleteUser = async function(uid, name) {
+    if (!confirm(`Hapus pengguna ${name}? Data Firestore-nya akan dihapus, tapi akun Firebase Auth-nya perlu dihapus manual di Firebase Console.`)) return
+    try {
+      await deleteDoc(doc(db,'users',uid))
+      await loadUsers()
+    } catch(err) {
+      document.getElementById('error').textContent = err.message
+      document.getElementById('error').style.display=''
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detail Order — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body { background: white; }
+      .invoice-doc { box-shadow: none !important; border: none !important; }
+    }
+    .print-only { display: none; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:960px">
+    <div id="pageContent"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db, storage } from './js/config.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo } from './js/utils.js'
+
+  const params = new URLSearchParams(location.search)
+  const orderId = params.get('id')
+  if (!orderId) { location.href = 'orders.html' }
+
+  let order = null
+
+  requireAuth(async (profile) => {
+    await loadOrder(profile)
+  })
+
+  async function loadOrder(profile) {
+    const snap = await getDoc(doc(db,'orders',orderId))
+    if (!snap.exists()) { document.getElementById('pageContent').innerHTML = '<p>Order tidak ditemukan</p>'; return }
+    order = { id: snap.id, ...snap.data() }
+
+    const updSnap = await getDocs(query(collection(db,'orders',orderId,'progress_updates'), orderBy('createdAt','desc')))
+    order.progressUpdates = updSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    renderPage(profile)
+  }
+
+  function renderPage(profile) {
+    const meta = DIVISION_META[order.division] || {}
+    const showContact = profile.role !== 'production'
+    const canEdit = profile.role === 'owner' || profile.role === 'cs'
+    const sisa = (order.totalPrice||0) - (order.depositPaid||0)
+    const pStatus = paymentStatus(order.totalPrice, order.depositPaid)
+    const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
+
+    document.title = `${order.orderNumber} — Harmoni`
+
+    document.getElementById('pageContent').innerHTML = `
+      <!-- Header -->
+      <div class="no-print" style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:12px">
+          <a href="orders.html" style="color:rgba(3,69,67,.4);font-size:13px;text-decoration:none">← Kembali</a>
+          <span style="color:rgba(3,69,67,.2)">|</span>
+          <span style="font-size:24px">${meta.icon||'📦'}</span>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="mono" style="font-size:12px;color:rgba(3,69,67,.4)">${order.orderNumber}</span>
+              <span class="badge ${STATUS_CLASS[order.status]}">${STATUS_LABEL[order.status]}</span>
+            </div>
+            <h1 style="font-size:20px;font-weight:800;color:var(--black)">${order.customerName}</h1>
+          </div>
+        </div>
+        <button onclick="showInvoice()" class="btn btn-primary no-print">📄 Invoice</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:20px" class="no-print">
+        <!-- Left -->
+        <div>
+          <!-- Order info -->
+          <div class="card" style="margin-bottom:16px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Detail Order</h2>
+            <div class="grid-2" style="gap:14px;font-size:13px">
+              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Divisi</p><p style="font-weight:600">${meta.label||''}</p></div>
+              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
+              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p></div>
+              ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
+            </div>
+            ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
+          </div>
+
+          <!-- Files -->
+          ${order.designFiles?.length ? `
+          <div class="card" style="margin-bottom:16px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">File Desain</h2>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              ${order.designFiles.map((f,i) => {
+                const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(f)
+                return isImg
+                  ? `<a href="${f}" target="_blank"><img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`
+                  : `<a href="${f}" target="_blank" style="width:80px;height:80px;border-radius:8px;border:1px solid rgba(3,69,67,.1);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:24px;text-decoration:none">📎<span style="font-size:10px;color:rgba(3,69,67,.5);margin-top:4px">File ${i+1}</span></a>`
+              }).join('')}
+            </div>
+          </div>` : ''}
+
+          <!-- Progress -->
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+              <h2 style="font-size:14px;font-weight:700">Progress</h2>
+              <button onclick="toggleProgressForm()" class="btn btn-ghost btn-sm" id="progressToggleBtn">+ Update Progress</button>
+            </div>
+            <div style="margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(3,69,67,.5);margin-bottom:4px">
+                <span>Pengerjaan</span><span style="font-weight:700" id="progressPctLabel">${order.progressPercentage||0}%</span>
+              </div>
+              <div class="progress-track" style="height:10px">
+                <div class="progress-fill" style="width:${order.progressPercentage||0}%"></div>
+              </div>
+            </div>
+            <div id="progressForm" style="display:none;background:var(--beige-soft);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid rgba(3,69,67,.08)">
+              <label style="font-size:12px;margin-bottom:4px">Persentase (<span id="rangeLabel">${order.progressPercentage||0}</span>%)</label>
+              <input type="range" id="progressRange" min="0" max="100" step="5" value="${order.progressPercentage||0}"
+                oninput="document.getElementById('rangeLabel').textContent=this.value"
+                style="width:100%;accent-color:var(--green);margin-bottom:10px">
+              <textarea id="progressNote" placeholder="Keterangan update progress…" rows="2" style="margin-bottom:8px"></textarea>
+              <div style="display:flex;gap:8px">
+                <button onclick="toggleProgressForm()" class="btn btn-ghost btn-sm" style="flex:1">Batal</button>
+                <button onclick="saveProgress()" class="btn btn-primary btn-sm" style="flex:1" id="saveProgressBtn">Simpan</button>
+              </div>
+            </div>
+            <div id="progressTimeline">
+              ${order.progressUpdates?.length ? order.progressUpdates.map(u => `
+                <div style="display:flex;gap:10px;margin-bottom:10px">
+                  <div style="flex-shrink:0;margin-top:5px;width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
+                  <div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="font-size:12px;font-weight:700;color:var(--green)">${u.percentage}%</span>
+                      <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
+                      <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${u.updatedByName||'tim'}</span>
+                    </div>
+                    <p style="font-size:13px;margin-top:2px">${u.note}</p>
+                  </div>
+                </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px 0">Belum ada update progress</p>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- Right panel -->
+        <div>
+          <!-- Payment -->
+          <div class="card" style="margin-bottom:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700">Pembayaran</h2>
+              <div style="display:flex;align-items:center;gap:6px">
+                ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
+                ${canEdit ? `<button onclick="togglePaymentEdit()" class="btn btn-ghost btn-sm" id="payEditBtn">Edit</button>` : ''}
+              </div>
+            </div>
+            <div id="paymentView">
+              <div style="font-size:13px;space-y:6px">
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:rgba(3,69,67,.5)">Total</span><span style="font-weight:700">${fmtCurrency(order.totalPrice)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:rgba(3,69,67,.5)">DP Masuk</span><span style="font-weight:700;color:#059669">${fmtCurrency(order.depositPaid)}</span></div>
+                <hr class="sep">
+                <div style="display:flex;justify-content:space-between"><span style="color:rgba(3,69,67,.5)">Sisa</span><span style="font-weight:800;font-size:15px;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</span></div>
+              </div>
+              ${sisa>0&&(order.totalPrice||0)>0&&canEdit ? `<button onclick="markPaid()" class="btn btn-green" style="width:100%;margin-top:12px;justify-content:center" id="markPaidBtn">✓ Tandai Lunas</button>` : ''}
+              ${isPaid ? `<div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;font-weight:700;font-size:13px;color:#065f46">✅ LUNAS</div>` : ''}
+            </div>
+            <div id="paymentEdit" style="display:none">
+              <div class="form-group" style="margin-bottom:10px">
+                <label style="font-size:12px">Total Harga (Rp)</label>
+                <input type="number" id="editTotal" value="${order.totalPrice||0}" min="0">
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label style="font-size:12px">DP Masuk (Rp)</label>
+                <input type="number" id="editDp" value="${order.depositPaid||0}" min="0">
+              </div>
+              <button onclick="savePayment()" class="btn btn-primary" style="width:100%;justify-content:center" id="savePayBtn">Simpan</button>
+            </div>
+          </div>
+
+          <!-- Status -->
+          ${canEdit ? `
+          <div class="card" style="margin-bottom:14px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">Ubah Status</h2>
+            ${[
+              ['pending','⏳ Menunggu Konfirmasi'],
+              ['in-progress','🔧 Sedang Dikerjakan'],
+              ['quality-check','🔍 Quality Check'],
+              ['done','✅ Selesai'],
+              ['delivered','📦 Sudah Dikirim'],
+              ['cancelled','❌ Dibatalkan'],
+            ].map(([v,l]) => `
+              <button onclick="changeStatus('${v}')" class="sidebar-link" style="${order.status===v?'background:rgba(3,69,67,.08);color:var(--green);font-weight:700;opacity:1':'color:var(--black);opacity:.65'};width:100%;border-radius:8px;padding:8px 10px;margin-bottom:4px;font-size:12.5px">
+                ${l}
+              </button>`).join('')}
+          </div>` : ''}
+
+          <!-- Meta -->
+          <p style="font-size:11px;color:rgba(3,69,67,.35);padding:0 4px">
+            Dibuat: ${fmtDate(order.createdAt)}<br>
+            Diupdate: ${timeAgo(order.updatedAt)}
+          </p>
+        </div>
+      </div>
+
+      <!-- Invoice (print-only) -->
+      <div class="print-only" id="invoiceDoc"></div>
+    `
+
+    renderInvoiceDoc()
+  }
+
+  function renderInvoiceDoc() {
+    const meta = DIVISION_META[order.division] || {}
+    const sisa = (order.totalPrice||0) - (order.depositPaid||0)
+    const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
+    document.getElementById('invoiceDoc').innerHTML = `
+      <div class="invoice-doc" style="max-width:640px;margin:0 auto;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:0 4px 40px rgba(3,69,67,.12)">
+        <div style="background:var(--green);padding:28px 36px;position:relative">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:12px">
+              <svg viewBox="0 0 100 100" width="36" height="36"><circle cx="74" cy="20" r="11" fill="#FFFBD5"/><rect x="22" y="8" width="22" height="80" fill="#FFFBD5"/><path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#FFFBD5"/></svg>
+              <div><div style="font-weight:800;font-size:18px;color:var(--beige);letter-spacing:-.03em">harmoni</div><div style="font-size:8px;color:var(--beige);opacity:.4;letter-spacing:.1em;font-family:monospace">PT CITRA HARMONIS</div></div>
+            </div>
+            <div style="text-align:right"><div style="font-size:10px;color:var(--beige);opacity:.5;letter-spacing:.06em">INVOICE</div><div style="font-family:monospace;font-weight:700;font-size:13px;color:var(--beige)">${order.orderNumber}</div></div>
+          </div>
+        </div>
+        <div style="padding:28px 36px">
+          <div style="display:flex;align-items:center;gap:12px;padding-bottom:18px;border-bottom:1px solid rgba(3,69,67,.08);margin-bottom:22px">
+            <span style="font-size:26px">${meta.icon||''}</span>
+            <div><div style="font-weight:700;font-size:14px">${meta.label||''}</div><div style="font-size:11px;color:rgba(3,69,67,.5)">${STATUS_LABEL[order.status]}</div></div>
+            <div style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:var(--beige-soft)">
+              <div style="width:36px;height:3px;background:rgba(3,69,67,.15);border-radius:2px;overflow:hidden"><div style="height:100%;width:${order.progressPercentage||0}%;background:var(--green)"></div></div>
+              <span style="font-family:monospace;font-size:11px;font-weight:700;color:var(--green)">${order.progressPercentage||0}%</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:22px">
+            <div>
+              <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
+              <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
+              ${order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
+            </div>
+            <div style="text-align:right">
+              <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
+              <div><span style="font-size:10px;color:rgba(3,69,67,.4)">Target Selesai</span><div style="font-weight:600;font-size:12px">${fmtDate(order.dueDate)}</div></div>
+            </div>
+          </div>
+          ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p></div>` : ''}
+          <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
+            <thead><tr style="border-bottom:1.5px solid rgba(3,69,67,.12)"><th style="text-align:left;padding-bottom:8px;font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em">KETERANGAN</th><th style="text-align:right;padding-bottom:8px;font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em">JUMLAH</th></tr></thead>
+            <tbody>
+              <tr style="border-bottom:1px solid rgba(3,69,67,.06)"><td style="padding:12px 0;font-size:13px">Pesanan ${meta.label||''}</td><td style="padding:12px 0;text-align:right;font-weight:700;font-size:14px">${fmtCurrency(order.totalPrice)}</td></tr>
+              <tr style="border-bottom:1px solid rgba(3,69,67,.06)"><td style="padding:10px 0;font-size:12px;color:rgba(3,69,67,.6)">DP / Down Payment</td><td style="padding:10px 0;text-align:right;font-size:12px;color:#059669;font-weight:600">− ${fmtCurrency(order.depositPaid)}</td></tr>
+            </tbody>
+            <tfoot><tr><td style="padding-top:14px;font-weight:800;font-size:15px">Total Sisa Bayar</td><td style="padding-top:14px;text-align:right;font-weight:800;font-size:20px;color:var(--green)">${fmtCurrency(sisa)}</td></tr></tfoot>
+          </table>
+          ${isPaid ? `<div style="background:rgba(5,150,105,.07);border:1.5px solid rgba(5,150,105,.2);border-radius:10px;padding:12px;text-align:center;font-weight:700;font-size:13px;color:#065f46;margin-bottom:22px">✅ LUNAS</div>` : ''}
+          <div style="border-top:1px solid rgba(3,69,67,.08);padding-top:18px;text-align:center">
+            <p style="font-size:12px;color:rgba(3,69,67,.6)">Terima kasih telah mempercayakan pesanan Anda kepada <strong>Harmoni</strong></p>
+            <p style="font-family:monospace;font-size:9px;color:rgba(3,69,67,.35);margin-top:6px">PT Citra Harmonis · Makassar, Sulawesi Selatan</p>
+          </div>
+        </div>
+      </div>`
+  }
+
+  window.toggleProgressForm = function() {
+    const f = document.getElementById('progressForm')
+    f.style.display = f.style.display === 'none' ? '' : 'none'
+  }
+
+  window.saveProgress = async function() {
+    const note = document.getElementById('progressNote').value.trim()
+    const pct = Number(document.getElementById('progressRange').value)
+    if (!note) return
+    const btn = document.getElementById('saveProgressBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      const profile = getProfile()
+      const now = Timestamp.now()
+      await addDoc(collection(db,'orders',orderId,'progress_updates'), {
+        note, percentage: pct,
+        updatedBy: profile.id,
+        updatedByName: profile.name,
+        createdAt: now,
+      })
+      await updateDoc(doc(db,'orders',orderId), {
+        progressPercentage: pct,
+        status: pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status),
+        updatedAt: now,
+      })
+      await loadOrder(profile)
+    } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.togglePaymentEdit = function() {
+    const v = document.getElementById('paymentView')
+    const e = document.getElementById('paymentEdit')
+    const btn = document.getElementById('payEditBtn')
+    const isEditing = e.style.display !== 'none'
+    v.style.display = isEditing ? '' : 'none'
+    e.style.display = isEditing ? 'none' : ''
+    btn.textContent = isEditing ? 'Edit' : 'Batal'
+  }
+
+  window.savePayment = async function() {
+    const btn = document.getElementById('savePayBtn')
+    btn.disabled=true; btn.textContent='Menyimpan…'
+    try {
+      await updateDoc(doc(db,'orders',orderId), {
+        totalPrice: Number(document.getElementById('editTotal').value)||0,
+        depositPaid: Number(document.getElementById('editDp').value)||0,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.markPaid = async function() {
+    const btn = document.getElementById('markPaidBtn')
+    if (btn) { btn.disabled=true; btn.textContent='Menyimpan…' }
+    try {
+      await updateDoc(doc(db,'orders',orderId), {
+        depositPaid: order.totalPrice||0,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Tandai Lunas' } }
+  }
+
+  window.changeStatus = async function(status) {
+    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: Timestamp.now() })
+    await loadOrder(getProfile())
+  }
+
+  window.showInvoice = function() {
+    // Switch to invoice view for printing
+    document.querySelectorAll('.no-print').forEach(el => el.style.display='none')
+    document.querySelectorAll('.print-only').forEach(el => el.style.display='block')
+    document.querySelector('.main').style.padding='0'
+    document.querySelector('.main').style.marginLeft='0'
+    document.getElementById('sidebar').style.display='none'
+    // Add action bar
+    const bar = document.createElement('div')
+    bar.style.cssText='position:fixed;top:0;left:0;right:0;background:var(--beige-soft);padding:12px 20px;display:flex;gap:10px;z-index:999;border-bottom:1px solid rgba(3,69,67,.1)'
+    bar.innerHTML=`
+      <button onclick="backFromInvoice()" class="btn btn-ghost btn-sm">← Kembali</button>
+      <div style="flex:1"></div>
+      <button onclick="window.print()" class="btn btn-ghost btn-sm">🖨️ Print</button>
+      <button onclick="sendWA()" class="btn" style="background:#25D366;color:white;border:none;font-size:13px;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer">📱 WhatsApp</button>`
+    document.body.prepend(bar)
+    window.scrollTo(0,0)
+  }
+
+  window.backFromInvoice = function() { location.reload() }
+
+  window.sendWA = function() {
+    const sisa = (order.totalPrice||0) - (order.depositPaid||0)
+    const isPaid = sisa <= 0 && (order.totalPrice||0)>0
+    const lines = [
+      `*INVOICE HARMONI*`, ``,
+      `No. Order: *${order.orderNumber}*`,
+      `Divisi: ${DIVISION_META[order.division]?.label}`,
+      `Status: ${STATUS_LABEL[order.status]}`, ``,
+      `*Pemesan:* ${order.customerName}`,
+      `*Tanggal Pesan:* ${fmtDate(order.orderDate)}`,
+      `*Target Selesai:* ${fmtDate(order.dueDate)}`, ``,
+      `*RINCIAN PEMBAYARAN*`,
+      `Total Harga: ${fmtCurrency(order.totalPrice)}`,
+      `DP Dibayar: ${fmtCurrency(order.depositPaid)}`,
+      `Sisa Bayar: *${fmtCurrency(sisa)}*`, ``,
+      order.notes ? `Catatan: ${order.notes}\n` : '',
+      `Progress: ${order.progressPercentage||0}%`, ``,
+      isPaid ? `✅ Status Pembayaran: LUNAS` : `⚠ Mohon segera melunasi sisa pembayaran`, ``,
+      `Terima kasih telah mempercayakan pesanan Anda kepada *Harmoni* 🙏`,
+      `_PT Citra Harmonis · Makassar_`,
+    ].filter(Boolean).join('\n')
+    const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
+    const url = contact.startsWith('62')
+      ? `https://wa.me/${contact}?text=${encodeURIComponent(lines)}`
+      : `https://wa.me/?text=${encodeURIComponent(lines)}`
+    window.open(url,'_blank')
+  }
+</script>
+</body>
+</html>

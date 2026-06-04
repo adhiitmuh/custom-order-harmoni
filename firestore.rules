@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuth() { return request.auth != null; }
+    function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function isOwner() { return isAuth() && role() == 'owner'; }
+    function isOwnerOrCS() { return isAuth() && role() in ['owner','cs']; }
+
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow write: if isOwner() || request.auth.uid == uid;
+    }
+    match /orders/{orderId} {
+      allow read: if isAuth();
+      allow create: if isOwnerOrCS();
+      allow update: if isAuth();
+      allow delete: if isOwner();
+    }
+    match /orders/{orderId}/progress_updates/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow delete: if isOwner();
+    }
+    match /product_knowledge/{id} {
+      allow read: if isAuth();
+      allow write: if isOwnerOrCS();
+    }
+    match /order_counters/{div} {
+      allow read, write: if isAuth();
+    }
+  }
+}

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Knowledge — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:800px">
+    <div style="margin-bottom:24px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">REFERENSI</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)" id="pageTitle">Product Knowledge</h1>
+    </div>
+
+    <!-- Division tabs -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px" id="divTabs"></div>
+
+    <div id="knowledgeContent"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<!-- Edit modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:80vh;overflow-y:auto">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:16px" id="modalTitle">Edit Konten</h3>
+    <div class="form-group"><label>Judul</label><input type="text" id="modalTitleInput"></div>
+    <div class="form-group"><label>Konten</label><textarea id="modalContent" rows="10" style="font-family:monospace;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="saveSection()" class="btn btn-primary" style="flex:1;justify-content:center" id="modalSaveBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { collection, query, where, orderBy, getDocs, doc, setDoc, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS } from './js/utils.js'
+
+  const params = new URLSearchParams(location.search)
+  let activeDiv = params.get('div') || ''
+  let editingDocId = null
+  let sections = []
+
+  requireAuth(async (profile) => {
+    renderTabs(profile)
+    await loadContent(profile)
+  })
+
+  function renderTabs(profile) {
+    const el = document.getElementById('divTabs')
+    const allBtn = document.createElement('button')
+    allBtn.className = `btn btn-sm ${!activeDiv?'btn-primary':'btn-ghost'}`
+    allBtn.textContent = '📖 Semua'
+    allBtn.onclick = () => { activeDiv=''; history.pushState(null,'','knowledge.html'); loadContent(profile); renderTabs(profile) }
+    el.appendChild(allBtn)
+
+    DIVISIONS.forEach(d => {
+      const meta = DIVISION_META[d]
+      const btn = document.createElement('button')
+      btn.className = `btn btn-sm ${activeDiv===d?'btn-primary':'btn-ghost'}`
+      btn.innerHTML = `${meta.icon} ${meta.label}`
+      btn.onclick = () => { activeDiv=d; history.pushState(null,'',`knowledge.html?div=${d}`); loadContent(profile); renderTabs(profile) }
+      el.appendChild(btn)
+    })
+  }
+
+  async function loadContent(profile) {
+    const el = document.getElementById('knowledgeContent')
+    el.innerHTML = '<div class="loading">Memuat…</div>'
+
+    const canEdit = profile.role==='owner' || profile.role==='cs'
+    const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
+    let allSections = []
+
+    for (const d of divsToShow) {
+      const q = query(collection(db,'product_knowledge'), where('division','==',d), orderBy('orderIndex'))
+      const snap = await getDocs(q)
+      allSections.push(...snap.docs.map(x => ({ id: x.id, ...x.data() })))
+    }
+
+    // Seed if empty
+    if (allSections.length === 0 && profile.role === 'owner') {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📚</div><p>Belum ada konten</p><button onclick="seedKnowledge()" class="btn btn-primary" style="margin-top:14px">Isi Data Default</button></div>`
+      window.seedKnowledge = async () => { await doSeed(); await loadContent(profile) }
+      return
+    }
+
+    sections = allSections
+    document.getElementById('pageTitle').textContent = activeDiv ? DIVISION_META[activeDiv]?.label || 'Product Knowledge' : 'Product Knowledge'
+
+    el.innerHTML = divsToShow.map(d => {
+      const divSections = allSections.filter(s => s.division === d)
+      if (!divSections.length && !activeDiv) return ''
+      const meta = DIVISION_META[d]
+      return `
+        <div style="margin-bottom:24px">
+          ${!activeDiv ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:22px">${meta.icon}</span><h2 style="font-size:17px;font-weight:800;color:var(--black)">${meta.label}</h2></div>` : ''}
+          ${divSections.map(s => `
+            <div class="card" style="margin-bottom:12px" id="sec-${s.id}">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px">
+                <h3 style="font-size:14px;font-weight:700;color:var(--black)">${s.title}</h3>
+                ${canEdit ? `<div style="display:flex;gap:6px;flex-shrink:0">
+                  <button onclick="openEdit('${s.id}')" class="btn btn-ghost btn-sm">Edit</button>
+                  <button onclick="deleteSection('${s.id}')" class="btn btn-danger btn-sm">Hapus</button>
+                </div>` : ''}
+              </div>
+              <div style="font-size:13px;line-height:1.7;color:rgba(3,69,67,.75);white-space:pre-wrap">${renderContent(s.content)}</div>
+            </div>`).join('')}
+          ${canEdit ? `<button onclick="openAdd('${d}')" class="btn btn-ghost btn-sm" style="margin-bottom:8px">＋ Tambah Konten</button>` : ''}
+        </div>`
+    }).join('')
+  }
+
+  function renderContent(text) {
+    return text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+  }
+
+  window.openEdit = function(id) {
+    const s = sections.find(x => x.id === id)
+    if (!s) return
+    editingDocId = id
+    document.getElementById('modalTitle').textContent = 'Edit Konten'
+    document.getElementById('modalTitleInput').value = s.title
+    document.getElementById('modalContent').value = s.content
+    document.getElementById('editModal').style.display = 'flex'
+  }
+
+  window.openAdd = function(division) {
+    editingDocId = null
+    window._addDiv = division
+    document.getElementById('modalTitle').textContent = 'Tambah Konten'
+    document.getElementById('modalTitleInput').value = ''
+    document.getElementById('modalContent').value = ''
+    document.getElementById('editModal').style.display = 'flex'
+  }
+
+  window.closeModal = function() {
+    document.getElementById('editModal').style.display = 'none'
+  }
+
+  window.saveSection = async function() {
+    const btn = document.getElementById('modalSaveBtn')
+    btn.disabled=true; btn.textContent='Menyimpan…'
+    const title = document.getElementById('modalTitleInput').value.trim()
+    const content = document.getElementById('modalContent').value.trim()
+    if (!title || !content) { btn.disabled=false; btn.textContent='Simpan'; return }
+    try {
+      if (editingDocId) {
+        await setDoc(doc(db,'product_knowledge',editingDocId), { title, content, updatedAt: Timestamp.now() }, { merge: true })
+      } else {
+        const divSections = sections.filter(s => s.division===window._addDiv)
+        await addDoc(collection(db,'product_knowledge'), {
+          division: window._addDiv, title, content,
+          orderIndex: divSections.length,
+          updatedAt: Timestamp.now(),
+        })
+      }
+      closeModal()
+      await loadContent(getProfile())
+    } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.deleteSection = async function(id) {
+    if (!confirm('Hapus konten ini?')) return
+    await deleteDoc(doc(db,'product_knowledge',id))
+    await loadContent(getProfile())
+  }
+
+  async function doSeed() {
+    const now = Timestamp.now()
+    const data = [
+      { division:'bordir', title:'Jenis Layanan Bordir', orderIndex:0, content:`**Bordir Komputer**\nHasil rapi dan konsisten untuk produksi massal. Cocok untuk logo perusahaan, nama, dan desain detail.\n\n**Bordir 3D (Timbul)**\nMemberikan efek timbul pada desain. Premium dan eksklusif.\n\n**Bordir Patch / Emblem**\nBordir diatas kain khusus (twill/kanvas) yang bisa dipasang/dijahit kemudian.` },
+      { division:'bordir', title:'Aplikasi & Bahan', orderIndex:1, content:`**Bisa Dibordir Pada:**\n- Kaos, kemeja, polo shirt\n- Jaket (parasut, fleece, bomber)\n- Topi (trucker, baseball, snapback)\n- Tas, ransel, pouch\n- Seragam kerja, sekolah, komunitas\n\n**Ukuran Desain:**\nMaksimal 30x30cm per desain. Untuk logo dada biasanya 8-12cm.` },
+      { division:'bordir', title:'Harga & Estimasi Waktu', orderIndex:2, content:`**Estimasi Harga:**\n- Bordir kecil (s/d 5cm): Rp 15.000 - 25.000\n- Bordir sedang (5-15cm): Rp 25.000 - 75.000\n- Bordir besar (15-30cm): Rp 75.000 - 150.000\n\n**Estimasi Waktu:**\n- 1-5 pcs: 3-5 hari kerja\n- 6-50 pcs: 5-10 hari kerja\n- 50+ pcs: 10-21 hari kerja` },
+      { division:'bordir', title:'Cara Pemesanan', orderIndex:3, content:`1. Kirim desain (JPG/PNG/AI/CDR) resolusi tinggi\n2. Sebutkan bahan/produk yang akan dibordir\n3. Konfirmasi ukuran dan posisi bordir\n4. DP 50% sebelum pengerjaan\n5. Pelunasan saat produk selesai` },
+      { division:'papan-nama', title:'Jenis Papan Nama', orderIndex:0, content:`**Papan Nama US (Umum/Standar)**\nTerbuat dari bahan akrilik atau plastik keras. Warna solid dengan tulisan timbul atau cetak.\n\n**Papan Nama KL (Kulit/Leather)**\nTerbuat dari kulit sintetis atau kulit asli premium. Tampilan lebih elegan dan formal.` },
+      { division:'papan-nama', title:'Ukuran & Spesifikasi', orderIndex:1, content:`**Ukuran Standar:**\n- Kecil: 8 x 2 cm\n- Sedang: 10 x 2.5 cm\n- Besar: 12 x 3 cm\n\n**Pemasangan:**\n- Pin belakang (jarum)\n- Magnet\n- Velcro (kait)\n- Dijahit langsung` },
+      { division:'papan-nama', title:'Harga & Estimasi Waktu', orderIndex:2, content:`**Estimasi Harga:**\n- Papan nama US standar: Rp 8.000 - 20.000/pcs\n- Papan nama KL (kulit): Rp 25.000 - 65.000/pcs\n\n**Minimum Order:**\n- Papan nama US: 10 pcs\n- Papan nama KL: 5 pcs\n\n**Estimasi Waktu:**\n- 1-50 pcs: 3-5 hari kerja\n- 51-200 pcs: 5-10 hari kerja` },
+      { division:'konveksi', title:'Jenis Produk Konveksi', orderIndex:0, content:`**Seragam Kerja & Kantor**\nKemeja, polo shirt, rompi, jaket corporate.\n\n**Seragam Sekolah & Universitas**\nBaju putih, seragam pramuka, jas almamater, batik sekolah.\n\n**Pakaian Komunitas & Organisasi**\nKaos komunitas, jaket organisasi, seragam tim.` },
+      { division:'konveksi', title:'Harga & Minimum Order', orderIndex:1, content:`**Minimum Order:**\n- Kaos: 24 pcs/model/warna\n- Kemeja/Polo: 12 pcs/model/warna\n- Jaket: 12 pcs/model/warna\n\n**Estimasi Harga:**\n- Kaos polos: Rp 35.000 - 75.000/pcs\n- Kemeja standar: Rp 75.000 - 150.000/pcs\n- Jaket: Rp 150.000 - 350.000/pcs` },
+      { division:'tailor', title:'Layanan Tailor', orderIndex:0, content:`**Jahit Custom (Dari Kain)**\nBuat pakaian dari nol sesuai desain dan ukuran badan Anda.\n\n**Permak/Alterasi**\nUbah ukuran pakaian yang sudah ada agar lebih pas.\n\n**Repair**\nPerbaiki kerusakan pakaian: ritsleting, kancing, sobekan.` },
+      { division:'tailor', title:'Harga & Waktu', orderIndex:1, content:`**Estimasi Harga:**\n- Kemeja custom: Rp 150.000 - 350.000\n- Celana panjang: Rp 120.000 - 300.000\n- Jas/Blazer: Rp 500.000 - 1.500.000\n- Permak/alterasi: Rp 25.000 - 150.000\n\n**Estimasi Waktu:**\n- Permak sederhana: 1-3 hari\n- Pakaian custom: 7-14 hari` },
+      { division:'jersey', title:'Jenis Jersey', orderIndex:0, content:`**Jersey Futsal**\nModel V-neck atau O-neck, bahan dryfit. Termasuk jersey + celana.\n\n**Jersey Basket**\nModel sleeveless (tanpa lengan), bahan mesh atau dryfit.\n\n**Jersey Voli / Badminton**\nModel polo atau V-neck, ringan dan menyerap keringat.\n\n**Jersey Running / Cycling**\nModel sporty dengan potongan ergonomis.\n\n**Jersey Komunitas / Esports**\nDesain bebas, cocok untuk komunitas gaming, OSIS, dll.` },
+      { division:'jersey', title:'Teknik Printing', orderIndex:1, content:`**Sublimasi (Full Print)**\nWarna cerah, tahan lama, bisa full warna/gradasi.\n\n**Bahan Tersedia:**\n- Dryfit milky (halus, anti kusut)\n- Dryfit biasa (standar)\n- Polyester mesh\n\n**Customisasi:**\n- Nama pemain di punggung\n- Nomor punggung & dada\n- Logo club/sponsor` },
+      { division:'jersey', title:'Harga & Minimum Order', orderIndex:2, content:`**Minimum Order:**\n- 11 pcs per set (1 tim futsal/voli)\n\n**Estimasi Harga:**\n- Jersey standar (dryfit biasa): Rp 65.000 - 100.000/pcs\n- Jersey premium (dryfit milky): Rp 100.000 - 150.000/pcs\n- Set jersey + celana: Rp 110.000 - 225.000/set\n\n**Estimasi Waktu:**\n- 11-20 set: 7-10 hari kerja\n- 21-50 set: 10-14 hari kerja` },
+      { division:'sablon', title:'Teknik Sablon', orderIndex:0, content:`**Sablon Manual (Rubber/Plastisol)**\nCocok untuk order 12+ pcs dengan 1-4 warna.\n\n**DTF (Direct to Film)**\nCetak digital, cocok untuk desain detail/banyak warna, bisa dari 1 pcs.\n\n**DTG (Direct to Garment)**\nCetak langsung ke kain, cocok untuk kaos putih/terang.\n\n**Vinyl / Polyflex**\nCutting vinyl berwarna. Cocok untuk huruf/angka besar.` },
+      { division:'sablon', title:'Harga & Minimum Order', orderIndex:1, content:`**Minimum Order:**\n- Sablon manual: 12 pcs\n- DTF/Vinyl: 1 pcs\n\n**Estimasi Harga:**\n- Kaos + Sablon manual 1 warna: Rp 55.000 - 80.000/pcs\n- Kaos + DTF: Rp 75.000 - 130.000/pcs\n- Jasa sablon saja:\n  - Sablon manual: Rp 10.000 - 35.000/pcs\n  - DTF: Rp 25.000 - 65.000/pcs\n\n**Estimasi Waktu:**\n- 1-12 pcs: 3-5 hari kerja\n- 13-50 pcs: 5-10 hari kerja` },
+    ]
+    for (const item of data) {
+      await addDoc(collection(db,'product_knowledge'), { ...item, updatedAt: now })
+    }
+  }
+</script>
+</body>
+</html>

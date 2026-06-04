@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Baru — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:720px">
+    <div style="margin-bottom:24px">
+      <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black);margin-top:8px">Order Baru</h1>
+    </div>
+
+    <div id="error" class="alert alert-error" style="display:none"></div>
+
+    <form id="orderForm">
+      <!-- Division -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Pilih Divisi <span class="req">*</span></h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px" id="divGrid"></div>
+      </div>
+
+      <!-- Customer -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Data Pemesan</h2>
+        <div class="form-group">
+          <label>Nama Pemesan <span class="req">*</span></label>
+          <input type="text" id="customerName" placeholder="Nama lengkap atau perusahaan" required>
+        </div>
+        <div class="form-group">
+          <label>No. WhatsApp / Email <span class="req">*</span></label>
+          <input type="text" id="customerContact" placeholder="08xx / email@…" required>
+          <p class="form-hint">Hanya terlihat Owner & CS — tersembunyi untuk tim produksi</p>
+        </div>
+      </div>
+
+      <!-- Dates -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Tanggal</h2>
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom:0">
+            <label>Tanggal Pesan</label>
+            <input type="date" id="orderDate">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Target Selesai <span class="req">*</span></label>
+            <input type="date" id="dueDate" required>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:6px">Foto / File Desain</h2>
+        <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:12px">Upload foto referensi, desain, atau mockup (JPG, PNG, PDF)</p>
+        <input type="file" id="designFiles" multiple accept="image/*,.pdf"
+          style="border:1.5px dashed rgba(3,69,67,.2);padding:14px;border-radius:10px;background:var(--beige-soft);cursor:pointer">
+        <div id="fileList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        <div id="uploadProgress" style="display:none;margin-top:8px">
+          <div class="progress-track"><div class="progress-fill" id="uploadBar" style="width:0%"></div></div>
+          <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px" id="uploadText">Mengupload…</p>
+        </div>
+      </div>
+
+      <!-- Pricing -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Harga & Pembayaran</h2>
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom:0">
+            <label>Total Harga (Rp)</label>
+            <input type="number" id="totalPrice" placeholder="0" min="0">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>DP Sudah Dibayar (Rp)</label>
+            <input type="number" id="depositPaid" placeholder="0" min="0">
+          </div>
+        </div>
+        <div id="sisaInfo" style="font-size:13px;color:rgba(3,69,67,.6);margin-top:10px;display:none">
+          Sisa: <strong style="color:#b91c1c" id="sisaVal"></strong>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:10px">Catatan Tambahan</h2>
+        <textarea id="notes" placeholder="Ukuran, warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
+      </div>
+
+      <div style="display:flex;gap:12px;padding-bottom:24px">
+        <a href="orders.html" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</a>
+        <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center" id="submitBtn">Buat Order</button>
+      </div>
+    </form>
+  </main>
+</div>
+
+<script type="module">
+  import { db, storage } from './js/config.js'
+  import { requireAuth, getProfile } from './js/auth.js'
+  import { collection, doc, setDoc, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+  import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS, fmtCurrency } from './js/utils.js'
+
+  let selectedDiv = ''
+
+  // Build division grid
+  const grid = document.getElementById('divGrid')
+  DIVISIONS.forEach(d => {
+    const meta = DIVISION_META[d]
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.id = `div-${d}`
+    btn.style.cssText = 'padding:12px;border-radius:12px;border:2px solid rgba(3,69,67,.12);text-align:left;background:var(--white);cursor:pointer;transition:all .12s'
+    btn.innerHTML = `<span style="font-size:22px;display:block;margin-bottom:4px">${meta.icon}</span><span style="font-size:12px;font-weight:600;color:var(--black)">${meta.label}</span>`
+    btn.addEventListener('click', () => selectDiv(d))
+    grid.appendChild(btn)
+  })
+
+  function selectDiv(d) {
+    selectedDiv = d
+    DIVISIONS.forEach(x => {
+      const b = document.getElementById(`div-${x}`)
+      b.style.borderColor = x===d ? '#034543' : 'rgba(3,69,67,.12)'
+      b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
+    })
+  }
+
+  // Set today
+  const today = new Date().toISOString().split('T')[0]
+  document.getElementById('orderDate').value = today
+  document.getElementById('dueDate').min = today
+
+  // Sisa preview
+  function updateSisa() {
+    const total = Number(document.getElementById('totalPrice').value)||0
+    const dp = Number(document.getElementById('depositPaid').value)||0
+    if (total>0) {
+      document.getElementById('sisaInfo').style.display = ''
+      document.getElementById('sisaVal').textContent = fmtCurrency(total-dp)
+    } else {
+      document.getElementById('sisaInfo').style.display = 'none'
+    }
+  }
+  document.getElementById('totalPrice').addEventListener('input', updateSisa)
+  document.getElementById('depositPaid').addEventListener('input', updateSisa)
+
+  // File list preview
+  document.getElementById('designFiles').addEventListener('change', e => {
+    const fl = document.getElementById('fileList')
+    fl.innerHTML = [...e.target.files].map(f =>
+      `<span style="font-size:11px;background:rgba(3,69,67,.08);color:var(--green);padding:4px 10px;border-radius:6px">${f.name}</span>`
+    ).join('')
+  })
+
+  requireAuth(async (profile) => {
+    if (profile.role === 'production') { window.location.href = 'orders.html'; return }
+  })
+
+  async function generateOrderNumber(division) {
+    const { doc: fsDoc, runTransaction: fsRun } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    const CODES = { bordir:'BRD','papan-nama':'PPN',konveksi:'KNV',tailor:'TLR',jersey:'JRS',sablon:'SBL' }
+    const code = CODES[division]||'ORD'
+    const year = new Date().getFullYear()
+    const counterRef = fsDoc(db, 'order_counters', division)
+    const count = await runTransaction(db, async tx => {
+      const snap = await tx.get(counterRef)
+      const next = (snap.exists() ? snap.data().counter : 0) + 1
+      tx.set(counterRef, { counter: next }, { merge: true })
+      return next
+    })
+    return `HRM-${code}-${year}-${String(count).padStart(4,'0')}`
+  }
+
+  async function uploadFiles(orderId, files) {
+    const urls = []
+    for (let i=0; i<files.length; i++) {
+      const f = files[i]
+      const pct = Math.round((i/files.length)*100)
+      document.getElementById('uploadBar').style.width = pct+'%'
+      document.getElementById('uploadText').textContent = `Upload ${i+1}/${files.length}…`
+      const storRef = ref(storage, `orders/${orderId}/${Date.now()}_${f.name}`)
+      const snap = await new Promise((res, rej) => {
+        const task = uploadBytesResumable(storRef, f)
+        task.on('state_changed', null, rej, () => res(task.snapshot))
+      })
+      urls.push(await getDownloadURL(snap.ref))
+    }
+    document.getElementById('uploadBar').style.width = '100%'
+    return urls
+  }
+
+  document.getElementById('orderForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const errEl = document.getElementById('error')
+    errEl.style.display = 'none'
+
+    if (!selectedDiv) { errEl.textContent = 'Pilih divisi terlebih dahulu'; errEl.style.display=''; return }
+    const dueDate = document.getElementById('dueDate').value
+    if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
+
+    const btn = document.getElementById('submitBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+
+    try {
+      const profile = getProfile()
+      const files = document.getElementById('designFiles').files
+      const orderId = doc(collection(db,'orders')).id
+      const orderNumber = await generateOrderNumber(selectedDiv)
+      const now = Timestamp.now()
+
+      let designFiles = []
+      if (files.length > 0) {
+        document.getElementById('uploadProgress').style.display = ''
+        designFiles = await uploadFiles(orderId, files)
+      }
+
+      await setDoc(doc(db,'orders',orderId), {
+        orderNumber,
+        division: selectedDiv,
+        customerName: document.getElementById('customerName').value.trim(),
+        customerContact: document.getElementById('customerContact').value.trim(),
+        orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
+        dueDate,
+        designFiles,
+        status: 'pending',
+        progressPercentage: 0,
+        totalPrice: Number(document.getElementById('totalPrice').value)||0,
+        depositPaid: Number(document.getElementById('depositPaid').value)||0,
+        notes: document.getElementById('notes').value.trim(),
+        createdBy: profile.id,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      window.location.href = `order.html?id=${orderId}`
+    } catch(err) {
+      console.error(err)
+      errEl.textContent = 'Gagal membuat order: ' + err.message
+      errEl.style.display = ''
+      btn.disabled = false; btn.textContent = 'Buat Order'
+    }
+  })
+</script>
+</body>
+</html>
