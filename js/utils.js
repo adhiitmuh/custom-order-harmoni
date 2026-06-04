@@ -1,18 +1,21 @@
 export const DIVISION_META = {
-  bordir:         { label: 'Bordir',             code: 'BRD', icon: '🪡',  description: 'Bordir komputer & tangan untuk seragam, kaos, topi, jaket' },
-  butik:          { label: 'Butik',              code: 'BTK', icon: '👗',  description: 'Pakaian butik, gaun pesta, kebaya, dan busana formal custom' },
-  jersey:         { label: 'Jersey',             code: 'JRS', icon: '⚽',  description: 'Jersey olahraga full custom: futsal, basket, voli, badminton' },
-  jilbab:         { label: 'Jilbab',             code: 'JLB', icon: '🧕',  description: 'Jilbab custom berbagai model dan bahan' },
-  sablon:         { label: 'Kaos & Sablon',      code: 'SBL', icon: '🖨️', description: 'Kaos custom dengan berbagai teknik sablon' },
-  konveksi:       { label: 'Konveksi',           code: 'KNV', icon: '👕',  description: 'Produksi massal seragam, kaos, dan pakaian kerja' },
-  'papan-nama':   { label: 'Papan Nama US & KL', code: 'PPN', icon: '🏷️', description: 'Papan nama custom untuk seragam US dan KL' },
-  'pin-fiber':    { label: 'Pin Fiber',          code: 'PFB', icon: '📌',  description: 'Pin fiber / akrilik custom berbagai bentuk dan warna' },
-  'pin-logam':    { label: 'Pin Logam',          code: 'PLG', icon: '🔩',  description: 'Pin logam custom untuk seragam, komunitas, dan souvenir' },
-  'sewa-kostum':  { label: 'Sewa Kostum',        code: 'SKT', icon: '🎭',  description: 'Sewa kostum untuk acara, pesta, karnaval, dan pertunjukan' },
-  tailor:         { label: 'Tailor',             code: 'TLR', icon: '✂️',  description: 'Jahit custom individual sesuai ukuran dan model' },
+  batik:            { label: 'Batik',                code: 'BAT', icon: '🎨',  description: 'Batik tulis, cap, dan printing untuk seragam dan busana' },
+  bordir:           { label: 'Bordir',               code: 'BRD', icon: '🪡',  description: 'Bordir komputer & tangan untuk seragam, kaos, topi, jaket' },
+  butik:            { label: 'Butik',                code: 'BTK', icon: '👗',  description: 'Pakaian butik, gaun pesta, kebaya, dan busana formal custom' },
+  jersey:           { label: 'Jersey',               code: 'JRS', icon: '⚽',  description: 'Jersey olahraga full custom: futsal, basket, voli, badminton' },
+  jilbab:           { label: 'Jilbab',               code: 'JLB', icon: '🧕',  description: 'Jilbab custom berbagai model dan bahan' },
+  sablon:           { label: 'Kaos & Sablon',        code: 'SBL', icon: '🖨️', description: 'Kaos custom dengan berbagai teknik sablon' },
+  konveksi:         { label: 'Konveksi',             code: 'KNV', icon: '👕',  description: 'Produksi massal seragam, kaos, dan pakaian kerja' },
+  lanyard:          { label: 'Lanyard',              code: 'LYD', icon: '🪪',  description: 'Lanyard custom untuk ID card, event, dan promosi' },
+  'medali-pin':     { label: 'Medali & Pin Logam',   code: 'MPL', icon: '🏅',  description: 'Medali dan pin logam custom untuk penghargaan, komunitas, dan souvenir' },
+  'papan-nama':     { label: 'Papan Nama US & KL',   code: 'PPN', icon: '🏷️', description: 'Papan nama custom untuk seragam US dan KL' },
+  'pin-fiber':      { label: 'Pin Fiber',            code: 'PFB', icon: '📌',  description: 'Pin fiber / akrilik custom berbagai bentuk dan warna' },
+  'printing-jersey':{ label: 'Printing Jersey',      code: 'PRJ', icon: '🖼️', description: 'Printing jersey sublimasi, DTF, dan digital printing' },
+  'sewa-kostum':    { label: 'Sewa Kostum',          code: 'SKT', icon: '🎭',  description: 'Sewa kostum untuk acara, pesta, karnaval, dan pertunjukan' },
+  tailor:           { label: 'Tailor',               code: 'TLR', icon: '✂️',  description: 'Jahit custom individual sesuai ukuran dan model' },
 }
 
-export const DIVISIONS = ['bordir', 'butik', 'jersey', 'jilbab', 'sablon', 'konveksi', 'papan-nama', 'pin-fiber', 'pin-logam', 'sewa-kostum', 'tailor']
+export const DIVISIONS = ['batik','bordir','butik','jersey','jilbab','sablon','konveksi','lanyard','medali-pin','papan-nama','pin-fiber','printing-jersey','sewa-kostum','tailor']
 
 export const STATUS_LABEL = {
   'pending':          'Menunggu Konfirmasi',
