@@ -5,12 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Product Knowledge — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    .price-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .price-table th { text-align:left; padding:8px 10px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); }
+    .price-table td { padding:8px 10px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); }
+    .price-table tr:last-child td { border-bottom:none; }
+    .price-table tr:hover td { background:rgba(3,69,67,.02); }
+    .price-range { font-weight:700; color:var(--green); }
+  </style>
 </head>
 <body>
 <div class="layout">
   <nav id="sidebar"></nav>
-  <main class="main" style="max-width:800px">
-    <div style="margin-bottom:24px">
+  <main class="main" style="max-width:860px">
+    <div style="margin-bottom:20px">
       <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">REFERENSI</p>
       <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)" id="pageTitle">Product Knowledge</h1>
     </div>
@@ -22,12 +30,16 @@
   </main>
 </div>
 
-<!-- Edit modal -->
-<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center;padding:20px">
+<!-- Edit content modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
   <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:80vh;overflow-y:auto">
     <h3 style="font-size:15px;font-weight:700;margin-bottom:16px" id="modalTitle">Edit Konten</h3>
     <div class="form-group"><label>Judul</label><input type="text" id="modalTitleInput"></div>
-    <div class="form-group"><label>Konten</label><textarea id="modalContent" rows="10" style="font-family:monospace;font-size:13px"></textarea></div>
+    <div class="form-group">
+      <label>Konten</label>
+      <p style="font-size:11px;color:rgba(3,69,67,.4);margin-bottom:6px">Gunakan **teks** untuk tebal, baris baru untuk paragraf baru</p>
+      <textarea id="modalContent" rows="12" style="font-family:monospace;font-size:13px"></textarea>
+    </div>
     <div style="display:flex;gap:8px">
       <button onclick="closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
       <button onclick="saveSection()" class="btn btn-primary" style="flex:1;justify-content:center" id="modalSaveBtn">Simpan</button>
@@ -35,15 +47,29 @@
   </div>
 </div>
 
+<!-- Price list modal -->
+<div id="priceModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:680px;max-height:85vh;overflow-y:auto">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:16px" id="priceModalTitle">Edit Daftar Harga</h3>
+    <div id="priceRows" style="margin-bottom:14px"></div>
+    <button onclick="addPriceRow()" class="btn btn-ghost btn-sm" style="margin-bottom:14px;width:100%;justify-content:center">＋ Tambah Baris</button>
+    <div style="display:flex;gap:8px">
+      <button onclick="closePriceModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="savePriceList()" class="btn btn-primary" style="flex:1;justify-content:center" id="priceSaveBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { collection, query, where, orderBy, getDocs, doc, setDoc, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
 
   const params = new URLSearchParams(location.search)
   let activeDiv = params.get('div') || ''
   let editingDocId = null
+  let editingPriceDiv = null
   let sections = []
 
   requireAuth(async (profile) => {
@@ -53,18 +79,17 @@
 
   function renderTabs(profile) {
     const el = document.getElementById('divTabs')
+    el.innerHTML = ''
     const allBtn = document.createElement('button')
-    allBtn.className = `btn btn-sm ${!activeDiv?'btn-primary':'btn-ghost'}`
+    allBtn.className = `btn btn-sm ${!activeDiv ? 'btn-primary' : 'btn-ghost'}`
     allBtn.textContent = '📖 Semua'
-    allBtn.onclick = () => { activeDiv=''; history.pushState(null,'','knowledge.html'); loadContent(profile); renderTabs(profile) }
+    allBtn.onclick = () => { activeDiv = ''; history.pushState(null,'','knowledge.html'); renderTabs(profile); loadContent(profile) }
     el.appendChild(allBtn)
-
     DIVISIONS.forEach(d => {
-      const meta = DIVISION_META[d]
       const btn = document.createElement('button')
-      btn.className = `btn btn-sm ${activeDiv===d?'btn-primary':'btn-ghost'}`
-      btn.innerHTML = `${meta.icon} ${meta.label}`
-      btn.onclick = () => { activeDiv=d; history.pushState(null,'',`knowledge.html?div=${d}`); loadContent(profile); renderTabs(profile) }
+      btn.className = `btn btn-sm ${activeDiv === d ? 'btn-primary' : 'btn-ghost'}`
+      btn.innerHTML = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+      btn.onclick = () => { activeDiv = d; history.pushState(null,'',`knowledge.html?div=${d}`); renderTabs(profile); loadContent(profile) }
       el.appendChild(btn)
     })
   }
@@ -72,56 +97,108 @@
   async function loadContent(profile) {
     const el = document.getElementById('knowledgeContent')
     el.innerHTML = '<div class="loading">Memuat…</div>'
-
-    const canEdit = profile.role==='owner' || profile.role==='cs'
+    const canEdit = profile.role === 'owner' || profile.role === 'cs'
     const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
-    let allSections = []
 
-    for (const d of divsToShow) {
-      const q = query(collection(db,'product_knowledge'), where('division','==',d), orderBy('orderIndex'))
-      const snap = await getDocs(q)
-      allSections.push(...snap.docs.map(x => ({ id: x.id, ...x.data() })))
-    }
+    try {
+      // Fetch all knowledge (no orderBy to avoid composite index requirement)
+      const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', divsToShow.slice(0,10))))
+      let allSections = snap.docs.map(x => ({ id: x.id, ...x.data() }))
+      allSections.sort((a,b) => (a.orderIndex||0) - (b.orderIndex||0))
+      sections = allSections
 
-    // Seed if empty
-    if (allSections.length === 0 && profile.role === 'owner') {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">📚</div><p>Belum ada konten</p><button onclick="seedKnowledge()" class="btn btn-primary" style="margin-top:14px">Isi Data Default</button></div>`
-      window.seedKnowledge = async () => { await doSeed(); await loadContent(profile) }
-      return
-    }
+      // Fetch price lists
+      const priceData = {}
+      for (const d of divsToShow) {
+        const pSnap = await getDoc(doc(db,'price_list',d))
+        if (pSnap.exists()) priceData[d] = pSnap.data()
+      }
 
-    sections = allSections
-    document.getElementById('pageTitle').textContent = activeDiv ? DIVISION_META[activeDiv]?.label || 'Product Knowledge' : 'Product Knowledge'
+      document.getElementById('pageTitle').textContent = activeDiv ? DIVISION_META[activeDiv]?.label : 'Product Knowledge'
 
-    el.innerHTML = divsToShow.map(d => {
-      const divSections = allSections.filter(s => s.division === d)
-      if (!divSections.length && !activeDiv) return ''
-      const meta = DIVISION_META[d]
-      return `
-        <div style="margin-bottom:24px">
-          ${!activeDiv ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:22px">${meta.icon}</span><h2 style="font-size:17px;font-weight:800;color:var(--black)">${meta.label}</h2></div>` : ''}
-          ${divSections.map(s => `
-            <div class="card" style="margin-bottom:12px" id="sec-${s.id}">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px">
-                <h3 style="font-size:14px;font-weight:700;color:var(--black)">${s.title}</h3>
-                ${canEdit ? `<div style="display:flex;gap:6px;flex-shrink:0">
-                  <button onclick="openEdit('${s.id}')" class="btn btn-ghost btn-sm">Edit</button>
-                  <button onclick="deleteSection('${s.id}')" class="btn btn-danger btn-sm">Hapus</button>
-                </div>` : ''}
+      // Seed prompt if empty
+      if (allSections.length === 0 && profile.role === 'owner') {
+        el.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">📚</div>
+            <p>Belum ada konten knowledge</p>
+            <button onclick="seedKnowledge()" class="btn btn-primary" style="margin-top:14px">Isi Data Default</button>
+          </div>`
+        window.seedKnowledge = async () => {
+          document.getElementById('knowledgeContent').innerHTML = '<div class="loading">Mengisi data…</div>'
+          await doSeed()
+          await loadContent(profile)
+        }
+        return
+      }
+
+      el.innerHTML = divsToShow.map(d => {
+        const divSections = allSections.filter(s => s.division === d)
+        const meta = DIVISION_META[d]
+        const prices = priceData[d]?.items || []
+        return `
+          <div style="margin-bottom:28px" id="div-${d}">
+            ${!activeDiv ? `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <span style="font-size:22px">${meta.icon}</span>
+              <h2 style="font-size:18px;font-weight:800;color:var(--black)">${meta.label}</h2>
+            </div>` : ''}
+
+            <!-- Price List -->
+            <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h3 style="font-size:14px;font-weight:700;color:var(--green)">💰 Daftar Harga</h3>
+                ${canEdit ? `<button onclick="openPriceEdit('${d}')" class="btn btn-ghost btn-sm">Edit Harga</button>` : ''}
               </div>
-              <div style="font-size:13px;line-height:1.7;color:rgba(3,69,67,.75);white-space:pre-wrap">${renderContent(s.content)}</div>
-            </div>`).join('')}
-          ${canEdit ? `<button onclick="openAdd('${d}')" class="btn btn-ghost btn-sm" style="margin-bottom:8px">＋ Tambah Konten</button>` : ''}
-        </div>`
-    }).join('')
+              ${prices.length ? `
+                <table class="price-table">
+                  <thead><tr>
+                    <th>LAYANAN / PRODUK</th>
+                    <th>HARGA</th>
+                    <th>SATUAN</th>
+                    ${prices[0]?.note !== undefined ? '<th>KETERANGAN</th>' : ''}
+                  </tr></thead>
+                  <tbody>
+                    ${prices.map(p => `<tr>
+                      <td style="font-weight:600">${p.name}</td>
+                      <td class="price-range">${p.priceMin ? (p.priceMax && p.priceMax !== p.priceMin ? `Rp ${Number(p.priceMin).toLocaleString('id-ID')} – ${Number(p.priceMax).toLocaleString('id-ID')}` : `Rp ${Number(p.priceMin).toLocaleString('id-ID')}`) : '—'}</td>
+                      <td style="color:rgba(3,69,67,.5)">${p.unit||'—'}</td>
+                      ${p.note !== undefined ? `<td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>` : ''}
+                    </tr>`).join('')}
+                  </tbody>
+                </table>` :
+                `<p style="font-size:13px;color:rgba(3,69,67,.35)">${canEdit ? 'Belum ada daftar harga. Klik "Edit Harga" untuk menambahkan.' : 'Belum ada daftar harga.'}</p>`}
+            </div>
+
+            <!-- Knowledge sections -->
+            ${divSections.map(s => `
+              <div class="card" style="margin-bottom:10px" id="sec-${s.id}">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px">
+                  <h3 style="font-size:14px;font-weight:700;color:var(--black)">${s.title}</h3>
+                  ${canEdit ? `<div style="display:flex;gap:6px;flex-shrink:0">
+                    <button onclick="openEdit('${s.id}')" class="btn btn-ghost btn-sm">Edit</button>
+                    <button onclick="deleteSection('${s.id}')" class="btn btn-danger btn-sm">Hapus</button>
+                  </div>` : ''}
+                </div>
+                <div style="font-size:13px;line-height:1.75;color:rgba(3,69,67,.8);white-space:pre-wrap">${renderMD(s.content)}</div>
+              </div>`).join('')}
+
+            ${canEdit ? `<button onclick="openAdd('${d}')" class="btn btn-ghost btn-sm" style="margin-top:4px">＋ Tambah Konten</button>` : ''}
+          </div>`
+      }).join('')
+
+    } catch(err) {
+      console.error(err)
+      el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
+    }
   }
 
-  function renderContent(text) {
+  function renderMD(text) {
     return text
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
   }
 
+  // === KONTEN EDIT ===
   window.openEdit = function(id) {
     const s = sections.find(x => x.id === id)
     if (!s) return
@@ -141,9 +218,7 @@
     document.getElementById('editModal').style.display = 'flex'
   }
 
-  window.closeModal = function() {
-    document.getElementById('editModal').style.display = 'none'
-  }
+  window.closeModal = () => { document.getElementById('editModal').style.display = 'none' }
 
   window.saveSection = async function() {
     const btn = document.getElementById('modalSaveBtn')
@@ -153,7 +228,7 @@
     if (!title || !content) { btn.disabled=false; btn.textContent='Simpan'; return }
     try {
       if (editingDocId) {
-        await setDoc(doc(db,'product_knowledge',editingDocId), { title, content, updatedAt: Timestamp.now() }, { merge: true })
+        await setDoc(doc(db,'product_knowledge',editingDocId), { title, content, updatedAt: Timestamp.now() }, { merge:true })
       } else {
         const divSections = sections.filter(s => s.division===window._addDiv)
         await addDoc(collection(db,'product_knowledge'), {
@@ -173,53 +248,107 @@
     await loadContent(getProfile())
   }
 
+  // === PRICE LIST EDIT ===
+  window.openPriceEdit = async function(division) {
+    editingPriceDiv = division
+    const snap = await getDoc(doc(db,'price_list',division))
+    const items = snap.exists() ? snap.data().items || [] : []
+    document.getElementById('priceModalTitle').textContent = `Edit Harga — ${DIVISION_META[division]?.label}`
+    renderPriceRows(items)
+    document.getElementById('priceModal').style.display = 'flex'
+  }
+
+  function renderPriceRows(items) {
+    document.getElementById('priceRows').innerHTML = items.length === 0
+      ? '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:8px">Belum ada item. Klik "Tambah Baris".</p>'
+      : items.map((item, i) => `
+          <div style="background:var(--beige-soft);border-radius:10px;padding:12px;margin-bottom:8px;position:relative" id="priceRow-${i}">
+            <button onclick="removePriceRow(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;font-size:14px;color:rgba(3,69,67,.35);padding:2px">✕</button>
+            <div class="grid-2" style="gap:8px">
+              <div class="form-group" style="margin-bottom:6px;grid-column:1/-1">
+                <label style="font-size:11px">Nama Layanan / Produk</label>
+                <input type="text" value="${item.name||''}" oninput="updatePriceRow(${i},'name',this.value)" placeholder="cth: Bordir Kecil (s/d 5cm)">
+              </div>
+              <div class="form-group" style="margin-bottom:6px">
+                <label style="font-size:11px">Harga Min (Rp)</label>
+                <input type="number" value="${item.priceMin||''}" oninput="updatePriceRow(${i},'priceMin',this.value)" placeholder="15000">
+              </div>
+              <div class="form-group" style="margin-bottom:6px">
+                <label style="font-size:11px">Harga Max (Rp) — opsional</label>
+                <input type="number" value="${item.priceMax||''}" oninput="updatePriceRow(${i},'priceMax',this.value)" placeholder="25000">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label style="font-size:11px">Satuan</label>
+                <input type="text" value="${item.unit||''}" oninput="updatePriceRow(${i},'unit',this.value)" placeholder="cth: pcs, set, lembar">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label style="font-size:11px">Keterangan (opsional)</label>
+                <input type="text" value="${item.note||''}" oninput="updatePriceRow(${i},'note',this.value)" placeholder="cth: belum termasuk bahan">
+              </div>
+            </div>
+          </div>`).join('')
+    window._priceItems = [...items]
+  }
+
+  window.updatePriceRow = (i, field, val) => { if (window._priceItems) window._priceItems[i][field] = val }
+
+  window.removePriceRow = (i) => {
+    window._priceItems.splice(i, 1)
+    renderPriceRows(window._priceItems)
+  }
+
+  window.addPriceRow = () => {
+    if (!window._priceItems) window._priceItems = []
+    window._priceItems.push({ name:'', priceMin:'', priceMax:'', unit:'', note:'' })
+    renderPriceRows(window._priceItems)
+  }
+
+  window.closePriceModal = () => { document.getElementById('priceModal').style.display = 'none' }
+
+  window.savePriceList = async function() {
+    const btn = document.getElementById('priceSaveBtn')
+    btn.disabled=true; btn.textContent='Menyimpan…'
+    const items = (window._priceItems||[]).map(item => ({
+      name: item.name||'',
+      priceMin: Number(item.priceMin)||0,
+      priceMax: Number(item.priceMax)||0,
+      unit: item.unit||'',
+      note: item.note||'',
+    })).filter(item => item.name)
+    try {
+      await setDoc(doc(db,'price_list',editingPriceDiv), {
+        division: editingPriceDiv, items, updatedAt: Timestamp.now()
+      })
+      closePriceModal()
+      await loadContent(getProfile())
+    } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  // === SEED DATA ===
   async function doSeed() {
     const now = Timestamp.now()
     const data = [
       { division:'bordir', title:'Jenis Layanan Bordir', orderIndex:0, content:`**Bordir Komputer**\nHasil rapi dan konsisten untuk produksi massal. Cocok untuk logo perusahaan, nama, dan desain detail.\n\n**Bordir 3D (Timbul)**\nMemberikan efek timbul pada desain. Premium dan eksklusif.\n\n**Bordir Patch / Emblem**\nBordir diatas kain khusus (twill/kanvas) yang bisa dipasang/dijahit kemudian.` },
       { division:'bordir', title:'Aplikasi & Bahan', orderIndex:1, content:`**Bisa Dibordir Pada:**\n- Kaos, kemeja, polo shirt\n- Jaket (parasut, fleece, bomber)\n- Topi (trucker, baseball, snapback)\n- Tas, ransel, pouch\n- Seragam kerja, sekolah, komunitas\n\n**Ukuran Desain:**\nMaksimal 30x30cm per desain. Untuk logo dada biasanya 8-12cm.` },
-      { division:'bordir', title:'Harga & Estimasi Waktu', orderIndex:2, content:`**Estimasi Harga:**\n- Bordir kecil (s/d 5cm): Rp 15.000 - 25.000\n- Bordir sedang (5-15cm): Rp 25.000 - 75.000\n- Bordir besar (15-30cm): Rp 75.000 - 150.000\n\n**Estimasi Waktu:**\n- 1-5 pcs: 3-5 hari kerja\n- 6-50 pcs: 5-10 hari kerja\n- 50+ pcs: 10-21 hari kerja` },
-      { division:'bordir', title:'Cara Pemesanan', orderIndex:3, content:`1. Kirim desain (JPG/PNG/AI/CDR) resolusi tinggi\n2. Sebutkan bahan/produk yang akan dibordir\n3. Konfirmasi ukuran dan posisi bordir\n4. DP 50% sebelum pengerjaan\n5. Pelunasan saat produk selesai` },
-      { division:'papan-nama', title:'Jenis Papan Nama', orderIndex:0, content:`**Papan Nama US (Umum/Standar)**\nTerbuat dari bahan akrilik atau plastik keras. Warna solid dengan tulisan timbul atau cetak.\n\n**Papan Nama KL (Kulit/Leather)**\nTerbuat dari kulit sintetis atau kulit asli premium. Tampilan lebih elegan dan formal.` },
+      { division:'bordir', title:'Cara Pemesanan', orderIndex:2, content:`1. Kirim desain (JPG/PNG/AI/CDR) resolusi tinggi\n2. Sebutkan bahan/produk yang akan dibordir\n3. Konfirmasi ukuran dan posisi bordir\n4. DP 50% sebelum pengerjaan\n5. Pelunasan saat produk selesai` },
+      { division:'papan-nama', title:'Jenis Papan Nama', orderIndex:0, content:`**Papan Nama US (Umum/Standar)**\nTerbuat dari bahan akrilik atau plastik keras. Cocok untuk seragam harian.\n\n**Papan Nama KL (Kulit/Leather)**\nTerbuat dari kulit sintetis atau kulit asli premium. Tampilan elegan dan formal.` },
       { division:'papan-nama', title:'Ukuran & Spesifikasi', orderIndex:1, content:`**Ukuran Standar:**\n- Kecil: 8 x 2 cm\n- Sedang: 10 x 2.5 cm\n- Besar: 12 x 3 cm\n\n**Pemasangan:**\n- Pin belakang (jarum)\n- Magnet\n- Velcro (kait)\n- Dijahit langsung` },
-      { division:'papan-nama', title:'Harga & Estimasi Waktu', orderIndex:2, content:`**Estimasi Harga:**\n- Papan nama US standar: Rp 8.000 - 20.000/pcs\n- Papan nama KL (kulit): Rp 25.000 - 65.000/pcs\n\n**Minimum Order:**\n- Papan nama US: 10 pcs\n- Papan nama KL: 5 pcs\n\n**Estimasi Waktu:**\n- 1-50 pcs: 3-5 hari kerja\n- 51-200 pcs: 5-10 hari kerja` },
-      { division:'konveksi', title:'Jenis Produk Konveksi', orderIndex:0, content:`**Seragam Kerja & Kantor**\nKemeja, polo shirt, rompi, jaket corporate.\n\n**Seragam Sekolah & Universitas**\nBaju putih, seragam pramuka, jas almamater, batik sekolah.\n\n**Pakaian Komunitas & Organisasi**\nKaos komunitas, jaket organisasi, seragam tim.` },
-      { division:'konveksi', title:'Harga & Minimum Order', orderIndex:1, content:`**Minimum Order:**\n- Kaos: 24 pcs/model/warna\n- Kemeja/Polo: 12 pcs/model/warna\n- Jaket: 12 pcs/model/warna\n\n**Estimasi Harga:**\n- Kaos polos: Rp 35.000 - 75.000/pcs\n- Kemeja standar: Rp 75.000 - 150.000/pcs\n- Jaket: Rp 150.000 - 350.000/pcs` },
-      { division:'tailor', title:'Layanan Tailor', orderIndex:0, content:`**Jahit Custom (Dari Kain)**\nBuat pakaian dari nol sesuai desain dan ukuran badan Anda.\n\n**Permak/Alterasi**\nUbah ukuran pakaian yang sudah ada agar lebih pas.\n\n**Repair**\nPerbaiki kerusakan pakaian: ritsleting, kancing, sobekan.` },
-      { division:'tailor', title:'Harga & Waktu', orderIndex:1, content:`**Estimasi Harga:**\n- Kemeja custom: Rp 150.000 - 350.000\n- Celana panjang: Rp 120.000 - 300.000\n- Jas/Blazer: Rp 500.000 - 1.500.000\n- Permak/alterasi: Rp 25.000 - 150.000\n\n**Estimasi Waktu:**\n- Permak sederhana: 1-3 hari\n- Pakaian custom: 7-14 hari` },
-      { division:'jersey', title:'Jenis Jersey', orderIndex:0, content:`**Jersey Futsal**\nModel V-neck atau O-neck, bahan dryfit. Termasuk jersey + celana.\n\n**Jersey Basket**\nModel sleeveless (tanpa lengan), bahan mesh atau dryfit.\n\n**Jersey Voli / Badminton**\nModel polo atau V-neck, ringan dan menyerap keringat.\n\n**Jersey Running / Cycling**\nModel sporty dengan potongan ergonomis.\n\n**Jersey Komunitas / Esports**\nDesain bebas, cocok untuk komunitas gaming, OSIS, dll.` },
-      { division:'jersey', title:'Teknik Printing', orderIndex:1, content:`**Sublimasi (Full Print)**\nWarna cerah, tahan lama, bisa full warna/gradasi.\n\n**Bahan Tersedia:**\n- Dryfit milky (halus, anti kusut)\n- Dryfit biasa (standar)\n- Polyester mesh\n\n**Customisasi:**\n- Nama pemain di punggung\n- Nomor punggung & dada\n- Logo club/sponsor` },
-      { division:'jersey', title:'Harga & Minimum Order', orderIndex:2, content:`**Minimum Order:**\n- 11 pcs per set (1 tim futsal/voli)\n\n**Estimasi Harga:**\n- Jersey standar (dryfit biasa): Rp 65.000 - 100.000/pcs\n- Jersey premium (dryfit milky): Rp 100.000 - 150.000/pcs\n- Set jersey + celana: Rp 110.000 - 225.000/set\n\n**Estimasi Waktu:**\n- 11-20 set: 7-10 hari kerja\n- 21-50 set: 10-14 hari kerja` },
-      { division:'sablon', title:'Teknik Sablon', orderIndex:0, content:`**Sablon Manual (Rubber/Plastisol)**\nCocok untuk order 12+ pcs dengan 1-4 warna.\n\n**DTF (Direct to Film)**\nCetak digital, cocok untuk desain detail/banyak warna, bisa dari 1 pcs.\n\n**DTG (Direct to Garment)**\nCetak langsung ke kain, cocok untuk kaos putih/terang.\n\n**Vinyl / Polyflex**\nCutting vinyl berwarna. Cocok untuk huruf/angka besar.` },
-      { division:'sablon', title:'Harga & Minimum Order', orderIndex:1, content:`**Minimum Order:**\n- Sablon manual: 12 pcs\n- DTF/Vinyl: 1 pcs\n\n**Estimasi Harga:**\n- Kaos + Sablon manual 1 warna: Rp 55.000 - 80.000/pcs\n- Kaos + DTF: Rp 75.000 - 130.000/pcs\n- Jasa sablon saja:\n  - Sablon manual: Rp 10.000 - 35.000/pcs\n  - DTF: Rp 25.000 - 65.000/pcs\n\n**Estimasi Waktu:**\n- 1-12 pcs: 3-5 hari kerja\n- 13-50 pcs: 5-10 hari kerja` },
-
-      // JILBAB
-      { division:'jilbab', title:'Jenis Jilbab', orderIndex:0, content:`**Jilbab Segiempat**\nModel klasik serba guna. Bisa dipakai berbagai gaya. Ukuran standar 110x110cm atau 115x115cm.\n\n**Jilbab Pashmina**\nModel memanjang, cocok untuk tampilan formal dan casual. Ukuran standar 75x185cm.\n\n**Jilbab Instan / Bergo**\nLangsung pakai tanpa perlu dilipat. Cocok untuk seragam dan pemakaian harian.\n\n**Jilbab Ciput / Dalaman**\nDalaman jilbab yang menutup rambut dengan rapi.\n\n**Jilbab Seragam Komunitas**\nDesain custom dengan warna dan motif sesuai identitas organisasi/komunitas.` },
-      { division:'jilbab', title:'Pilihan Bahan', orderIndex:1, content:`**Voal / Voile**\nBahan premium, jatuh, anti-kusut, cocok untuk acara formal dan sehari-hari.\n\n**Ceruti**\nBahan lembut, tipis, nyaman dipakai sepanjang hari.\n\n**Satin**\nBerkilau dan elegan, cocok untuk acara pesta dan formal.\n\n**Jersey**\nLembut, melar, cocok untuk aktivitas sehari-hari dan olahraga.\n\n**Katun Ima / Katun Paris**\nAdem, menyerap keringat, cocok untuk iklim tropis.\n\n**Wolfis / Woolpeach**\nTebal, tidak menerawang, cocok untuk jilbab instan dan bergo.` },
-      { division:'jilbab', title:'Harga & Minimum Order', orderIndex:2, content:`**Minimum Order:**\n- Jilbab polos: 12 pcs\n- Jilbab motif/printing: 24 pcs\n- Jilbab instan/bergo: 12 pcs\n\n**Estimasi Harga:**\n- Jilbab segiempat polos: Rp 25.000 - 65.000/pcs\n- Jilbab pashmina polos: Rp 30.000 - 75.000/pcs\n- Jilbab instan/bergo: Rp 45.000 - 95.000/pcs\n- Jilbab dengan printing/motif: Rp 55.000 - 120.000/pcs\n\n**Estimasi Waktu:**\n- 12-50 pcs: 7-10 hari kerja\n- 51-100 pcs: 10-14 hari kerja\n- 100+ pcs: konfirmasi terlebih dahulu` },
-      { division:'jilbab', title:'Cara Pemesanan', orderIndex:3, content:`1. Tentukan model jilbab (segiempat/pashmina/instan)\n2. Pilih bahan dan warna\n3. Kirim referensi desain atau motif jika ada\n4. Konfirmasi jumlah dan ukuran\n5. DP 50% sebelum produksi\n6. Pelunasan saat produk selesai\n\n**Tips:**\n- Untuk seragam, pastikan warna konsisten dengan contoh kain\n- Untuk printing, kirim file desain resolusi tinggi (min 300dpi)` },
-
-      // BUTIK
-      { division:'butik', title:'Koleksi Butik', orderIndex:0, content:`**Gaun & Dress Pesta**\nBerbagai model: A-line, ball gown, mermaid, sheath. Cocok untuk pernikahan, wisuda, dan acara formal.\n\n**Kebaya Modern**\nKebaya dengan sentuhan kontemporer untuk acara pernikahan dan formal.\n\n**Busana Muslim / Gamis**\nGamis, tunik, dan set busana muslim elegan untuk berbagai acara.\n\n**Jas & Blazer Formal**\nJas pria/wanita untuk acara resmi, wisuda, dan corporate event.\n\n**Baju Kondangan**\nDesain semi-formal yang nyaman untuk acara keluarga dan pesta.\n\n**Baju Pengantin Custom**\nGaun pengantin dan jas pengantin sesuai konsep pernikahan.` },
-      { division:'butik', title:'Pilihan Bahan', orderIndex:1, content:`**Satin & Duchess**\nMewah, berkilau, cocok untuk gaun pesta dan pengantin.\n\n**Tulle & Organza**\nRingan dan mengembang, cocok untuk lapisan rok gaun.\n\n**Brokat / Lace**\nBahan premium dengan motif, cocok untuk kebaya dan busana mewah.\n\n**Velvet**\nMewah dan elegan, cocok untuk busana pesta malam.\n\n**Crepe & Chiffon**\nJatuh dan lembut, cocok untuk dress semi-formal.\n\n**Wolfis & Moscrepe**\nTidak menerawang, jatuh, cocok untuk gamis dan busana muslim.` },
-      { division:'butik', title:'Harga & Estimasi Waktu', orderIndex:2, content:`**Estimasi Harga (belum termasuk bahan):**\n- Dress / gamis sederhana: Rp 250.000 - 500.000\n- Gaun formal / ball gown: Rp 600.000 - 2.000.000\n- Kebaya modern: Rp 400.000 - 1.200.000\n- Jas formal: Rp 500.000 - 1.500.000\n- Baju pengantin: Rp 1.500.000 - 5.000.000+\n\n*Bahan bisa bawa sendiri atau beli lewat kami.*\n\n**Estimasi Waktu:**\n- Busana sederhana: 7-14 hari\n- Gaun formal: 14-21 hari\n- Baju pengantin: 21-45 hari` },
-      { division:'butik', title:'Proses Pemesanan', orderIndex:3, content:`1. Konsultasi desain & pilih model referensi\n2. Pengambilan ukuran (datang langsung atau kirim ukuran mandiri)\n3. Pilih bahan (bawa sendiri atau dari koleksi kami)\n4. DP 50% untuk mulai pengerjaan\n5. Fitting setelah pola jadi (opsional)\n6. Finishing & quality check\n7. Pelunasan & pengambilan\n\n**Penting:**\n- Pesan minimal 1 bulan sebelum acara\n- Baju pengantin minimal 2-3 bulan sebelumnya` },
-
-      // PIN LOGAM
-      { division:'pin-logam', title:'Jenis Pin Logam', orderIndex:0, content:`**Pin Cor (Die Casting)**\nDibuat dengan cetakan, detail tajam, cocok untuk logo dengan detail tinggi.\n\n**Pin Stamping**\nDitekan/press dari plat logam, lebih ekonomis untuk jumlah besar.\n\n**Pin Etching**\nDesain diukir dengan asam pada permukaan logam. Hasil elegan dan premium.\n\n**Pin Sablon (Soft Enamel)**\nCekungan diisi cat warna, hasil warna cerah dan tahan lama.\n\n**Pin Full Color (Hard Enamel)**\nPermukaan rata dan mengkilap, warna sangat presisi. Kualitas tertinggi.` },
-      { division:'pin-logam', title:'Material & Finishing', orderIndex:1, content:`**Material:**\n- Zinc Alloy (standar, ringan)\n- Brass / Kuningan (premium)\n- Stainless Steel (tahan karat)\n- Iron / Besi (ekonomis)\n\n**Finishing:**\n- Gold plating (berlapis emas)\n- Silver plating (berlapis perak)\n- Antique gold / silver (antik)\n- Matte / glossy\n- Epoxy coating (pelindung transparan)\n\n**Ukuran Umum:**\n- Kecil: 2 x 2 cm\n- Sedang: 3 x 3 cm\n- Besar: 4 x 5 cm\n- Custom: sesuai permintaan` },
-      { division:'pin-logam', title:'Harga & Minimum Order', orderIndex:2, content:`**Minimum Order:**\n- 50 pcs (untuk cetakan baru)\n- 25 pcs (jika cetakan sudah ada)\n\n**Estimasi Harga (termasuk cetakan):**\n- 50 pcs: Rp 25.000 - 55.000/pcs\n- 100 pcs: Rp 18.000 - 40.000/pcs\n- 200 pcs: Rp 12.000 - 30.000/pcs\n- 500+ pcs: Rp 8.000 - 20.000/pcs\n\n*Harga tergantung material, ukuran, dan jumlah warna enamel.*\n\n**Estimasi Waktu:**\n- 50-100 pcs: 14-21 hari kerja\n- 101-500 pcs: 21-30 hari kerja` },
-
-      // PIN FIBER
-      { division:'pin-fiber', title:'Jenis Pin Fiber / Akrilik', orderIndex:0, content:`**Pin Akrilik Cetak (UV Print)**\nDesain dicetak langsung di atas akrilik. Warna tajam dan detail. Cocok untuk desain kompleks dan foto.\n\n**Pin Akrilik Cutting**\nAkrilik dipotong sesuai bentuk desain. Bisa transparan, warna solid, atau gradient.\n\n**Pin Akrilik Glitter**\nAkrilik dengan efek glitter/sparkle, cocok untuk produk merchandise premium.\n\n**Pin Resin**\nDibuat dari resin epoxy, bisa diisi dengan berbagai elemen dekoratif.\n\n**Pin Karet / Rubber**\nLembut dan fleksibel, aman untuk anak-anak, warna cerah.` },
-      { division:'pin-fiber', title:'Spesifikasi & Pilihan', orderIndex:1, content:`**Ketebalan:**\n- Akrilik 3mm (standar)\n- Akrilik 5mm (premium, lebih kokoh)\n\n**Jenis Peniti/Kait:**\n- Peniti standar (butterfly clutch)\n- Magnet (tanpa lubang di baju)\n- Safety pin\n- Gantungan kunci\n\n**Ukuran:**\n- Mini: 2 x 2 cm\n- Standar: 4 x 4 cm\n- Besar: 6 x 6 cm\n- Custom: sesuai permintaan\n\n**Keunggulan:**\n- Bisa full color tanpa batas warna\n- Ringan dan tidak mudah patah\n- Cocok untuk merchandise, souvenir, komunitas` },
-      { division:'pin-fiber', title:'Harga & Minimum Order', orderIndex:2, content:`**Minimum Order:**\n- Pin akrilik: 10 pcs\n- Pin karet: 50 pcs\n\n**Estimasi Harga:**\n- Pin akrilik 4x4cm: Rp 8.000 - 20.000/pcs\n- Pin akrilik 6x6cm: Rp 15.000 - 35.000/pcs\n- Pin karet standar: Rp 5.000 - 15.000/pcs\n- Pin akrilik glitter: Rp 12.000 - 30.000/pcs\n\n*Harga makin murah untuk jumlah lebih banyak.*\n\n**Estimasi Waktu:**\n- 10-50 pcs: 3-5 hari kerja\n- 51-200 pcs: 5-10 hari kerja\n- 200+ pcs: 10-14 hari kerja` },
-
-      // SEWA KOSTUM
-      { division:'sewa-kostum', title:'Jenis Kostum Tersedia', orderIndex:0, content:`**Kostum Karnaval & Pawai**\nKostum warna-warni untuk karnaval budaya, HUT RI, dan pawai sekolah.\n\n**Kostum Profesi**\nDokter, polisi, tentara, pilot, pemadam, petani, dan berbagai profesi lainnya.\n\n**Kostum Adat Nusantara**\nPakaian adat dari berbagai daerah: Jawa, Bugis, Makassar, Minang, Bali, dll.\n\n**Kostum Fantasi & Karakter**\nPrincess, superhero, karakter kartun, tokoh dongeng, dan kostum Halloween.\n\n**Kostum Pentas & Teater**\nKostum untuk pertunjukan seni, drama, tari, dan pentas sekolah.\n\n**Kostum Olahraga Tradisional**\nPakaian untuk lomba olahraga tradisional dan permainan rakyat.` },
-      { division:'sewa-kostum', title:'Syarat & Ketentuan Sewa', orderIndex:1, content:`**Syarat Penyewaan:**\n- Identitas diri (KTP/SIM/Kartu Pelajar) ditinggal sebagai jaminan\n- DP minimal 50% dari harga sewa\n- Kostum dikembalikan dalam kondisi bersih dan tidak rusak\n\n**Durasi Sewa:**\n- 1 hari (sewa harian)\n- 2-3 hari (paket weekend)\n- 1 minggu (harga khusus)\n\n**Biaya Tambahan:**\n- Keterlambatan pengembalian: 20% per hari\n- Kerusakan ringan (jahitan lepas, dll): Rp 25.000 - 100.000\n- Kerusakan berat / hilang: Harga penuh kostum\n\n**Pengambilan & Pengembalian:**\n- Bisa ambil langsung di workshop\n- Pengiriman tersedia (biaya tambahan)` },
-      { division:'sewa-kostum', title:'Harga Sewa', orderIndex:2, content:`**Estimasi Harga Sewa (per hari):**\n- Kostum profesi sederhana: Rp 35.000 - 75.000\n- Kostum karnaval / pawai: Rp 75.000 - 150.000\n- Kostum adat daerah: Rp 100.000 - 250.000\n- Kostum fantasi / karakter: Rp 75.000 - 200.000\n- Kostum pentas / teater: Rp 100.000 - 300.000\n\n**Paket Group (min. 10 kostum):**\nDiskon 20% dari harga normal\n\n**Paket Sekolah / Instansi:**\nHubungi kami untuk penawaran khusus` },
-      { division:'sewa-kostum', title:'Cara Pemesanan', orderIndex:3, content:`1. Tentukan jenis dan jumlah kostum yang dibutuhkan\n2. Konfirmasi ketersediaan untuk tanggal acara\n3. Datang fitting atau kirim ukuran badan\n4. DP 50% untuk booking\n5. Ambil kostum H-1 atau sesuai perjanjian\n6. Gunakan kostum dengan baik\n7. Kembalikan tepat waktu dalam kondisi rapi\n8. Pelunasan saat pengembalian\n\n**Tips:**\n- Pesan minimal 3-7 hari sebelum acara\n- Untuk jumlah banyak (>10 pcs), pesan minimal 2 minggu sebelumnya` },
+      { division:'konveksi', title:'Jenis Produk', orderIndex:0, content:`**Seragam Kerja & Kantor**\nKemeja, polo shirt, rompi, jaket corporate.\n\n**Seragam Sekolah & Universitas**\nBaju putih, pramuka, jas almamater, batik sekolah.\n\n**Pakaian Komunitas & Event**\nKaos komunitas, jaket organisasi, seragam tim.` },
+      { division:'konveksi', title:'Minimum Order & Proses', orderIndex:1, content:`**Minimum Order:**\n- Kaos: 24 pcs/model/warna\n- Kemeja/Polo: 12 pcs/model/warna\n- Jaket: 12 pcs/model/warna\n\n**Alur Produksi:**\n1. Diskusi & konfirmasi desain\n2. Pembuatan sampel (opsional)\n3. Produksi massal\n4. Quality control\n5. Pengiriman` },
+      { division:'tailor', title:'Layanan Tailor', orderIndex:0, content:`**Jahit Custom (Dari Kain)**\nBuat pakaian dari nol sesuai desain dan ukuran badan.\n\n**Permak/Alterasi**\nUbah ukuran pakaian yang sudah ada.\n\n**Repair**\nPerbaiki kerusakan: ritsleting, kancing, sobekan.` },
+      { division:'jersey', title:'Jenis Jersey', orderIndex:0, content:`**Jersey Futsal:** Model V-neck/O-neck, dryfit. Termasuk jersey + celana.\n**Jersey Basket:** Model sleeveless, bahan mesh atau dryfit.\n**Jersey Voli/Badminton:** Model polo/V-neck, ringan menyerap keringat.\n**Jersey Running/Cycling:** Model sporty, potongan ergonomis.\n**Jersey Komunitas/Esports:** Desain bebas.` },
+      { division:'jersey', title:'Teknik & Customisasi', orderIndex:1, content:`**Sublimasi (Full Print)**\nWarna cerah, tahan lama, bisa full warna/gradasi.\n\n**Customisasi:**\n- Nama pemain di punggung\n- Nomor punggung & dada\n- Logo club/sponsor\n- Warna sesuai keinginan` },
+      { division:'sablon', title:'Teknik Sablon', orderIndex:0, content:`**Sablon Manual (Rubber/Plastisol)**\nCocok untuk order 12+ pcs dengan 1-4 warna.\n\n**DTF (Direct to Film)**\nCetak digital, cocok untuk desain detail, bisa dari 1 pcs.\n\n**DTG (Direct to Garment)**\nCetak langsung ke kain, cocok untuk kaos putih/terang.\n\n**Vinyl / Polyflex**\nCocok untuk huruf/angka besar.` },
+      { division:'jilbab', title:'Jenis Jilbab', orderIndex:0, content:`**Jilbab Segiempat:** Klasik serba guna. Ukuran standar 110x110cm.\n**Jilbab Pashmina:** Model memanjang, formal dan casual. 75x185cm.\n**Jilbab Instan/Bergo:** Langsung pakai, cocok untuk seragam.\n**Jilbab Seragam Komunitas:** Desain custom sesuai identitas.` },
+      { division:'jilbab', title:'Pilihan Bahan', orderIndex:1, content:`**Voal/Voile:** Premium, jatuh, anti-kusut.\n**Ceruti:** Lembut, tipis, nyaman.\n**Satin:** Berkilau, elegan untuk pesta.\n**Jersey:** Lembut, melar, untuk olahraga.\n**Katun Ima/Paris:** Adem, menyerap keringat.\n**Wolfis/Woolpeach:** Tebal, tidak menerawang.` },
+      { division:'butik', title:'Koleksi Butik', orderIndex:0, content:`**Gaun & Dress Pesta:** Berbagai model untuk pernikahan, wisuda, acara formal.\n**Kebaya Modern:** Sentuhan kontemporer untuk pernikahan dan formal.\n**Busana Muslim/Gamis:** Gamis, tunik, set busana muslim elegan.\n**Jas & Blazer Formal:** Untuk acara resmi dan corporate.\n**Baju Pengantin Custom:** Sesuai konsep pernikahan.` },
+      { division:'butik', title:'Proses Pemesanan', orderIndex:1, content:`1. Konsultasi desain & pilih model referensi\n2. Pengambilan ukuran (datang langsung atau kirim ukuran)\n3. Pilih bahan (bawa sendiri atau dari koleksi kami)\n4. DP 50% untuk mulai pengerjaan\n5. Fitting setelah pola jadi (opsional)\n6. Finishing, quality check, pelunasan\n\n*Pesan minimal 1 bulan sebelum acara*` },
+      { division:'pin-logam', title:'Jenis Pin Logam', orderIndex:0, content:`**Pin Cor (Die Casting):** Detail tajam, cocok untuk logo kompleks.\n**Pin Stamping:** Press dari plat logam, ekonomis untuk jumlah besar.\n**Pin Etching:** Diukir dengan asam, elegan dan premium.\n**Pin Soft Enamel:** Cekungan diisi cat warna, tahan lama.\n**Pin Hard Enamel:** Permukaan rata mengkilap, kualitas tertinggi.` },
+      { division:'pin-logam', title:'Material & Finishing', orderIndex:1, content:`**Material:** Zinc Alloy, Brass/Kuningan, Stainless Steel, Iron\n\n**Finishing:** Gold plating, Silver plating, Antique gold/silver, Matte/Glossy, Epoxy coating\n\n**Ukuran Umum:** 2x2cm, 3x3cm, 4x5cm, custom sesuai permintaan` },
+      { division:'pin-fiber', title:'Jenis Pin Fiber / Akrilik', orderIndex:0, content:`**Pin Akrilik UV Print:** Desain dicetak langsung, warna tajam dan detail.\n**Pin Akrilik Cutting:** Dipotong sesuai bentuk desain.\n**Pin Akrilik Glitter:** Efek sparkle, cocok untuk merchandise premium.\n**Pin Resin:** Dari resin epoxy dengan elemen dekoratif.\n**Pin Karet/Rubber:** Lembut, fleksibel, aman untuk anak.` },
+      { division:'pin-fiber', title:'Spesifikasi', orderIndex:1, content:`**Ketebalan:** Akrilik 3mm (standar), 5mm (premium)\n\n**Jenis Kait:** Peniti standar, Magnet, Safety pin, Gantungan kunci\n\n**Ukuran:** Mini 2x2cm, Standar 4x4cm, Besar 6x6cm, Custom\n\n**Keunggulan:** Full color tanpa batas warna, ringan, tidak mudah patah` },
+      { division:'sewa-kostum', title:'Jenis Kostum', orderIndex:0, content:`**Kostum Karnaval & Pawai:** Warna-warni untuk karnaval budaya dan HUT RI.\n**Kostum Profesi:** Dokter, polisi, pilot, dan berbagai profesi.\n**Kostum Adat Nusantara:** Pakaian adat berbagai daerah.\n**Kostum Fantasi & Karakter:** Princess, superhero, karakter kartun.\n**Kostum Pentas & Teater:** Untuk pertunjukan seni dan drama.` },
+      { division:'sewa-kostum', title:'Syarat & Cara Sewa', orderIndex:1, content:`**Syarat:**\n- Identitas diri ditinggal sebagai jaminan\n- DP minimal 50% dari harga sewa\n- Kembalikan dalam kondisi bersih\n\n**Cara Pesan:**\n1. Tentukan jenis & jumlah kostum\n2. Konfirmasi ketersediaan tanggal\n3. DP 50% untuk booking\n4. Ambil H-1 acara\n5. Kembalikan tepat waktu\n\n*Pesan minimal 3-7 hari sebelum acara*` },
     ]
     for (const item of data) {
       await addDoc(collection(db,'product_knowledge'), { ...item, updatedAt: now })
