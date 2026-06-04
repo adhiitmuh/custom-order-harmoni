@@ -1,13 +1,17 @@
 export const DIVISION_META = {
-  bordir:      { label: 'Bordir',           code: 'BRD', icon: '🪡',  description: 'Bordir komputer & tangan untuk seragam, kaos, topi, jaket' },
-  'papan-nama':{ label: 'Papan Nama US & KL', code: 'PPN', icon: '🏷️', description: 'Papan nama custom untuk seragam US dan KL' },
-  konveksi:    { label: 'Konveksi',          code: 'KNV', icon: '👕',  description: 'Produksi massal seragam, kaos, dan pakaian kerja' },
-  tailor:      { label: 'Tailor',            code: 'TLR', icon: '✂️',  description: 'Jahit custom individual sesuai ukuran dan model' },
-  jersey:      { label: 'Jersey',            code: 'JRS', icon: '⚽',  description: 'Jersey olahraga full custom: futsal, basket, voli, badminton' },
-  sablon:      { label: 'Kaos & Sablon',     code: 'SBL', icon: '🖨️', description: 'Kaos custom dengan berbagai teknik sablon' },
+  bordir:       { label: 'Bordir',             code: 'BRD', icon: '🪡',  description: 'Bordir komputer & tangan untuk seragam, kaos, topi, jaket' },
+  'papan-nama': { label: 'Papan Nama US & KL', code: 'PPN', icon: '🏷️', description: 'Papan nama custom untuk seragam US dan KL' },
+  konveksi:     { label: 'Konveksi',            code: 'KNV', icon: '👕',  description: 'Produksi massal seragam, kaos, dan pakaian kerja' },
+  tailor:       { label: 'Tailor',              code: 'TLR', icon: '✂️',  description: 'Jahit custom individual sesuai ukuran dan model' },
+  jersey:       { label: 'Jersey',              code: 'JRS', icon: '⚽',  description: 'Jersey olahraga full custom: futsal, basket, voli, badminton' },
+  sablon:       { label: 'Kaos & Sablon',       code: 'SBL', icon: '🖨️', description: 'Kaos custom dengan berbagai teknik sablon' },
+  jilbab:       { label: 'Jilbab',              code: 'JLB', icon: '🧕',  description: 'Jilbab custom berbagai model dan bahan' },
+  'baju-pesta': { label: 'Baju Pesta',          code: 'BPT', icon: '👗',  description: 'Baju pesta, gaun, dan pakaian formal custom' },
+  'pin-logam':  { label: 'Pin Logam',           code: 'PLG', icon: '🔩',  description: 'Pin logam custom untuk seragam, komunitas, dan souvenir' },
+  'pin-fiber':  { label: 'Pin Fiber',           code: 'PFB', icon: '📌',  description: 'Pin fiber / akrilik custom berbagai bentuk dan warna' },
 }
 
-export const DIVISIONS = ['bordir', 'papan-nama', 'konveksi', 'tailor', 'jersey', 'sablon']
+export const DIVISIONS = ['bordir', 'papan-nama', 'konveksi', 'tailor', 'jersey', 'sablon', 'jilbab', 'baju-pesta', 'pin-logam', 'pin-fiber']
 
 export const STATUS_LABEL = {
   'pending':       'Menunggu Konfirmasi',
