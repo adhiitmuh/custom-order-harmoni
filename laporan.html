@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laporan Keuangan — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .stat-card { background:var(--white); border-radius:14px; border:1px solid rgba(3,69,67,.08); padding:20px; }
+    .stat-val { font-size:22px; font-weight:800; letter-spacing:-.02em; margin-bottom:4px; }
+    .stat-lbl { font-size:11px; color:rgba(3,69,67,.45); }
+    .bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:13px; }
+    .bar-track { flex:1; height:10px; background:rgba(3,69,67,.08); border-radius:5px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:5px; transition:width .5s; }
+    .period-btn { padding:7px 14px; border-radius:999px; font-size:12px; font-weight:600; cursor:pointer; border:1.5px solid rgba(3,69,67,.15); background:transparent; color:var(--green); transition:all .12s; font-family:inherit; }
+    .period-btn.active { background:var(--green); color:var(--beige); border-color:var(--green); }
+    @media print { #sidebar, .no-print { display:none!important; } .main { margin-left:0!important; } }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:900px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Laporan Keuangan</h1>
+      </div>
+      <button onclick="window.print()" class="btn btn-ghost btn-sm no-print">🖨️ Print</button>
+    </div>
+
+    <!-- Period filter -->
+    <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      <button class="period-btn active" data-period="month">Bulan Ini</button>
+      <button class="period-btn" data-period="lastmonth">Bulan Lalu</button>
+      <button class="period-btn" data-period="quarter">3 Bulan</button>
+      <button class="period-btn" data-period="year">Tahun Ini</button>
+      <button class="period-btn" data-period="all">Semua</button>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+        <input type="date" id="dateFrom" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit">
+        <span style="font-size:12px;color:rgba(3,69,67,.4)">–</span>
+        <input type="date" id="dateTo" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit">
+        <button onclick="applyCustom()" class="btn btn-primary btn-sm">Terapkan</button>
+      </div>
+    </div>
+
+    <div id="periodLabel" style="font-size:13px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:16px"></div>
+
+    <!-- Summary stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="summaryCards">
+      <div class="stat-card"><div class="loading" style="padding:8px">…</div></div>
+      <div class="stat-card"><div class="loading" style="padding:8px">…</div></div>
+      <div class="stat-card"><div class="loading" style="padding:8px">…</div></div>
+      <div class="stat-card"><div class="loading" style="padding:8px">…</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- By division -->
+      <div class="card">
+        <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Omzet per Divisi</h2>
+        <div id="divChart"></div>
+      </div>
+      <!-- By status -->
+      <div class="card">
+        <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Order per Status</h2>
+        <div id="statusChart"></div>
+      </div>
+    </div>
+
+    <!-- Top customers -->
+    <div class="card" style="margin-bottom:16px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Top Pelanggan</h2>
+      <div id="topCustomers"></div>
+    </div>
+
+    <!-- Order table -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="font-size:14px;font-weight:700">Daftar Order</h2>
+        <span id="orderTableCount" style="font-size:12px;color:rgba(3,69,67,.4)"></span>
+      </div>
+      <div id="orderTable" style="overflow-x:auto"></div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth } from './js/auth.js'
+  import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate } from './js/utils.js'
+
+  let allOrders = []
+  let currentFrom = null
+  let currentTo = null
+
+  requireAuth(async () => {
+    const snap = await getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))
+    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    setPeriod('month')
+    setupPeriodBtns()
+  })
+
+  function getDateRange(period) {
+    const now = new Date()
+    const y = now.getFullYear(), m = now.getMonth()
+    switch(period) {
+      case 'month':     return [new Date(y,m,1), new Date(y,m+1,0,23,59,59)]
+      case 'lastmonth': return [new Date(y,m-1,1), new Date(y,m,0,23,59,59)]
+      case 'quarter':   return [new Date(y,m-2,1), new Date(y,m+1,0,23,59,59)]
+      case 'year':      return [new Date(y,0,1), new Date(y,11,31,23,59,59)]
+      case 'all':       return [new Date('2020-01-01'), new Date('2099-12-31')]
+    }
+  }
+
+  function setPeriod(period) {
+    const [from, to] = getDateRange(period)
+    currentFrom = from; currentTo = to
+    render(from, to)
+    document.getElementById('periodLabel').textContent = `Periode: ${from.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — ${to.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})}`
+  }
+
+  window.applyCustom = function() {
+    const from = document.getElementById('dateFrom').value
+    const to = document.getElementById('dateTo').value
+    if (!from || !to) return
+    currentFrom = new Date(from)
+    currentTo = new Date(to + 'T23:59:59')
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'))
+    render(currentFrom, currentTo)
+    document.getElementById('periodLabel').textContent = `Periode: ${currentFrom.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — ${currentTo.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})}`
+  }
+
+  function setupPeriodBtns() {
+    document.querySelectorAll('.period-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        setPeriod(btn.dataset.period)
+      })
+    })
+  }
+
+  function filterOrders(from, to) {
+    return allOrders.filter(o => {
+      if (o.status === 'cancelled') return false
+      const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt)
+      return d >= from && d <= to
+    })
+  }
+
+  function render(from, to) {
+    const orders = filterOrders(from, to)
+    const totalOmzet = orders.reduce((s,o) => s + (o.totalPrice||0), 0)
+    const totalMasuk = orders.reduce((s,o) => s + (o.depositPaid||0), 0)
+    const totalSisa  = totalOmzet - totalMasuk
+    const lunas      = orders.filter(o => (o.depositPaid||0) >= (o.totalPrice||0) && (o.totalPrice||0) > 0).length
+
+    // Summary cards
+    document.getElementById('summaryCards').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--green)">${fmtCurrency(totalOmzet)}</div>
+        <div class="stat-lbl">Total Omzet</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">${orders.length} order</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:#059669">${fmtCurrency(totalMasuk)}</div>
+        <div class="stat-lbl">Total Terbayar (DP + Lunas)</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">${lunas} order lunas</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:${totalSisa>0?'#b91c1c':'#059669'}">${fmtCurrency(totalSisa)}</div>
+        <div class="stat-lbl">Sisa Piutang</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">${orders.filter(o=>(o.depositPaid||0)<(o.totalPrice||0)&&(o.totalPrice||0)>0).length} belum lunas</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" style="color:var(--black)">${totalOmzet>0?Math.round((totalMasuk/totalOmzet)*100):0}%</div>
+        <div class="stat-lbl">Tingkat Pelunasan</div>
+        <div style="margin-top:6px"><div class="progress-track"><div class="progress-fill" style="width:${totalOmzet>0?Math.round((totalMasuk/totalOmzet)*100):0}%"></div></div></div>
+      </div>`
+
+    // Division chart
+    const divData = DIVISIONS.map(d => {
+      const divOrders = orders.filter(o => o.division===d)
+      return { div: d, total: divOrders.reduce((s,o)=>s+(o.totalPrice||0),0), count: divOrders.length }
+    }).filter(d => d.total > 0).sort((a,b) => b.total - a.total)
+    const maxDiv = divData[0]?.total || 1
+    document.getElementById('divChart').innerHTML = divData.length ? divData.map(d => `
+      <div class="bar-row">
+        <div style="width:110px;font-size:12px;display:flex;align-items:center;gap:5px;flex-shrink:0">
+          <span>${DIVISION_META[d.div]?.icon}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${DIVISION_META[d.div]?.label}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round((d.total/maxDiv)*100)}%;background:var(--green)"></div></div>
+        <div style="width:100px;text-align:right;font-size:11px;font-weight:700;color:var(--green);flex-shrink:0">${fmtCurrency(d.total)}</div>
+      </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:16px">Belum ada data</p>'
+
+    // Status chart
+    const statuses = ['pending','in-progress','quality-check','done','delivered']
+    const statusData = statuses.map(s => ({ status:s, count: orders.filter(o=>o.status===s).length })).filter(s=>s.count>0)
+    const maxSt = Math.max(...statusData.map(s=>s.count), 1)
+    document.getElementById('statusChart').innerHTML = statusData.length ? statusData.map(s => `
+      <div class="bar-row">
+        <div style="width:130px;font-size:12px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${STATUS_LABEL[s.status]}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round((s.count/maxSt)*100)}%;background:var(--green);opacity:.7"></div></div>
+        <div style="width:30px;text-align:right;font-size:12px;font-weight:700;color:var(--green);flex-shrink:0">${s.count}</div>
+      </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:16px">Belum ada data</p>'
+
+    // Top customers
+    const custMap = new Map()
+    for (const o of orders) {
+      const k = o.customerContact || o.customerName
+      if (!custMap.has(k)) custMap.set(k, { name:o.customerName, total:0, count:0 })
+      custMap.get(k).total += o.totalPrice||0
+      custMap.get(k).count++
+    }
+    const top = [...custMap.values()].sort((a,b)=>b.total-a.total).slice(0,5)
+    const maxCust = top[0]?.total || 1
+    document.getElementById('topCustomers').innerHTML = top.length ? top.map((c,i) => `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div style="width:24px;height:24px;border-radius:50%;background:rgba(3,69,67,.08);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--green);flex-shrink:0">${i+1}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
+          <div class="bar-track" style="margin-top:4px"><div class="bar-fill" style="width:${Math.round((c.total/maxCust)*100)}%;background:rgba(3,69,67,.4)"></div></div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:var(--green)">${fmtCurrency(c.total)}</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.4)">${c.count} order</div>
+        </div>
+      </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35)">Belum ada data</p>'
+
+    // Order table
+    document.getElementById('orderTableCount').textContent = `${orders.length} order`
+    document.getElementById('orderTable').innerHTML = orders.length ? `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:2px solid rgba(3,69,67,.1)">
+            <th style="text-align:left;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">NO. ORDER</th>
+            <th style="text-align:left;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">PELANGGAN</th>
+            <th style="text-align:left;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">DIVISI</th>
+            <th style="text-align:left;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">STATUS</th>
+            <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">TAGIHAN</th>
+            <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">TERBAYAR</th>
+            <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">SISA</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${orders.map(o => {
+            const sisa = (o.totalPrice||0) - (o.depositPaid||0)
+            return `<tr style="border-bottom:1px solid rgba(3,69,67,.05)" onmouseover="this.style.background='rgba(3,69,67,.02)'" onmouseout="this.style.background=''">
+              <td style="padding:8px 6px"><a href="order.html?id=${o.id}" style="font-family:monospace;font-size:10px;color:var(--green);text-decoration:none">${o.orderNumber}</a></td>
+              <td style="padding:8px 6px;font-weight:600;color:var(--black)">${o.customerName}</td>
+              <td style="padding:8px 6px">${DIVISION_META[o.division]?.icon} ${DIVISION_META[o.division]?.label||o.division}</td>
+              <td style="padding:8px 6px"><span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span></td>
+              <td style="padding:8px 6px;text-align:right;font-weight:700">${fmtCurrency(o.totalPrice)}</td>
+              <td style="padding:8px 6px;text-align:right;color:#059669;font-weight:600">${fmtCurrency(o.depositPaid)}</td>
+              <td style="padding:8px 6px;text-align:right;font-weight:700;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:2px solid rgba(3,69,67,.1);background:rgba(3,69,67,.02)">
+            <td colspan="4" style="padding:10px 6px;font-weight:800;font-size:13px">TOTAL</td>
+            <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px">${fmtCurrency(orders.reduce((s,o)=>s+(o.totalPrice||0),0))}</td>
+            <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#059669">${fmtCurrency(orders.reduce((s,o)=>s+(o.depositPaid||0),0))}</td>
+            <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#b91c1c">${fmtCurrency(orders.reduce((s,o)=>s+((o.totalPrice||0)-(o.depositPaid||0)),0))}</td>
+          </tr>
+        </tfoot>
+      </table>` : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Tidak ada order di periode ini</p>'
+  }
+</script>
+</body>
+</html>

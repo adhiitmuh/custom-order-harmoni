@@ -75,13 +75,23 @@ export function renderSidebar(profile) {
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
+      <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
+        <span class="icon">👥</span>CRM Pelanggan
+      </a>
+      <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
+        <span class="icon">📊</span>Laporan Keuangan
+      </a>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-label">REFERENSI</div>
       <a href="knowledge.html" class="sidebar-link ${page==='knowledge.html'&&!activeDiv?'active':''}">
         <span class="icon">📖</span>Product Knowledge
       </a>
       ${profile.role === 'owner' ? `
       <a href="users.html" class="sidebar-link ${page==='users.html'?'active':''}">
-        <span class="icon">👥</span>Kelola Pengguna
+        <span class="icon">⚙️</span>Kelola Pengguna
       </a>` : ''}
     </div>
 

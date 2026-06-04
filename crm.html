@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Pelanggan — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:900px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PELANGGAN</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">CRM Pelanggan</h1>
+        <p id="custCount" style="font-size:12px;color:rgba(3,69,67,.4);margin-top:3px;font-family:monospace">—</p>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card" style="margin-bottom:16px;padding:12px 16px">
+      <input id="searchInput" placeholder="🔍 Cari nama atau kontak pelanggan…" style="width:100%;border:none;outline:none;font-size:14px;background:transparent;color:var(--black)">
+    </div>
+
+    <div id="custList"><div class="loading">Memuat data pelanggan…</div></div>
+
+    <!-- Detail modal -->
+    <div id="detailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--white);border-radius:16px;width:100%;max-width:640px;max-height:85vh;overflow-y:auto">
+        <div style="padding:20px 24px;border-bottom:1px solid rgba(3,69,67,.08);display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 id="modalName" style="font-size:17px;font-weight:800;color:var(--black)"></h2>
+            <p id="modalContact" style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace;margin-top:2px"></p>
+          </div>
+          <button onclick="closeDetail()" style="background:none;border:none;cursor:pointer;font-size:20px;color:rgba(3,69,67,.4);padding:4px">✕</button>
+        </div>
+        <div style="padding:16px 24px">
+          <div id="modalStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px"></div>
+          <h3 style="font-size:13px;font-weight:700;color:var(--black);margin-bottom:10px">Riwayat Order</h3>
+          <div id="modalOrders"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth } from './js/auth.js'
+  import { collection, getDocs, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus } from './js/utils.js'
+
+  let customers = []
+
+  requireAuth(async (profile) => {
+    const showContact = profile.role !== 'production'
+    const snap = await getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))
+    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    // Group by customerContact (fallback to customerName)
+    const map = new Map()
+    for (const o of orders) {
+      const key = o.customerContact || o.customerName
+      if (!map.has(key)) {
+        map.set(key, {
+          name: o.customerName,
+          contact: o.customerContact,
+          orders: [],
+          totalSpent: 0,
+          totalPaid: 0,
+          lastOrder: null,
+        })
+      }
+      const c = map.get(key)
+      c.orders.push(o)
+      c.totalSpent += o.totalPrice || 0
+      c.totalPaid += o.depositPaid || 0
+      if (!c.lastOrder || new Date(o.createdAt?.toDate?.() || o.createdAt) > new Date(c.lastOrder?.toDate?.() || c.lastOrder)) {
+        c.lastOrder = o.createdAt
+        c.name = o.customerName // Use latest name
+      }
+    }
+
+    customers = [...map.values()].sort((a,b) => b.orders.length - a.orders.length)
+    document.getElementById('custCount').textContent = `${customers.length} pelanggan`
+
+    render(customers, showContact)
+    document.getElementById('searchInput').addEventListener('input', e => {
+      const q = e.target.value.toLowerCase()
+      render(customers.filter(c => c.name?.toLowerCase().includes(q) || c.contact?.toLowerCase().includes(q)), showContact)
+    })
+  })
+
+  function render(list, showContact) {
+    const el = document.getElementById('custList')
+    if (!list.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>Tidak ada pelanggan ditemukan</p></div>'
+      return
+    }
+    el.innerHTML = list.map((c, i) => {
+      const sisa = c.totalSpent - c.totalPaid
+      const pct = c.totalSpent > 0 ? Math.round((c.totalPaid / c.totalSpent) * 100) : 0
+      const activeOrders = c.orders.filter(o => !['done','delivered','cancelled'].includes(o.status)).length
+      return `
+        <div onclick="openDetail(${i})" style="background:var(--white);border-radius:14px;border:1px solid rgba(3,69,67,.08);padding:16px;margin-bottom:10px;cursor:pointer;transition:box-shadow .12s" onmouseover="this.style.boxShadow='0 2px 12px rgba(3,69,67,.08)'" onmouseout="this.style.boxShadow=''">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,rgba(3,69,67,.12),rgba(3,69,67,.06));display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:var(--green);flex-shrink:0">${c.name?.[0]?.toUpperCase()||'?'}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:15px;color:var(--black)">${c.name}</div>
+              ${showContact && c.contact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace">${c.contact}</div>` : ''}
+              <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+                <span style="font-size:11px;background:rgba(3,69,67,.07);color:var(--green);padding:2px 8px;border-radius:999px;font-weight:600">${c.orders.length} order</span>
+                ${activeOrders > 0 ? `<span style="font-size:11px;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:999px;font-weight:600">${activeOrders} aktif</span>` : ''}
+                <span style="font-size:11px;color:rgba(3,69,67,.4)">Terakhir: ${fmtDate(c.lastOrder)}</span>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-weight:800;font-size:15px;color:var(--green)">${fmtCurrency(c.totalSpent)}</div>
+              <div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px">total tagihan</div>
+              ${sisa > 0 ? `<div style="font-size:11px;color:#b91c1c;font-weight:600;margin-top:1px">sisa ${fmtCurrency(sisa)}</div>` : `<div style="font-size:11px;color:#059669;font-weight:600;margin-top:1px">✓ lunas</div>`}
+            </div>
+          </div>
+          <!-- Payment progress bar -->
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(3,69,67,.06)">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">
+              <span>Pembayaran terlunasi</span><span style="font-weight:700">${pct}%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:${pct}%;background:${pct===100?'#059669':'var(--green)'}"></div>
+            </div>
+          </div>
+        </div>`
+    }).join('')
+  }
+
+  window.openDetail = function(i) {
+    const c = customers[i]
+    document.getElementById('modalName').textContent = c.name
+    document.getElementById('modalContact').textContent = c.contact || 'Kontak tidak tersedia'
+    const sisa = c.totalSpent - c.totalPaid
+    document.getElementById('modalStats').innerHTML = `
+      <div class="card" style="text-align:center;padding:12px">
+        <div style="font-size:22px;font-weight:800;color:var(--green)">${c.orders.length}</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">Total Order</div>
+      </div>
+      <div class="card" style="text-align:center;padding:12px">
+        <div style="font-size:16px;font-weight:800;color:var(--green)">${fmtCurrency(c.totalSpent)}</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">Total Tagihan</div>
+      </div>
+      <div class="card" style="text-align:center;padding:12px">
+        <div style="font-size:16px;font-weight:800;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">Sisa Tagihan</div>
+      </div>`
+    document.getElementById('modalOrders').innerHTML = c.orders.map(o => {
+      const meta = DIVISION_META[o.division]||{}
+      const pStatus = paymentStatus(o.totalPrice, o.depositPaid)
+      return `<a href="order.html?id=${o.id}" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;border:1px solid rgba(3,69,67,.07);margin-bottom:8px;text-decoration:none;color:inherit">
+        <span style="font-size:20px">${meta.icon||'📦'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber}</span>
+            <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
+            ${pStatus?`<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>`:''}
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--black)">${meta.label||''}</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.4)">${fmtDate(o.createdAt)}</div>
+        </div>
+        <div style="text-align:right;font-size:13px;font-weight:700;color:var(--black)">${fmtCurrency(o.totalPrice)}</div>
+      </a>`
+    }).join('')
+    document.getElementById('detailModal').style.display = 'flex'
+  }
+
+  window.closeDetail = function() {
+    document.getElementById('detailModal').style.display = 'none'
+  }
+</script>
+</body>
+</html>
