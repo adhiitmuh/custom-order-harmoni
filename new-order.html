@@ -99,6 +99,21 @@
         <textarea id="notes" placeholder="Ukuran, warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
       </div>
 
+      <!-- Source -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Sumber Order</h2>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Order masuk via</label>
+          <select id="sumberOrder">
+            <option value="staff">Staff (Input Langsung)</option>
+            <option value="walk_in">Walk In</option>
+            <option value="instagram">Instagram</option>
+            <option value="shopee">Shopee</option>
+            <option value="wa_bot">WA Bot</option>
+          </select>
+        </div>
+      </div>
+
       <div style="display:flex;gap:12px;padding-bottom:24px">
         <a href="orders.html" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</a>
         <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center" id="submitBtn">Buat Order</button>
@@ -307,6 +322,8 @@
         totalPrice: Number(document.getElementById('totalPrice').value)||0,
         depositPaid: Number(document.getElementById('depositPaid').value)||0,
         notes: document.getElementById('notes').value.trim(),
+        sumberOrder: document.getElementById('sumberOrder').value || 'staff',
+        agentSessionId: '',
         createdBy: profile.id,
         createdAt: now,
         updatedAt: now,

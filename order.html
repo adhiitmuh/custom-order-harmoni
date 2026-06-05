@@ -26,7 +26,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
 
@@ -229,6 +229,22 @@
               </div>
               ${sisa>0&&(order.totalPrice||0)>0&&canEdit ? `<button onclick="markPaid()" class="btn btn-green" style="width:100%;margin-top:12px;justify-content:center" id="markPaidBtn">✓ Tandai Lunas</button>` : ''}
               ${isPaid ? `<div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;font-weight:700;font-size:13px;color:#065f46">✅ LUNAS</div>` : ''}
+
+              <hr class="sep" style="margin:14px 0">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5)">Bukti Pembayaran</p>
+                ${canEdit ? `<label style="cursor:pointer;font-size:11px;font-weight:600;color:var(--green);display:flex;align-items:center;gap:3px" id="proofUploadLabel">
+                  📎 Upload <input type="file" id="proofInput" accept="image/*,.pdf" style="display:none" onchange="uploadPaymentProof(this)">
+                </label>` : ''}
+              </div>
+              <div id="paymentProofs" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
+                ${order.paymentProofs?.length ? order.paymentProofs.map(url => {
+                  const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(url.split('?')[0])
+                  return isImg
+                    ? `<a href="${url}" target="_blank" title="Lihat bukti"><img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.12)"></a>`
+                    : `<a href="${url}" target="_blank" title="Buka file" style="width:64px;height:64px;border-radius:8px;border:1px solid rgba(3,69,67,.12);display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;background:var(--beige-soft)"><span style="font-size:22px">📄</span><span style="font-size:9px;color:rgba(3,69,67,.45);margin-top:2px">PDF</span></a>`
+                }).join('') : `<p style="font-size:12px;color:rgba(3,69,67,.35)">Belum ada bukti</p>`}
+              </div>
             </div>
             <div id="paymentEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
@@ -432,6 +448,31 @@
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
 
+  window.uploadPaymentProof = async function(input) {
+    if (!input.files[0]) return
+    const file = input.files[0]
+    const label = document.getElementById('proofUploadLabel')
+    if (label) label.style.opacity = '0.5'
+    try {
+      const storRef = ref(storage, `orders/${orderId}/payment/${Date.now()}_${file.name}`)
+      const snap = await new Promise((res, rej) => {
+        const task = uploadBytesResumable(storRef, file)
+        task.on('state_changed', null, rej, () => res(task.snapshot))
+      })
+      const url = await getDownloadURL(snap.ref)
+      await updateDoc(doc(db, 'orders', orderId), {
+        paymentProofs: arrayUnion(url),
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch (err) {
+      alert('Gagal upload bukti: ' + err.message)
+    } finally {
+      if (label) label.style.opacity = '1'
+      input.value = ''
+    }
+  }
+
   window.markPaid = async function() {
     const btn = document.getElementById('markPaidBtn')
     if (btn) { btn.disabled=true; btn.textContent='Menyimpan…' }
@@ -477,7 +518,12 @@
   }
 
   window.changeStatus = async function(status) {
-    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: Timestamp.now() })
+    const now = Timestamp.now()
+    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: now })
+    // Sync status ke public_order_info agar chat.html baca status terkini
+    if (order.chatToken) {
+      updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
+    }
     await loadOrder(getProfile())
     showWAToast(status)
   }
@@ -592,15 +638,20 @@
         return
       }
       const profile = getProfile()
-      el.innerHTML = snap.docs.map(d => {
-        const m = d.data()
+      const msgs = snap.docs.map(d => d.data())
+
+      el.innerHTML = msgs.map(m => {
         const isMe = m.senderId === profile?.id
         const isCustomer = m.senderRole === 'customer'
         const bg = isCustomer ? '#f0fdf4' : isMe ? 'var(--green)' : 'var(--beige-soft)'
         const color = isMe ? 'white' : 'var(--black)'
         const align = isMe ? 'flex-end' : 'flex-start'
         const staffLabel = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
-        const name = isCustomer ? `👤 ${m.senderName}` : `👷 Tim Harmoni — ${staffLabel}`
+        const name = isCustomer
+          ? `👤 ${m.senderName}`
+          : m.senderRole === 'production'
+            ? `🎨 Tim Desain — ${staffLabel}`
+            : `💬 CS Harmoni — ${staffLabel}`
         return `<div style="display:flex;flex-direction:column;align-items:${align};max-width:80%">
           <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px;${isMe?'text-align:right':''}">${name} · ${timeAgo(m.createdAt)}</span>
           <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${isMe?'12px 12px 2px 12px':'12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word">
@@ -610,6 +661,18 @@
         </div>`
       }).join('')
       el.scrollTop = el.scrollHeight
+
+      // Badge unread: hitung pesan customer setelah balasan staff terakhir
+      let lastStaffIdx = -1
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].senderRole !== 'customer') { lastStaffIdx = i; break }
+      }
+      const unread = msgs.slice(lastStaffIdx + 1).filter(m => m.senderRole === 'customer').length
+      const badge = document.getElementById('chatUnread')
+      if (badge) {
+        badge.textContent = unread || ''
+        badge.style.display = unread > 0 ? '' : 'none'
+      }
     })
   }
 

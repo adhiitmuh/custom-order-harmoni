@@ -114,6 +114,10 @@
     'done':'st-done','delivered':'st-delivered','pending-approval':'st-pending','cancelled':'st-pending',
   }
 
+  // Isi setelah Worker di-deploy: npx wrangler deploy → copy URL worker ke sini
+  const WORKER_URL = ''  // contoh: 'https://harmoni-order-api.username.workers.dev'
+  const NOTIFY_KEY = '' // sama dengan env var NOTIFY_KEY di Worker
+
   const params = new URLSearchParams(location.search)
   const token  = params.get('t')
 
@@ -143,6 +147,12 @@
       return
     }
     const orderInfo = snap.data()
+
+    // Fetch real-time status from orders collection (public_order_info.status bisa stale)
+    try {
+      const orderSnap = await getDoc(doc(db,'orders',orderInfo.orderId))
+      if (orderSnap.exists()) orderInfo.status = orderSnap.data().status
+    } catch (_) {}
 
     // Load ALL knowledge & price lists (batch)
     const { getDocs: gd, query: q, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
@@ -190,6 +200,13 @@
             <p style="font-size:11px;color:rgba(3,69,67,.35);margin-top:6px">⚠ Dilarang mengirim nomor HP, email, atau kontak</p>
           </div>
         </div>
+        ${['delivered','cancelled'].includes(orderInfo.status) ? `
+        <div style="padding:14px 16px;border-top:1px solid rgba(3,69,67,.08);background:#f8faf8;text-align:center">
+          <p style="font-size:13px;color:rgba(3,69,67,.5)">
+            ${orderInfo.status === 'delivered' ? '✅ Order selesai — chat ditutup. Terima kasih sudah mempercayakan pesanan ke Harmoni!' : '❌ Order dibatalkan — chat ditutup.'}
+          </p>
+          <p style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">Riwayat chat di atas tetap bisa dibaca.</p>
+        </div>` : `
         <div class="input-area">
           <textarea class="msg-input" id="chatInput" placeholder="Tulis pesan soal desain…" rows="1"
             oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
@@ -198,7 +215,7 @@
             📎 <input type="file" id="fileInput" accept="image/*,.pdf" style="display:none" onchange="sendFile(this)">
           </label>
           <button class="send-btn" onclick="sendMsg()" id="sendBtn">➤</button>
-        </div>
+        </div>`}
       </div>
 
       <!-- Info view — ALL divisions -->
@@ -308,7 +325,11 @@
         const displayCls = isMe ? 'me' : ''
         const bubbleCls = isMe ? 'me' : 'other'
         const staffName = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
-        const senderLabel = isStaff ? `👷 Tim Harmoni — ${staffName}` : `👤 ${m.senderName}`
+        const senderLabel = !isStaff
+          ? `👤 ${m.senderName}`
+          : m.senderRole === 'production'
+            ? `🎨 Tim Desain — ${staffName}`
+            : `💬 CS Harmoni — ${staffName}`
         return `<div class="bubble-wrap ${isMe?'me':'other'}">
           <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}</span>
           <div class="bubble ${bubbleCls}">
@@ -339,14 +360,28 @@
     input.style.height = 'auto'
     try {
       const snap = await getDoc(doc(db,'public_order_info',token))
-      const name = snap.exists() ? snap.data().customerName : 'Customer'
+      const info = snap.exists() ? snap.data() : {}
+      const name = info.customerName || 'Customer'
       await addDoc(collection(db,'chat_messages',token,'messages'), {
         text, imageUrl:null, type:'text',
-        senderId: token, // use token as customer ID
+        senderId: token,
         senderName: name,
         senderRole: 'customer',
         createdAt: Timestamp.now(),
       })
+      // Notif ke CS via Worker (aktif setelah Worker di-deploy)
+      if (WORKER_URL && NOTIFY_KEY) {
+        fetch(`${WORKER_URL}/notify-cs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
+          body: JSON.stringify({
+            orderNumber: info.orderNumber || '',
+            customerName: name,
+            division: info.division || '',
+            previewText: text.slice(0, 80),
+          }),
+        }).catch(() => {})
+      }
     } finally { btn.disabled = false }
   }
 

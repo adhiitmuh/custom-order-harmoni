@@ -1,0 +1,14 @@
+name = "harmoni-order-api"
+main = "create-order.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["0 0 * * *"]  # Setiap hari jam 08.00 WITA (00:00 UTC)
+
+# Set env vars via CLI (jangan hardcode di sini):
+#   npx wrangler secret put FIREBASE_PROJECT_ID
+#   npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_KEY
+#   npx wrangler secret put FONNTE_API_KEY
+#   npx wrangler secret put OWNER_WA_NUMBER
+#   npx wrangler secret put API_SECRET_KEY
+#   npx wrangler secret put NOTIFY_KEY      (key untuk chat.html → /notify-cs, boleh beda dari API_SECRET_KEY)
