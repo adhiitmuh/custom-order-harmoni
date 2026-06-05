@@ -107,9 +107,13 @@
     const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
 
     try {
-      // Fetch all knowledge (no orderBy to avoid composite index requirement)
-      const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', divsToShow.slice(0,10))))
-      let allSections = snap.docs.map(x => ({ id: x.id, ...x.data() }))
+      // Firestore 'in' supports max 10 items — batch if more divisions
+      let allSections = []
+      for (let i = 0; i < divsToShow.length; i += 10) {
+        const batch = divsToShow.slice(i, i + 10)
+        const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', batch)))
+        allSections.push(...snap.docs.map(x => ({ id: x.id, ...x.data() })))
+      }
       allSections.sort((a,b) => (a.orderIndex||0) - (b.orderIndex||0))
       sections = allSections
 
@@ -328,7 +332,7 @@
 
   window.addPriceRow = () => {
     if (!window._priceItems) window._priceItems = []
-    window._priceItems.push({ name:'', priceMin:'', priceMax:'', unit:'', note:'' })
+    window._priceItems.push({ name:'', priceNormal:'', pricePromo:'', priceAdmin:'', unit:'', note:'' })
     renderPriceRows(window._priceItems)
   }
 
@@ -339,8 +343,9 @@
     btn.disabled=true; btn.textContent='Menyimpan…'
     const items = (window._priceItems||[]).map(item => ({
       name: item.name||'',
-      priceMin: Number(item.priceMin)||0,
-      priceMax: Number(item.priceMax)||0,
+      priceNormal: Number(item.priceNormal)||0,
+      pricePromo:  Number(item.pricePromo)||0,
+      priceAdmin:  Number(item.priceAdmin)||0,
       unit: item.unit||'',
       note: item.note||'',
     })).filter(item => item.name)
