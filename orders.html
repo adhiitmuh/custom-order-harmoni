@@ -31,6 +31,7 @@
         <select id="divFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
           <option value="">Semua Divisi</option>
         </select>
+        <span id="divLockBadge" style="display:none;align-items:center;gap:6px;padding:6px 12px;background:rgba(3,69,67,.07);border-radius:999px;font-size:12px;font-weight:600;color:var(--green)"></span>
         <select id="statusFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
           <option value="">Semua Status</option>
           <option value="pending">Menunggu Konfirmasi</option>
@@ -70,8 +71,21 @@
     divSel.appendChild(opt)
   })
 
+  let lockedDivision = null  // for production role: hard-locked to their division
+
   requireAuth(async (profile) => {
     if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
+
+    // Production staff: lock to their division
+    if (profile.role === 'production' && profile.division) {
+      lockedDivision = profile.division
+      const meta = DIVISION_META[lockedDivision] || {}
+      const badge = document.getElementById('divLockBadge')
+      badge.innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
+      badge.style.display = 'inline-flex'
+      // Hide the division dropdown — they can't change it
+      document.getElementById('divFilter').style.display = 'none'
+    }
 
     const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))
     allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -82,7 +96,7 @@
     )
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
-      document.getElementById('divFilter').value = ''
+      if (!lockedDivision) document.getElementById('divFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
       render()
@@ -102,7 +116,8 @@
 
     const filtered = allOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
-      if (div && o.division !== div) return false
+      const divCheck = lockedDivision || div
+      if (divCheck && o.division !== divCheck) return false
       if (status && o.status !== status) return false
       if (pay) {
         const total = o.totalPrice||0, paid = o.depositPaid||0

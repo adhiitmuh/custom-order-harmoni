@@ -33,7 +33,7 @@
         <div class="form-group"><label>Nama Lengkap <span class="req">*</span></label><input type="text" id="newName" placeholder="Nama pengguna"></div>
         <div class="form-group">
           <label>Role <span class="req">*</span></label>
-          <select id="newRole">
+          <select id="newRole" onchange="onRoleChange(this.value)">
             <option value="cs">CS (Customer Service)</option>
             <option value="manager">Kepala Cabang</option>
             <option value="production">Tim Produksi</option>
@@ -42,7 +42,14 @@
         </div>
         <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" id="newEmail" placeholder="email@harmoni.id"></div>
         <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
-        <div class="form-group" style="grid-column:1/-1"><label>Cabang / Divisi</label><input type="text" id="newBranch" placeholder="cth: Cabang Makassar, Tim Bordir, CS Online…"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Cabang</label><input type="text" id="newBranch" placeholder="cth: Cabang Makassar, CS Online…"></div>
+        <div class="form-group" id="divisiWrap" style="grid-column:1/-1;display:none">
+          <label>Divisi <span class="req">*</span></label>
+          <select id="newDivision">
+            <option value="">— Pilih Divisi —</option>
+          </select>
+          <p class="form-hint">Tim produksi hanya melihat order dari divisi ini secara default</p>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="hideAddForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
@@ -60,8 +67,21 @@
   import { requireAuth, getProfile } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+  import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
   const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
+
+  // Populate division select
+  const divSel = document.getElementById('newDivision')
+  DIVISIONS.forEach(d => {
+    const opt = document.createElement('option')
+    opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+    divSel.appendChild(opt)
+  })
+
+  window.onRoleChange = function(role) {
+    document.getElementById('divisiWrap').style.display = role === 'production' ? '' : 'none'
+  }
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
@@ -85,6 +105,7 @@
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : ''}
+          ${u.role==='production' && u.division ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${DIVISION_META[u.division]?.icon||''} ${DIVISION_META[u.division]?.label||u.division}</div>` : ''}
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
         ${u.id !== getProfile()?.id ? `<button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
@@ -120,7 +141,9 @@
 
       // Save to Firestore
       const branch = document.getElementById('newBranch').value.trim()
-      await setDoc(doc(db,'users',newUid), { name, email, role, branch, createdAt: Timestamp.now() })
+      const division = role === 'production' ? document.getElementById('newDivision').value : ''
+      if (role === 'production' && !division) throw new Error('Pilih divisi untuk tim produksi')
+      await setDoc(doc(db,'users',newUid), { name, email, role, branch, division, createdAt: Timestamp.now() })
 
       // Re-sign in as owner
       if (currentEmail) {
