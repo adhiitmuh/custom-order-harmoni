@@ -2,6 +2,11 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Order Baru — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
@@ -64,6 +69,39 @@
           <div class="progress-track"><div class="progress-fill" id="uploadBar" style="width:0%"></div></div>
           <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px" id="uploadText">Mengupload…</p>
         </div>
+      </div>
+
+      <!-- Order Items -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <h2 style="font-size:15px;font-weight:700">Rincian Item</h2>
+            <p style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px">Opsional — total harga otomatis terjumlah</p>
+          </div>
+          <button type="button" onclick="addItemRow()" class="btn btn-ghost btn-sm">+ Tambah Item</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px" id="itemTable">
+            <thead>
+              <tr style="border-bottom:1.5px solid rgba(3,69,67,.1)">
+                <th style="text-align:left;padding:6px 8px 8px;font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em">NAMA ITEM / PRODUK</th>
+                <th style="text-align:center;padding:6px 8px 8px;font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;width:70px">QTY</th>
+                <th style="text-align:right;padding:6px 8px 8px;font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;width:130px">HARGA/PCS (Rp)</th>
+                <th style="text-align:right;padding:6px 8px 8px;font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;width:120px">SUBTOTAL</th>
+                <th style="width:32px"></th>
+              </tr>
+            </thead>
+            <tbody id="itemRows"></tbody>
+            <tfoot>
+              <tr id="itemTotalRow" style="display:none;border-top:1.5px solid rgba(3,69,67,.1)">
+                <td colspan="3" style="padding:10px 8px;text-align:right;font-size:12px;font-weight:700;color:rgba(3,69,67,.5)">TOTAL</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:800;font-size:14px;color:var(--green)" id="itemGrandTotal">Rp 0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <button type="button" onclick="addItemRow()" class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;justify-content:center;border-style:dashed">+ Tambah Item</button>
       </div>
 
       <!-- Pricing -->
@@ -132,6 +170,92 @@
   import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
   let selectedDiv = ''
+  let itemRowCount = 0
+
+  window.addItemRow = function(item = {}) {
+    const id = ++itemRowCount
+    const tbody = document.getElementById('itemRows')
+    const tr = document.createElement('tr')
+    tr.id = `row-${id}`
+    tr.style.borderBottom = '1px solid rgba(3,69,67,.06)'
+    tr.innerHTML = `
+      <td style="padding:6px 4px">
+        <input type="text" placeholder="cth: Bordir Logo, Jersey Futsal S…" value="${item.name||''}"
+          data-field="name" data-row="${id}"
+          style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'">
+      </td>
+      <td style="padding:6px 4px">
+        <input type="number" placeholder="0" min="1" value="${item.qty||''}"
+          data-field="qty" data-row="${id}"
+          style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:center;outline:none"
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
+          oninput="calcRow(${id})">
+      </td>
+      <td style="padding:6px 4px">
+        <input type="number" placeholder="0" min="0" value="${item.pricePerUnit||''}"
+          data-field="price" data-row="${id}"
+          style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none"
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
+          oninput="calcRow(${id})">
+      </td>
+      <td style="padding:6px 4px;text-align:right;font-weight:700;font-size:13px;color:var(--green);white-space:nowrap;min-width:100px" id="sub-${id}">
+        ${item.subtotal ? `Rp ${Number(item.subtotal).toLocaleString('id-ID')}` : '—'}
+      </td>
+      <td style="padding:6px 4px;text-align:center">
+        <button type="button" onclick="removeRow(${id})"
+          style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:16px;padding:2px 4px;line-height:1"
+          title="Hapus">✕</button>
+      </td>`
+    tbody.appendChild(tr)
+    recalcTotal()
+  }
+
+  window.calcRow = function(id) {
+    const qty   = Number(document.querySelector(`[data-field="qty"][data-row="${id}"]`)?.value) || 0
+    const price = Number(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value) || 0
+    const sub   = qty * price
+    const el    = document.getElementById(`sub-${id}`)
+    if (el) el.textContent = sub > 0 ? `Rp ${sub.toLocaleString('id-ID')}` : '—'
+    recalcTotal()
+  }
+
+  window.removeRow = function(id) {
+    document.getElementById(`row-${id}`)?.remove()
+    recalcTotal()
+  }
+
+  function recalcTotal() {
+    const rows = document.querySelectorAll('#itemRows tr')
+    document.getElementById('itemTotalRow').style.display = rows.length ? '' : 'none'
+
+    let grand = 0
+    rows.forEach(tr => {
+      const rowId = tr.id.replace('row-','')
+      const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
+      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
+      grand += qty * price
+    })
+
+    document.getElementById('itemGrandTotal').textContent =
+      grand > 0 ? `Rp ${grand.toLocaleString('id-ID')}` : 'Rp 0'
+
+    // Auto-isi Total Harga jika ada item
+    if (grand > 0) {
+      document.getElementById('totalPrice').value = grand
+      checkPriceTierLive()
+      updateSisa()
+    }
+  }
+
+  function getItemRows() {
+    return [...document.querySelectorAll('#itemRows tr')].map(tr => {
+      const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
+      const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
+      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
+      return { name, qty, pricePerUnit: price, subtotal: qty * price }
+    }).filter(i => i.name || i.qty || i.pricePerUnit)
+  }
   let currentPriceList = null
   let currentPriceTier = 'normal'
 
@@ -333,6 +457,7 @@
         priceApprovalReason: document.getElementById('approvalReason')?.value.trim() || '',
         priceApprovalBy: null,
         priceApprovalAt: null,
+        orderItems: getItemRows(),
         chatToken,
       })
 

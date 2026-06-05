@@ -14,14 +14,37 @@ export function requireAuth(callback) {
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = 'index.html'; return }
     _user = user
+
+    // Use cached profile to render immediately, then refresh in background
+    const cacheKey = `profile_${user.uid}`
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        _profile = JSON.parse(cached)
+        renderSidebar(_profile)
+        callback(_profile)
+      } catch { /* fall through to fresh fetch */ }
+    }
+
     try {
       const snap = await getDoc(doc(db, 'users', user.uid))
-      _profile = snap.exists() ? { id: snap.id, ...snap.data() } : { id: user.uid, name: user.email, role: 'cs', branch: '' }
+      const fresh = snap.exists() ? { id: snap.id, ...snap.data() } : { id: user.uid, name: user.email, role: 'cs', branch: '' }
+      sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
+      if (!cached) {
+        _profile = fresh
+        renderSidebar(_profile)
+        callback(_profile)
+      } else {
+        _profile = fresh
+        renderSidebar(_profile)
+      }
     } catch {
-      _profile = { id: user.uid, name: user.email, role: 'cs' }
+      if (!cached) {
+        _profile = { id: user.uid, name: user.email, role: 'cs' }
+        renderSidebar(_profile)
+        callback(_profile)
+      }
     }
-    renderSidebar(_profile)
-    callback(_profile)
   })
 }
 
