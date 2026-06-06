@@ -24,7 +24,7 @@ const harmoniConfig = {
 }
 
 const dataApp    = initializeApp(dataConfig, 'data')
-const harmoniApp = initializeApp(harmoniConfig)
+const harmoniApp = initializeApp(harmoniConfig, 'harmoni-auth')
 
 export const app     = harmoniApp
 export const auth    = getAuth(harmoniApp)
