@@ -23,6 +23,8 @@
     .tb-normal { background:#dcfce7; color:#166534; }
     .tb-promo  { background:#fef3c7; color:#92400e; }
     .tb-admin  { background:#fee2e2; color:#991b1b; }
+    .tier-modal { font-weight:700; color:#7c3aed; }
+    .tb-modal  { background:#ede9fe; color:#4c1d95; }
   </style>
 </head>
 <body>
@@ -109,6 +111,7 @@
     const el = document.getElementById('knowledgeContent')
     el.innerHTML = '<div class="loading">Memuat…</div>'
     const canEdit = profile.role === 'owner' || profile.role === 'cs'
+    const canEditModal = profile.role === 'owner' || profile.role === 'data'
     const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
 
     try {
@@ -164,6 +167,7 @@
                 <span class="tier-badge tb-normal">● Normal — Staff langsung pakai</span>
                 <span class="tier-badge tb-promo">● Promo — Perlu approval Kepala Cabang</span>
                 <span class="tier-badge tb-admin">● Admin — Perlu approval Owner (batas bawah)</span>
+                ${canEditModal ? `<span class="tier-badge tb-modal">● Modal — Internal</span>` : ''}
               </div>
               ${prices.length ? `
                 <div style="overflow-x:auto">
@@ -173,6 +177,7 @@
                     <th>HARGA NORMAL</th>
                     <th>HARGA PROMO</th>
                     <th>HARGA ADMIN</th>
+                    ${canEditModal ? '<th>HARGA MODAL</th>' : ''}
                     <th>SATUAN</th>
                     <th>KETERANGAN</th>
                   </tr></thead>
@@ -182,6 +187,7 @@
                       <td class="tier-normal">${p.priceNormal ? `Rp ${Number(p.priceNormal).toLocaleString('id-ID')}` : '—'}</td>
                       <td class="tier-promo">${p.pricePromo  ? `Rp ${Number(p.pricePromo).toLocaleString('id-ID')}` : '—'}</td>
                       <td class="tier-admin">${p.priceAdmin  ? `Rp ${Number(p.priceAdmin).toLocaleString('id-ID')}` : '—'}</td>
+                      ${canEditModal ? `<td class="tier-modal">${p.priceModal ? 'Rp ' + Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
                       <td style="color:rgba(3,69,67,.5)">${p.unit||'—'}</td>
                       <td style="color:rgba(3,69,67,.5);font-size:12px">${p.note||''}</td>
                     </tr>`).join('')}
@@ -281,11 +287,14 @@
   }
 
   function renderPriceRows(items) {
+    const role = getProfile()?.role
+    const canModal = role === 'owner' || role === 'data'
     document.getElementById('priceRows').innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(3,69,67,.04);border-radius:8px;font-size:11px;font-weight:700">
+      <div style="display:grid;grid-template-columns:repeat(${canModal?4:3},1fr);gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(3,69,67,.04);border-radius:8px;font-size:11px;font-weight:700">
         <span class="tier-normal">● Harga Normal<br><span style="font-weight:400;font-size:10px">Staff bisa langsung pakai</span></span>
         <span class="tier-promo">● Harga Promo<br><span style="font-weight:400;font-size:10px">Perlu approval Kepala Cabang</span></span>
         <span class="tier-admin">● Harga Admin<br><span style="font-weight:400;font-size:10px">Batas bawah, perlu approval Owner</span></span>
+        ${canModal ? `<span class="tier-modal">● Harga Modal<br><span style="font-weight:400;font-size:10px">Internal — tidak ditampilkan ke staff</span></span>` : ''}
       </div>
       ${items.length === 0 ? '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:8px">Belum ada item. Klik "Tambah Baris".</p>' :
       items.map((item, i) => `
@@ -309,6 +318,11 @@
               <input type="number" value="${item.priceAdmin||''}" oninput="updatePriceRow(${i},'priceAdmin',this.value)" placeholder="misal: 15000" style="border-color:rgba(185,28,28,.3)">
             </div>
           </div>
+          ${canModal ? `
+          <div style="margin-bottom:8px">
+            <label style="font-size:11px;color:#7c3aed;font-weight:700">Harga Modal (Rp) — Internal</label>
+            <input type="number" value="${item.priceModal||''}" oninput="updatePriceRow(${i},'priceModal',this.value)" placeholder="misal: 10000" style="border-color:rgba(124,58,237,.3)">
+          </div>` : ''}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
               <label style="font-size:11px">Satuan</label>
@@ -333,7 +347,7 @@
 
   window.addPriceRow = () => {
     if (!window._priceItems) window._priceItems = []
-    window._priceItems.push({ name:'', priceMin:'', priceMax:'', unit:'', note:'' })
+    window._priceItems.push({ name:'', priceNormal:'', pricePromo:'', priceAdmin:'', priceModal:'', unit:'', note:'' })
     renderPriceRows(window._priceItems)
   }
 
@@ -344,8 +358,10 @@
     btn.disabled=true; btn.textContent='Menyimpan…'
     const items = (window._priceItems||[]).map(item => ({
       name: item.name||'',
-      priceMin: Number(item.priceMin)||0,
-      priceMax: Number(item.priceMax)||0,
+      priceNormal: Number(item.priceNormal)||0,
+      pricePromo: Number(item.pricePromo)||0,
+      priceAdmin: Number(item.priceAdmin)||0,
+      priceModal: Number(item.priceModal)||0,
       unit: item.unit||'',
       note: item.note||'',
     })).filter(item => item.name)
