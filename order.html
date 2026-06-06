@@ -83,7 +83,10 @@
             <h1 style="font-size:20px;font-weight:800;color:var(--black)">${order.customerName}</h1>
           </div>
         </div>
-        <button onclick="showInvoice()" class="btn btn-primary no-print">📄 Invoice</button>
+        <div style="display:flex;gap:8px" class="no-print">
+          ${profile.role === 'owner' ? `<button onclick="deleteOrder()" class="btn btn-danger btn-sm">🗑 Hapus</button>` : ''}
+          <button onclick="showInvoice()" class="btn btn-primary">📄 Invoice</button>
+        </div>
       </div>
 
       <!-- Price approval banner -->
@@ -430,6 +433,17 @@
           </div>
         </div>
       </div>`
+  }
+
+  window.deleteOrder = async function() {
+    if (!confirm(`Hapus order ${order.orderNumber} (${order.customerName})?\n\nData order, chat, dan rincian akan terhapus permanen.`)) return
+    try {
+      await deleteDoc(doc(db,'orders',orderId))
+      await deleteDoc(doc(db,'public_order_info',order.chatToken)).catch(()=>{})
+      window.location.href = 'orders.html'
+    } catch(err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   window.toggleProgressForm = function() {
