@@ -40,17 +40,25 @@ export function requireAuth(callback) {
       const snap = await getDoc(doc(authDb, 'users', user.uid))
       const data = snap.exists() ? snap.data() : null
 
-      // Cek aktif & akses toko — Custom Order hanya untuk owner & Harmoni Indonesia
-      if (!data || !data.aktif || (data.toko !== 'semua' && data.toko !== 'harmoni_indonesia')) {
-        const msg = !data || !data.aktif
-          ? 'Akun belum diaktifkan. Hubungi admin.'
-          : 'Akun ini tidak memiliki akses ke Harmoni Custom Order.'
-        showAccessDenied(msg)
+      if (!data || !data.aktif) {
+        showAccessDenied('Akun belum diaktifkan. Hubungi admin.')
         return
       }
 
-      const roleMap = { owner: 'owner', staff: 'cs' }
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: roleMap[data.role] || data.role }
+      // Tentukan role: owner dapat 'owner', staff baca dari apps.custom_order
+      let appRole
+      if (data.role === 'owner') {
+        appRole = 'owner'
+      } else {
+        const appAccess = data.apps?.custom_order
+        if (!appAccess?.akses) {
+          showAccessDenied('Akun ini tidak memiliki akses ke Harmoni Custom Order.')
+          return
+        }
+        appRole = appAccess.role || 'cs'
+      }
+
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole }
       sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
       if (!cached) {
         _profile = fresh
