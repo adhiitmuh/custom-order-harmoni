@@ -988,6 +988,9 @@
   window.sendWA = function() {
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const isPaid = sisa <= 0 && (order.totalPrice||0)>0
+    const chatUrl = order.chatToken
+      ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}`
+      : null
     const lines = [
       `*INVOICE HARMONI*`, ``,
       `No. Order: *${order.orderNumber}*`,
@@ -1003,8 +1006,9 @@
       order.notes ? `Catatan: ${order.notes}\n` : '',
       `Progress: ${order.progressPercentage||0}%`, ``,
       isPaid ? `✅ Status Pembayaran: LUNAS` : `⚠ Mohon segera melunasi sisa pembayaran`, ``,
+      chatUrl ? `📱 *Pantau progress & diskusi desain pesanan Anda:*\n${chatUrl}` : '',
+      ``,
       `Terima kasih telah mempercayakan pesanan Anda kepada *Harmoni* 🙏`,
-      `_PT Citra Harmonis · Makassar_`,
     ].filter(Boolean).join('\n')
     const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
     const url = contact.startsWith('62')
