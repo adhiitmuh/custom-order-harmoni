@@ -93,6 +93,18 @@
     if (!snap.exists()) { document.getElementById('pageContent').innerHTML = '<p>Order tidak ditemukan</p>'; return }
     order = { id: snap.id, ...snap.data() }
 
+    // Cabang guard — non-owner hanya bisa akses order dari cabang mereka
+    if (profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) {
+      document.getElementById('pageContent').innerHTML = `
+        <div style="text-align:center;padding:60px 20px">
+          <div style="font-size:40px;margin-bottom:12px">🔒</div>
+          <div style="font-weight:700;font-size:16px;margin-bottom:6px">Akses Ditolak</div>
+          <div style="font-size:13px;color:rgba(3,69,67,.5);margin-bottom:20px">Order ini milik cabang lain</div>
+          <a href="orders.html" class="btn btn-ghost btn-sm">← Kembali</a>
+        </div>`
+      return
+    }
+
     const updSnap = await getDocs(query(collection(db,'orders',orderId,'progress_updates'), orderBy('createdAt','desc')))
     order.progressUpdates = updSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
