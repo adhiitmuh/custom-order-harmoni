@@ -84,5 +84,10 @@
     }
   })
 </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
+  }
+</script>
 </body>
 </html>

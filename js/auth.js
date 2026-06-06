@@ -1,4 +1,8 @@
 import { auth, authDb, db } from './config.js'
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
+}
 import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS } from './utils.js'
