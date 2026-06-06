@@ -850,7 +850,12 @@
     document.getElementById('waToast')?.remove()
 
     const contact = order.customerContact.replace(/\D/g,'').replace(/^0/,'62')
-    const fullMsg = `Halo *${order.customerName}*,\n\n` + msg + `\n\n_PT Citra Harmonis · Makassar_`
+    const chatUrl = order.chatToken
+      ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}`
+      : null
+    const fullMsg = `Halo *${order.customerName}*,\n\n` + msg
+      + (chatUrl ? `\n\n📱 *Pantau progress & diskusi desain:*\n${chatUrl}` : '')
+      + `\n\n_Harmoni · Makassar_`
     const waUrl = contact.startsWith('62')
       ? `https://wa.me/${contact}?text=${encodeURIComponent(fullMsg)}`
       : `https://wa.me/?text=${encodeURIComponent(fullMsg)}`
