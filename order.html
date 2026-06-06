@@ -380,7 +380,7 @@
             <div id="modalEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
                 <label style="font-size:12px">Harga Modal (Rp)</label>
-                <input type="number" id="editModal" value="${order.hargaModal||''}" min="0" placeholder="0">
+                <input type="number" id="inputHargaModal" value="${order.hargaModal||''}" min="0" placeholder="0">
               </div>
               <button onclick="saveModal()" class="btn btn-primary" style="width:100%;justify-content:center">Simpan</button>
             </div>
@@ -725,7 +725,7 @@
     btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
       await updateDoc(doc(db, 'orders', orderId), {
-        hargaModal: Number(document.getElementById('editModal').value) || 0,
+        hargaModal: Number(document.getElementById('inputHargaModal').value) || 0,
         updatedAt: Timestamp.now(),
       })
       await loadOrder(getProfile())
