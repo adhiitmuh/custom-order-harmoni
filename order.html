@@ -371,7 +371,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between">
             <div style="display:flex;align-items:center;gap:12px">
               <svg viewBox="0 0 100 100" width="36" height="36"><circle cx="74" cy="20" r="11" fill="#FFFBD5"/><rect x="22" y="8" width="22" height="80" fill="#FFFBD5"/><path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#FFFBD5"/></svg>
-              <div><div style="font-weight:800;font-size:18px;color:var(--beige);letter-spacing:-.03em">harmoni</div><div style="font-size:8px;color:var(--beige);opacity:.4;letter-spacing:.1em;font-family:monospace">PT CITRA HARMONIS</div></div>
+              <div><div style="font-weight:800;font-size:18px;color:var(--beige);letter-spacing:-.03em">harmoni</div></div>
             </div>
             <div style="text-align:right"><div style="font-size:10px;color:var(--beige);opacity:.5;letter-spacing:.06em">INVOICE</div><div style="font-family:monospace;font-weight:700;font-size:13px;color:var(--beige)">${order.orderNumber}</div></div>
           </div>
@@ -417,9 +417,16 @@
             <tfoot><tr><td ${order.orderItems?.length?`colspan="3"`:''}style="padding-top:14px;font-weight:800;font-size:15px">Total Sisa Bayar</td><td style="padding-top:14px;text-align:right;font-weight:800;font-size:20px;color:var(--green)">${fmtCurrency(sisa)}</td></tr></tfoot>
           </table>
           ${isPaid ? `<div style="background:rgba(5,150,105,.07);border:1.5px solid rgba(5,150,105,.2);border-radius:10px;padding:12px;text-align:center;font-weight:700;font-size:13px;color:#065f46;margin-bottom:22px">✅ LUNAS</div>` : ''}
+          ${order.chatToken ? `
+          <div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px;text-align:center">
+            <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:6px">Pantau progress & diskusi desain pesanan Anda:</p>
+            <p style="font-family:monospace;font-size:11px;font-weight:700;color:var(--green);word-break:break-all">
+              https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}
+            </p>
+          </div>` : ''}
           <div style="border-top:1px solid rgba(3,69,67,.08);padding-top:18px;text-align:center">
             <p style="font-size:12px;color:rgba(3,69,67,.6)">Terima kasih telah mempercayakan pesanan Anda kepada <strong>Harmoni</strong></p>
-            <p style="font-family:monospace;font-size:9px;color:rgba(3,69,67,.35);margin-top:6px">PT Citra Harmonis · Makassar, Sulawesi Selatan</p>
+            <p style="font-size:9px;color:rgba(3,69,67,.35);margin-top:6px">Makassar, Sulawesi Selatan</p>
           </div>
         </div>
       </div>`
