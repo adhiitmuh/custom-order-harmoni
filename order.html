@@ -28,6 +28,49 @@
   </main>
 </div>
 
+<!-- PIN Approval Modal -->
+<div id="pinModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;align-items:center;justify-content:center;padding:20px">
+  <div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:4px" id="pinModalTitle">Approval Diperlukan</h3>
+    <p style="font-size:13px;color:rgba(3,69,67,.5);margin-bottom:20px" id="pinModalDesc"></p>
+    <div class="form-group" style="margin-bottom:12px">
+      <label style="font-size:12px">Kepala Cabang</label>
+      <select id="pinManagerSelect" style="font-size:13px"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label style="font-size:12px">PIN</label>
+      <input type="password" id="pinInput" placeholder="Masukkan PIN" maxlength="6" inputmode="numeric"
+        style="font-size:20px;letter-spacing:.2em;text-align:center"
+        onkeydown="if(event.key==='Enter') confirmPin()">
+      <p id="pinError" style="display:none;color:#b91c1c;font-size:12px;margin-top:4px">PIN salah, coba lagi</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closePinModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="confirmPin()" class="btn btn-primary" style="flex:1;justify-content:center" id="pinConfirmBtn">Konfirmasi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Order Modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 8px 40px rgba(0,0,0,.2);margin:auto">
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:20px">Edit Order</h3>
+    <div class="form-group"><label>Nama Pemesan</label><input type="text" id="editName"></div>
+    <div class="form-group"><label>Target Selesai</label><input type="date" id="editDueDate"></div>
+    <div class="grid-2">
+      <div class="form-group"><label>Total Harga (Rp)</label><input type="number" id="editTotalPrice" min="0"></div>
+      <div class="form-group"><label>DP Dibayar (Rp)</label><input type="number" id="editDeposit" min="0"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:20px"><label>Catatan</label><textarea id="editNotes" rows="3"></textarea></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeEditModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="submitEdit()" class="btn btn-primary" style="flex:1;justify-content:center" id="editSubmitBtn">Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
@@ -83,8 +126,12 @@
             <h1 style="font-size:20px;font-weight:800;color:var(--black)">${order.customerName}</h1>
           </div>
         </div>
-        <div style="display:flex;gap:8px" class="no-print">
+        <div style="display:flex;gap:8px;flex-wrap:wrap" class="no-print">
           ${profile.role === 'owner' ? `<button onclick="deleteOrder()" class="btn btn-danger btn-sm">🗑 Hapus</button>` : ''}
+          ${(profile.role === 'cs' || profile.role === 'owner') && !['cancelled','delivered'].includes(order.status) ? `
+            <button onclick="requestEdit()" class="btn btn-ghost btn-sm">✏️ Edit</button>
+            <button onclick="requestVoid()" class="btn btn-danger btn-sm">🚫 Void</button>
+          ` : ''}
           <button onclick="showInvoice()" class="btn btn-primary">📄 Invoice</button>
         </div>
       </div>
@@ -433,6 +480,135 @@
           </div>
         </div>
       </div>`
+  }
+
+  // ── PIN Approval ──────────────────────────────────────────
+  let pinAction = null  // 'edit' | 'void'
+  let managers = []
+
+  async function loadManagers() {
+    if (managers.length) return
+    const snap = await getDocs(query(collection(db,'users')))
+    managers = snap.docs.map(d => ({id:d.id,...d.data()})).filter(u => u.role === 'manager' && u.pin)
+  }
+
+  async function openPinModal(action) {
+    await loadManagers()
+    if (!managers.length) { alert('Belum ada Kepala Cabang dengan PIN. Minta Owner tambahkan PIN di Kelola Pengguna.'); return }
+    pinAction = action
+    const sel = document.getElementById('pinManagerSelect')
+    sel.innerHTML = managers.map(m => `<option value="${m.id}">${m.name}${m.branch ? ' — ' + m.branch : ''}</option>`).join('')
+    document.getElementById('pinInput').value = ''
+    document.getElementById('pinError').style.display = 'none'
+    document.getElementById('pinModalTitle').textContent = action === 'edit' ? '✏️ Approval Edit Order' : '🚫 Approval Void Order'
+    document.getElementById('pinModalDesc').textContent = action === 'edit'
+      ? `Edit data order ${order.orderNumber} memerlukan persetujuan Kepala Cabang.`
+      : `Void order ${order.orderNumber} akan membatalkan pesanan ini. Tindakan ini memerlukan persetujuan Kepala Cabang.`
+    document.getElementById('pinModal').style.display = 'flex'
+    setTimeout(() => document.getElementById('pinInput').focus(), 100)
+  }
+
+  window.closePinModal = function() {
+    document.getElementById('pinModal').style.display = 'none'
+    pinAction = null
+  }
+
+  window.confirmPin = async function() {
+    const managerId = document.getElementById('pinManagerSelect').value
+    const pin = document.getElementById('pinInput').value.trim()
+    const manager = managers.find(m => m.id === managerId)
+    const errEl = document.getElementById('pinError')
+    const btn = document.getElementById('pinConfirmBtn')
+
+    if (!pin) { errEl.textContent = 'Masukkan PIN'; errEl.style.display = ''; return }
+    if (!manager || manager.pin !== pin) {
+      errEl.textContent = 'PIN salah, coba lagi'; errEl.style.display = ''
+      document.getElementById('pinInput').value = ''
+      document.getElementById('pinInput').focus()
+      return
+    }
+
+    errEl.style.display = 'none'
+    btn.disabled = true; btn.textContent = 'Memproses…'
+    document.getElementById('pinModal').style.display = 'none'
+
+    if (pinAction === 'edit') openEditModal(manager)
+    else if (pinAction === 'void') executeVoid(manager)
+
+    pinAction = null
+    btn.disabled = false; btn.textContent = 'Konfirmasi'
+  }
+
+  window.requestEdit = function() {
+    const profile = getProfile()
+    if (profile.role === 'owner') { openEditModal(null); return }
+    openPinModal('edit')
+  }
+
+  window.requestVoid = function() {
+    const profile = getProfile()
+    if (profile.role === 'owner') { executeVoid(null); return }
+    openPinModal('void')
+  }
+
+  // ── Edit Order ────────────────────────────────────────────
+  function openEditModal(approvedBy) {
+    document.getElementById('editName').value = order.customerName || ''
+    document.getElementById('editDueDate').value = order.dueDate || ''
+    document.getElementById('editTotalPrice').value = order.totalPrice || ''
+    document.getElementById('editDeposit').value = order.depositPaid || ''
+    document.getElementById('editNotes').value = order.notes || ''
+    document.getElementById('editModal').style.display = 'flex'
+    document.getElementById('editModal').dataset.approvedBy = approvedBy ? JSON.stringify({id:approvedBy.id, name:approvedBy.name}) : ''
+  }
+
+  window.closeEditModal = function() {
+    document.getElementById('editModal').style.display = 'none'
+  }
+
+  window.submitEdit = async function() {
+    const btn = document.getElementById('editSubmitBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      const profile = getProfile()
+      const approvedByRaw = document.getElementById('editModal').dataset.approvedBy
+      const approvedBy = approvedByRaw ? JSON.parse(approvedByRaw) : null
+      const now = Timestamp.now()
+      await updateDoc(doc(db,'orders',orderId), {
+        customerName: document.getElementById('editName').value.trim(),
+        dueDate: document.getElementById('editDueDate').value,
+        totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
+        depositPaid: Number(document.getElementById('editDeposit').value) || 0,
+        notes: document.getElementById('editNotes').value.trim(),
+        updatedAt: now,
+        lastEditBy: profile.name,
+        lastEditApprovedBy: approvedBy?.name || 'Owner',
+        lastEditAt: now,
+      })
+      document.getElementById('editModal').style.display = 'none'
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal menyimpan: ' + err.message) }
+    finally { btn.disabled = false; btn.textContent = 'Simpan Perubahan' }
+  }
+
+  // ── Void Order ────────────────────────────────────────────
+  async function executeVoid(approvedBy) {
+    const profile = getProfile()
+    if (!confirm(`Void order ${order.orderNumber}?\nStatus akan diubah ke Dibatalkan.`)) return
+    try {
+      const now = Timestamp.now()
+      await updateDoc(doc(db,'orders',orderId), {
+        status: 'cancelled',
+        updatedAt: now,
+        voidBy: profile.name,
+        voidApprovedBy: approvedBy?.name || 'Owner',
+        voidAt: now,
+      })
+      if (order.chatToken) {
+        await updateDoc(doc(db,'public_order_info',order.chatToken), { status: 'cancelled' }).catch(()=>{})
+      }
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal void: ' + err.message) }
   }
 
   window.deleteOrder = async function() {

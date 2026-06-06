@@ -50,6 +50,11 @@
           </select>
           <p class="form-hint">Tim produksi hanya melihat order dari divisi ini secara default</p>
         </div>
+        <div class="form-group" id="pinWrap" style="grid-column:1/-1;display:none">
+          <label>PIN Approval <span class="req">*</span></label>
+          <input type="password" id="newPin" placeholder="4–6 digit angka" maxlength="6" inputmode="numeric">
+          <p class="form-hint">Digunakan untuk approve edit & void order dari staff</p>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="hideAddForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
@@ -81,6 +86,7 @@
 
   window.onRoleChange = function(role) {
     document.getElementById('divisiWrap').style.display = role === 'production' ? '' : 'none'
+    document.getElementById('pinWrap').style.display = role === 'manager' ? '' : 'none'
   }
 
   requireAuth(async (profile) => {
@@ -142,8 +148,10 @@
       // Save to Firestore
       const branch = document.getElementById('newBranch').value.trim()
       const division = role === 'production' ? document.getElementById('newDivision').value : ''
+      const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
       if (role === 'production' && !division) throw new Error('Pilih divisi untuk tim produksi')
-      await setDoc(doc(db,'users',newUid), { name, email, role, branch, division, createdAt: Timestamp.now() })
+      if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
+      await setDoc(doc(db,'users',newUid), { name, email, role, branch, division, pin, createdAt: Timestamp.now() })
 
       // Re-sign in as owner
       if (currentEmail) {
