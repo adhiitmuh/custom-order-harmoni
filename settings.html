@@ -103,7 +103,7 @@
 
   let paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true }
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     if (profile.role !== 'owner') {
       document.querySelector('.main').innerHTML = `
         <div style="text-align:center;padding:60px 20px">
@@ -113,7 +113,10 @@
         </div>`
       return
     }
-    await loadPaymentInfo()
+    // Render defaults immediately — no loading state
+    renderBankList()
+    // Fetch from Firestore in background, update when ready
+    loadPaymentInfo()
   })
 
   async function loadPaymentInfo() {
