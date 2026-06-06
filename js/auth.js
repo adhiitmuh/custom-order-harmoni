@@ -1,4 +1,4 @@
-import { auth, db } from './config.js'
+import { auth, authDb } from './config.js'
 import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS } from './utils.js'
@@ -27,8 +27,11 @@ export function requireAuth(callback) {
     }
 
     try {
-      const snap = await getDoc(doc(db, 'users', user.uid))
-      const fresh = snap.exists() ? { id: snap.id, ...snap.data() } : { id: user.uid, name: user.email, role: 'cs', branch: '' }
+      const snap = await getDoc(doc(authDb, 'users', user.uid))
+      const roleMap = { owner: 'owner', staff: 'cs' }
+      const fresh = snap.exists()
+        ? { id: snap.id, ...snap.data(), name: snap.data().nama || user.email, role: roleMap[snap.data().role] || snap.data().role }
+        : { id: user.uid, name: user.email, role: 'cs', branch: '' }
       sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
       if (!cached) {
         _profile = fresh
