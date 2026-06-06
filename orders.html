@@ -32,6 +32,10 @@
           <option value="">Semua Divisi</option>
         </select>
         <span id="divLockBadge" style="display:none;align-items:center;gap:6px;padding:6px 12px;background:rgba(3,69,67,.07);border-radius:999px;font-size:12px;font-weight:600;color:var(--green)"></span>
+        <select id="branchFilter" style="display:none;flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Cabang</option>
+        </select>
+        <span id="branchLockBadge" style="display:none;align-items:center;gap:6px;padding:6px 12px;background:rgba(3,69,67,.07);border-radius:999px;font-size:12px;font-weight:600;color:var(--green)"></span>
         <select id="statusFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
           <option value="">Semua Status</option>
           <option value="pending">Menunggu Konfirmasi</option>
@@ -71,32 +75,58 @@
     divSel.appendChild(opt)
   })
 
-  let lockedDivision = null  // for production role: hard-locked to their division
+  let lockedDivision = null
+  let lockedBranch = null
 
   requireAuth(async (profile) => {
     if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
 
-    // Production staff: lock to their division
+    // Production: lock to their division
     if (profile.role === 'production' && profile.division) {
       lockedDivision = profile.division
       const meta = DIVISION_META[lockedDivision] || {}
       const badge = document.getElementById('divLockBadge')
       badge.innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
       badge.style.display = 'inline-flex'
-      // Hide the division dropdown — they can't change it
       document.getElementById('divFilter').style.display = 'none'
+    }
+
+    // Manager & CS: lock to their branch
+    if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
+      lockedBranch = profile.branch
+      const badge = document.getElementById('branchLockBadge')
+      badge.innerHTML = `📍 ${profile.branch}`
+      badge.style.display = 'inline-flex'
+    }
+
+    // Owner: show branch filter dropdown (populated from order data)
+    if (profile.role === 'owner') {
+      document.getElementById('branchFilter').style.display = ''
     }
 
     const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))
     allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    // Populate branch filter for owner
+    if (profile.role === 'owner') {
+      const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
+      const sel = document.getElementById('branchFilter')
+      branches.forEach(b => {
+        const opt = document.createElement('option')
+        opt.value = b; opt.textContent = `📍 ${b}`
+        sel.appendChild(opt)
+      })
+    }
+
     render()
 
-    ;['searchInput','divFilter','statusFilter','payFilter'].forEach(id =>
+    ;['searchInput','divFilter','branchFilter','statusFilter','payFilter'].forEach(id =>
       document.getElementById(id).addEventListener('input', render)
     )
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
       if (!lockedDivision) document.getElementById('divFilter').value = ''
+      if (!lockedBranch) document.getElementById('branchFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
       render()
@@ -114,10 +144,14 @@
     const profile = getProfile()
     const showContact = profile?.role === 'owner'
 
+    const branch = document.getElementById('branchFilter').value
+
     const filtered = allOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
       const divCheck = lockedDivision || div
       if (divCheck && o.division !== divCheck) return false
+      const branchCheck = lockedBranch || branch
+      if (branchCheck && o.branch !== branchCheck) return false
       if (status && o.status !== status) return false
       if (pay) {
         const total = o.totalPrice||0, paid = o.depositPaid||0
@@ -155,6 +189,7 @@
                 <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
                 <span style="font-size:11px;color:rgba(3,69,67,.4)">${meta.label||''}</span>
                 ${o.sumberOrder && o.sumberOrder !== 'staff' ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ede9fe;color:#7c3aed">${o.sumberOrder==='wa_bot'?'🤖 WA Bot':o.sumberOrder==='walk_in'?'🚶 Walk In':o.sumberOrder==='instagram'?'📸 IG':o.sumberOrder==='shopee'?'🛒 Shopee':o.sumberOrder}</span>` : ''}
+                ${showContact && o.branch ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:rgba(3,69,67,.07);color:rgba(3,69,67,.6)">📍 ${o.branch}</span>` : ''}
               </div>
               <div style="font-weight:700;font-size:15px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
               ${showContact && o.customerContact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace;margin-top:1px">${o.customerContact}</div>` : ''}
