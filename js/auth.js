@@ -20,21 +20,36 @@ function showAccessDenied(msg) {
     </div>`
 }
 
-export function requireAuth(callback) {
-  onAuthStateChanged(auth, async (user) => {
-    if (!user) { window.location.href = 'index.html'; return }
-    _user = user
+let _callbackFired = false
 
-    // Use cached profile to render immediately, then refresh in background
-    const cacheKey = `profile_${user.uid}`
-    const cached = sessionStorage.getItem(cacheKey)
+export function requireAuth(callback) {
+  // ── Optimistic render: render immediately from sessionStorage ──
+  // Don't wait for Firebase Auth at all — show page right away,
+  // then verify auth in background. If user is logged out, redirect.
+  const cachedUid = sessionStorage.getItem('harmoni_uid')
+  if (cachedUid) {
+    const cached = sessionStorage.getItem(`profile_${cachedUid}`)
     if (cached) {
       try {
         _profile = JSON.parse(cached)
         renderSidebar(_profile)
         callback(_profile)
-      } catch { /* fall through to fresh fetch */ }
+        _callbackFired = true
+      } catch { /* fall through */ }
     }
+  }
+
+  // ── Background auth verification ──
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      sessionStorage.removeItem('harmoni_uid')
+      window.location.href = 'index.html'
+      return
+    }
+    // If a different user is now logged in, clear stale cache
+    if (cachedUid && cachedUid !== user.uid) sessionStorage.clear()
+    sessionStorage.setItem('harmoni_uid', user.uid)
+    _user = user
 
     try {
       const snap = await getDoc(doc(authDb, 'users', user.uid))
@@ -45,7 +60,6 @@ export function requireAuth(callback) {
         return
       }
 
-      // Tentukan role: owner dapat 'owner', staff baca dari apps.custom_order
       let appRole
       if (data.role === 'owner') {
         appRole = 'owner'
@@ -59,21 +73,22 @@ export function requireAuth(callback) {
       }
 
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole }
-      sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
+      sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
       // Sync role to harmoni-custom-order so Firestore Rules can check it
       setDoc(doc(db, 'users', snap.id), { role: appRole, branch: data.branch || '' }, { merge: true }).catch(() => {})
 
-      if (!cached) {
-        _profile = fresh
-        renderSidebar(_profile)
-        callback(_profile)
-      } else {
-        _profile = fresh
-        renderSidebar(_profile)
+      _profile = fresh
+      renderSidebar(fresh)
+
+      // Only fire callback if optimistic render didn't already run it
+      if (!_callbackFired) {
+        _callbackFired = true
+        callback(fresh)
       }
     } catch {
-      if (!cached) {
+      if (!_callbackFired) {
+        _callbackFired = true
         _profile = { id: user.uid, name: user.email, role: 'cs' }
         renderSidebar(_profile)
         callback(_profile)
@@ -177,6 +192,7 @@ export function renderSidebar(profile) {
     </div>`
 
   document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    sessionStorage.clear()
     await signOut(auth)
     window.location.href = 'index.html'
   })
