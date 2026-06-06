@@ -78,10 +78,9 @@
   let lockedDivision = null
   let lockedBranch = null
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
 
-    // Production: lock to their division
     if (profile.role === 'production' && profile.division) {
       lockedDivision = profile.division
       const meta = DIVISION_META[lockedDivision] || {}
@@ -91,7 +90,6 @@
       document.getElementById('divFilter').style.display = 'none'
     }
 
-    // Manager & CS: lock to their branch
     if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
       lockedBranch = profile.branch
       const badge = document.getElementById('branchLockBadge')
@@ -99,27 +97,9 @@
       badge.style.display = 'inline-flex'
     }
 
-    // Owner: show branch filter dropdown (populated from order data)
-    if (profile.role === 'owner') {
-      document.getElementById('branchFilter').style.display = ''
-    }
+    if (profile.role === 'owner') document.getElementById('branchFilter').style.display = ''
 
-    const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))
-    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-
-    // Populate branch filter for owner
-    if (profile.role === 'owner') {
-      const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
-      const sel = document.getElementById('branchFilter')
-      branches.forEach(b => {
-        const opt = document.createElement('option')
-        opt.value = b; opt.textContent = `📍 ${b}`
-        sel.appendChild(opt)
-      })
-    }
-
-    render()
-
+    // Wire up filters immediately (allOrders starts empty, fills when fetch returns)
     ;['searchInput','divFilter','branchFilter','statusFilter','payFilter'].forEach(id =>
       document.getElementById(id).addEventListener('input', render)
     )
@@ -129,6 +109,21 @@
       if (!lockedBranch) document.getElementById('branchFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
+      render()
+    })
+
+    // Fetch orders async — UI is already interactive
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'))).then(snap => {
+      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (profile.role === 'owner') {
+        const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
+        const sel = document.getElementById('branchFilter')
+        branches.forEach(b => {
+          const opt = document.createElement('option')
+          opt.value = b; opt.textContent = `📍 ${b}`
+          sel.appendChild(opt)
+        })
+      }
       render()
     })
   })

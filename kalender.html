@@ -70,12 +70,13 @@
   let currentDate = new Date()
   let allOrders = []
 
-  requireAuth(async () => {
-    const snap = await getDocs(collection(db,'orders'))
-    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .filter(o => !['cancelled'].includes(o.status))
-    render()
-    renderWeek()
+  requireAuth(() => {
+    getDocs(collection(db,'orders')).then(snap => {
+      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(o => !['cancelled'].includes(o.status))
+      render()
+      renderWeek()
+    })
   })
 
   function getOrderDate(o) {

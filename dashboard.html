@@ -50,9 +50,9 @@
   import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, paymentStatus, daysDiff } from './js/utils.js'
 
-  requireAuth(async (profile) => {
-    await loadStats(profile)
-    await loadRecent()
+  requireAuth((profile) => {
+    loadStats(profile)
+    loadRecent()
   })
 
   async function loadStats(profile) {

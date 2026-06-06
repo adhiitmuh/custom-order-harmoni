@@ -423,7 +423,7 @@
     ).join('')
   })
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     if (profile.role === 'production') { window.location.href = 'orders.html'; return }
     loadPaymentMethods()
   })

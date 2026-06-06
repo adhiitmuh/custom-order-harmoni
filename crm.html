@@ -58,42 +58,35 @@
 
   let customers = []
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     const showContact = profile.role !== 'production'
-    const snap = await getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))
-    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-    // Group by customerContact (fallback to customerName)
-    const map = new Map()
-    for (const o of orders) {
-      const key = o.customerContact || o.customerName
-      if (!map.has(key)) {
-        map.set(key, {
-          name: o.customerName,
-          contact: o.customerContact,
-          orders: [],
-          totalSpent: 0,
-          totalPaid: 0,
-          lastOrder: null,
-        })
-      }
-      const c = map.get(key)
-      c.orders.push(o)
-      c.totalSpent += o.totalPrice || 0
-      c.totalPaid += o.depositPaid || 0
-      if (!c.lastOrder || new Date(o.createdAt?.toDate?.() || o.createdAt) > new Date(c.lastOrder?.toDate?.() || c.lastOrder)) {
-        c.lastOrder = o.createdAt
-        c.name = o.customerName // Use latest name
-      }
-    }
-
-    customers = [...map.values()].sort((a,b) => b.orders.length - a.orders.length)
-    document.getElementById('custCount').textContent = `${customers.length} pelanggan`
-
-    render(customers, showContact)
+    // Wire up search immediately
     document.getElementById('searchInput').addEventListener('input', e => {
       const q = e.target.value.toLowerCase()
       render(customers.filter(c => c.name?.toLowerCase().includes(q) || c.contact?.toLowerCase().includes(q)), showContact)
+    })
+
+    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))).then(snap => {
+      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const map = new Map()
+      for (const o of orders) {
+        const key = o.customerContact || o.customerName
+        if (!map.has(key)) {
+          map.set(key, { name: o.customerName, contact: o.customerContact, orders: [], totalSpent: 0, totalPaid: 0, lastOrder: null })
+        }
+        const c = map.get(key)
+        c.orders.push(o)
+        c.totalSpent += o.totalPrice || 0
+        c.totalPaid += o.depositPaid || 0
+        if (!c.lastOrder || new Date(o.createdAt?.toDate?.() || o.createdAt) > new Date(c.lastOrder?.toDate?.() || c.lastOrder)) {
+          c.lastOrder = o.createdAt
+          c.name = o.customerName
+        }
+      }
+      customers = [...map.values()].sort((a,b) => b.orders.length - a.orders.length)
+      document.getElementById('custCount').textContent = `${customers.length} pelanggan`
+      render(customers, showContact)
     })
   })
 

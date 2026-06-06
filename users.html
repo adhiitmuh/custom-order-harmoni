@@ -89,9 +89,9 @@
     document.getElementById('pinWrap').style.display = role === 'manager' ? '' : 'none'
   }
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
-    await loadUsers()
+    loadUsers()
   })
 
   async function loadUsers() {

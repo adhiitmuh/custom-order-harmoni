@@ -85,9 +85,9 @@
   let editingPriceDiv = null
   let sections = []
 
-  requireAuth(async (profile) => {
+  requireAuth((profile) => {
     renderTabs(profile)
-    await loadContent(profile)
+    loadContent(profile)
   })
 
   function renderTabs(profile) {

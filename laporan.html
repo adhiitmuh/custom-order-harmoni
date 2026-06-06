@@ -99,11 +99,12 @@
   let currentFrom = null
   let currentTo = null
 
-  requireAuth(async () => {
-    const snap = await getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))
-    allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    setPeriod('month')
+  requireAuth(() => {
     setupPeriodBtns()
+    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))).then(snap => {
+      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      setPeriod('month')
+    })
   })
 
   function getDateRange(period) {
