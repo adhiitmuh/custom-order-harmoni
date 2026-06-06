@@ -115,8 +115,9 @@
 
   function renderPage(profile) {
     const meta = DIVISION_META[order.division] || {}
-    const showContact = profile.role === 'owner'
-    const canEdit = profile.role === 'owner' || profile.role === 'cs'
+    const showContact  = profile.role === 'owner'
+    const canEdit      = profile.role === 'owner' || profile.role === 'cs'
+    const canEditModal = profile.role === 'owner' || profile.role === 'data'
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const pStatus = paymentStatus(order.totalPrice, order.depositPaid)
     const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
@@ -356,6 +357,34 @@
               <button onclick="savePayment()" class="btn btn-primary" style="width:100%;justify-content:center" id="savePayBtn">Simpan</button>
             </div>
           </div>
+
+          <!-- Harga Modal -->
+          ${canEditModal ? `
+          <div class="card" style="margin-bottom:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700">Harga Modal</h2>
+              <button onclick="toggleModalEdit()" class="btn btn-ghost btn-sm" id="modalEditBtn">Edit</button>
+            </div>
+            <div id="modalView">
+              ${order.hargaModal
+                ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span style="color:rgba(3,69,67,.5);font-size:13px">Modal</span>
+                    <span style="font-weight:700">${fmtCurrency(order.hargaModal)}</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span style="color:rgba(3,69,67,.5);font-size:13px">Keuntungan</span>
+                    <span style="font-weight:700;color:${(order.totalPrice-order.hargaModal)>=0?'#059669':'#b91c1c'}">${fmtCurrency((order.totalPrice||0)-(order.hargaModal||0))}</span>
+                  </div>`
+                : `<p style="font-size:12px;color:rgba(3,69,67,.35)">Belum diisi</p>`}
+            </div>
+            <div id="modalEdit" style="display:none">
+              <div class="form-group" style="margin-bottom:10px">
+                <label style="font-size:12px">Harga Modal (Rp)</label>
+                <input type="number" id="editModal" value="${order.hargaModal||''}" min="0" placeholder="0">
+              </div>
+              <button onclick="saveModal()" class="btn btn-primary" style="width:100%;justify-content:center">Simpan</button>
+            </div>
+          </div>` : ''}
 
           <!-- Status -->
           ${canEdit ? `
@@ -679,6 +708,28 @@
       })
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.toggleModalEdit = function() {
+    const v   = document.getElementById('modalView')
+    const e   = document.getElementById('modalEdit')
+    const btn = document.getElementById('modalEditBtn')
+    const isEditing = e.style.display !== 'none'
+    v.style.display = isEditing ? '' : 'none'
+    e.style.display = isEditing ? 'none' : ''
+    btn.textContent = isEditing ? 'Edit' : 'Batal'
+  }
+
+  window.saveModal = async function() {
+    const btn = document.querySelector('#modalEdit .btn-primary')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        hargaModal: Number(document.getElementById('editModal').value) || 0,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } finally { btn.disabled = false; btn.textContent = 'Simpan' }
   }
 
   window.togglePaymentEdit = function() {

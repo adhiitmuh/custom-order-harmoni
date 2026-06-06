@@ -117,7 +117,7 @@ export function renderSidebar(profile) {
       <a href="orders.html" class="sidebar-link ${page==='orders.html'?'active':''}">
         <span class="icon">📋</span>Semua Order
       </a>
-      ${profile.role !== 'production' ? `
+      ${profile.role !== 'production' && profile.role !== 'data' ? `
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
         <span class="icon">＋</span>Order Baru
       </a>` : ''}
