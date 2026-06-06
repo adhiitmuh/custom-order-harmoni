@@ -157,6 +157,9 @@ export function renderSidebar(profile) {
       ${profile.role === 'owner' ? `
       <a href="users.html" class="sidebar-link ${page==='users.html'?'active':''}">
         <span class="icon">⚙️</span>Kelola Pengguna
+      </a>
+      <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
+        <span class="icon">💳</span>Metode Pembayaran
       </a>` : ''}
     </div>
 

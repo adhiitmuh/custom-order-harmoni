@@ -125,6 +125,13 @@
         <div id="sisaInfo" style="font-size:13px;color:rgba(3,69,67,.6);margin-top:10px;display:none">
           Sisa: <strong style="color:#b91c1c" id="sisaVal"></strong>
         </div>
+        <div class="form-group" style="margin-top:14px;margin-bottom:0">
+          <label>Metode Pembayaran</label>
+          <select id="paymentMethod">
+            <option value="">— Pilih Metode —</option>
+          </select>
+          <p class="form-hint">Akan ditampilkan di invoice untuk informasi pembayaran</p>
+        </div>
         <!-- Price tier indicator -->
         <div id="priceTierInfo" style="display:none;margin-top:12px;padding:12px;border-radius:10px">
           <div id="priceTierMsg"></div>
@@ -176,6 +183,27 @@
 
   let selectedDiv = ''
   let itemRowCount = 0
+
+  async function loadPaymentMethods() {
+    try {
+      const snap = await getDoc(fsDoc(db, 'settings', 'payment_info'))
+      if (!snap.exists()) return
+      const info = snap.data()
+      const sel = document.getElementById('paymentMethod')
+      if (info.cashActive !== false) {
+        const o = document.createElement('option'); o.value = 'cash'; o.textContent = '💵 Tunai / Cash'; sel.appendChild(o)
+      }
+      ;(info.banks || []).filter(b => b.isActive !== false).forEach(b => {
+        const o = document.createElement('option')
+        o.value = `transfer_${b.bankName.toLowerCase().replace(/\s+/g,'_')}`
+        o.textContent = `🏦 Transfer ${b.bankName} — ${b.accountNumber}`
+        sel.appendChild(o)
+      })
+      if (info.qrisActive && info.qrisImageUrl) {
+        const o = document.createElement('option'); o.value = 'qris'; o.textContent = '📱 QRIS'; sel.appendChild(o)
+      }
+    } catch(e) { console.error(e) }
+  }
 
   window.addItemRow = function(item = {}) {
     const id = ++itemRowCount
@@ -397,6 +425,7 @@
 
   requireAuth(async (profile) => {
     if (profile.role === 'production') { window.location.href = 'orders.html'; return }
+    loadPaymentMethods()
   })
 
   async function generateOrderNumber(division) {
@@ -488,6 +517,7 @@
         priceApprovalBy: null,
         priceApprovalAt: null,
         orderItems: getItemRows(),
+        paymentMethod: document.getElementById('paymentMethod').value || '',
         chatToken,
       })
 
