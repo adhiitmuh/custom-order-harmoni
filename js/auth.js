@@ -10,6 +10,16 @@ export const getUser = () => _user
 export const getProfile = () => _profile
 export const canViewContact = (role) => role === 'owner'
 
+function showAccessDenied(msg) {
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#f9fafb;font-family:sans-serif;text-align:center;padding:24px;">
+      <div style="font-size:44px;">🚫</div>
+      <div style="font-size:18px;font-weight:700;color:#034543;">Akses Tidak Diizinkan</div>
+      <div style="color:#6b7280;max-width:320px;">${msg}</div>
+      <a href="https://adhiitmuh.github.io/harmoni-indonesia/" style="margin-top:8px;color:#034543;font-weight:600;text-decoration:none;">← Kembali ke Portal</a>
+    </div>`
+}
+
 export function requireAuth(callback) {
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = 'index.html'; return }
@@ -28,10 +38,19 @@ export function requireAuth(callback) {
 
     try {
       const snap = await getDoc(doc(authDb, 'users', user.uid))
+      const data = snap.exists() ? snap.data() : null
+
+      // Cek aktif & akses toko — Custom Order hanya untuk owner & Harmoni Indonesia
+      if (!data || !data.aktif || (data.toko !== 'semua' && data.toko !== 'harmoni_indonesia')) {
+        const msg = !data || !data.aktif
+          ? 'Akun belum diaktifkan. Hubungi admin.'
+          : 'Akun ini tidak memiliki akses ke Harmoni Custom Order.'
+        showAccessDenied(msg)
+        return
+      }
+
       const roleMap = { owner: 'owner', staff: 'cs' }
-      const fresh = snap.exists()
-        ? { id: snap.id, ...snap.data(), name: snap.data().nama || user.email, role: roleMap[snap.data().role] || snap.data().role }
-        : { id: user.uid, name: user.email, role: 'cs', branch: '' }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: roleMap[data.role] || data.role }
       sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
       if (!cached) {
         _profile = fresh
