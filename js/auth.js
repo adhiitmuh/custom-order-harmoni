@@ -1,6 +1,6 @@
-import { auth, authDb } from './config.js'
+import { auth, authDb, db } from './config.js'
 import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS } from './utils.js'
 
 let _user = null
@@ -60,6 +60,10 @@ export function requireAuth(callback) {
 
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole }
       sessionStorage.setItem(cacheKey, JSON.stringify(fresh))
+
+      // Sync role to harmoni-custom-order so Firestore Rules can check it
+      setDoc(doc(db, 'users', snap.id), { role: appRole, branch: data.branch || '' }, { merge: true }).catch(() => {})
+
       if (!cached) {
         _profile = fresh
         renderSidebar(_profile)
