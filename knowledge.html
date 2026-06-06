@@ -121,12 +121,12 @@
       allSections.sort((a,b) => (a.orderIndex||0) - (b.orderIndex||0))
       sections = allSections
 
-      // Fetch price lists
+      // Fetch price lists — semua parallel
       const priceData = {}
-      for (const d of divsToShow) {
+      await Promise.all(divsToShow.map(async d => {
         const pSnap = await getDoc(doc(db,'price_list',d))
         if (pSnap.exists()) priceData[d] = pSnap.data()
-      }
+      }))
 
       document.getElementById('pageTitle').textContent = activeDiv ? DIVISION_META[activeDiv]?.label : 'Product Knowledge'
 
