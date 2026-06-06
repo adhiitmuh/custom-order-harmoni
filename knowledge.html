@@ -84,6 +84,7 @@
   let editingDocId = null
   let editingPriceDiv = null
   let sections = []
+  const contentCache = {}
 
   requireAuth((profile) => {
     renderTabs(profile)
@@ -109,7 +110,13 @@
 
   async function loadContent(profile) {
     const el = document.getElementById('knowledgeContent')
-    el.innerHTML = '<div class="loading">Memuat…</div>'
+    const cacheKey = activeDiv || '__all__'
+    // Show cached content immediately — fetch fresh in background
+    if (contentCache[cacheKey]) {
+      el.innerHTML = contentCache[cacheKey]
+    } else {
+      el.innerHTML = '<div class="loading">Memuat…</div>'
+    }
     const canEdit = profile.role === 'owner' || profile.role === 'cs'
     const canEditModal = profile.role === 'owner' || profile.role === 'data'
     const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
@@ -146,7 +153,7 @@
         return
       }
 
-      el.innerHTML = divsToShow.map(d => {
+      const rendered = divsToShow.map(d => {
         const divSections = allSections.filter(s => s.division === d)
         const meta = DIVISION_META[d]
         const prices = priceData[d]?.items || []
@@ -213,6 +220,8 @@
             ${canEdit ? `<button onclick="openAdd('${d}')" class="btn btn-ghost btn-sm" style="margin-top:4px">＋ Tambah Konten</button>` : ''}
           </div>`
       }).join('')
+      el.innerHTML = rendered
+      contentCache[cacheKey] = rendered
 
     } catch(err) {
       console.error(err)
@@ -266,6 +275,7 @@
         })
       }
       closeModal()
+      delete contentCache[activeDiv || '__all__']
       await loadContent(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -273,6 +283,7 @@
   window.deleteSection = async function(id) {
     if (!confirm('Hapus konten ini?')) return
     await deleteDoc(doc(db,'product_knowledge',id))
+    delete contentCache[activeDiv || '__all__']
     await loadContent(getProfile())
   }
 
@@ -370,6 +381,8 @@
         division: editingPriceDiv, items, updatedAt: Timestamp.now()
       })
       closePriceModal()
+      delete contentCache[editingPriceDiv || '__all__']
+      delete contentCache['__all__']
       await loadContent(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
