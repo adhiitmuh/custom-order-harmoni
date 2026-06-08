@@ -124,7 +124,7 @@
     try {
       await dataAuthReady
       // Fetch all knowledge (no orderBy to avoid composite index requirement)
-      const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', divsToShow.slice(0,10))))
+      const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', divsToShow.slice(0,30))))
       let allSections = snap.docs.map(x => ({ id: x.id, ...x.data() }))
       allSections.sort((a,b) => (a.orderIndex||0) - (b.orderIndex||0))
       sections = allSections

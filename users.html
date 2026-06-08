@@ -71,7 +71,7 @@
   import { auth, db } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+  import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
   const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
@@ -153,17 +153,12 @@
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
       await setDoc(doc(db,'users',newUid), { name, email, role, branch, division, pin, createdAt: Timestamp.now() })
 
-      // Re-sign in as owner
-      if (currentEmail) {
-        // We can't re-auth without password, so reload will trigger onAuthStateChanged
-        // Store a flag and reload
-        sessionStorage.setItem('reauth_needed', '1')
-      }
-
-      sucEl.textContent = `Akun ${name} berhasil dibuat! Silakan login ulang jika diperlukan.`
-      sucEl.style.display=''
-      hideAddForm()
-      await loadUsers()
+      // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
+      // → harus sign out lalu owner login ulang
+      sessionStorage.clear()
+      await signOut(auth)
+      sessionStorage.setItem('flash_success', `Akun ${name} berhasil dibuat. Silakan login kembali.`)
+      window.location.href = 'index.html'
     } catch(err) {
       const msgs = {
         'auth/email-already-in-use': 'Email sudah digunakan',

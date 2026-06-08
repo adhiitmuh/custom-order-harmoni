@@ -25,6 +25,7 @@
     </div>
 
     <div id="error" class="alert alert-error" style="display:none"></div>
+    <div id="flash" class="alert" style="display:none;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7"></div>
 
     <form id="loginForm">
       <div class="form-group">
@@ -53,6 +54,14 @@
   onAuthStateChanged(auth, user => {
     if (user) window.location.href = 'dashboard.html'
   })
+
+  const flash = sessionStorage.getItem('flash_success')
+  if (flash) {
+    sessionStorage.removeItem('flash_success')
+    const el = document.getElementById('flash')
+    el.textContent = flash
+    el.style.display = 'block'
+  }
 
   document.getElementById('loginForm').addEventListener('submit', async e => {
     e.preventDefault()
