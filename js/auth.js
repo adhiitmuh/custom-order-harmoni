@@ -1,11 +1,20 @@
 import { auth, authDb, db, dataAuth } from './config.js'
-import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS } from './utils.js'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
 }
+
+// Pastikan dataAuth (harmoni-custom-order) selalu punya sesi agar Firestore rules isAuth() lolos
+// Juga expose promise supaya halaman bisa tunggu sebelum query Firestore
+export const dataAuthReady = new Promise(resolve => {
+  onAuthStateChanged(dataAuth, (u) => {
+    if (u) { resolve(u); return }
+    signInAnonymously(dataAuth).then(cred => resolve(cred.user)).catch(() => resolve(null))
+  })
+})
 
 let _user = null
 let _profile = null

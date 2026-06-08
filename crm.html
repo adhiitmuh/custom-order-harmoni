@@ -52,7 +52,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth } from './js/auth.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus } from './js/utils.js'
 
@@ -67,7 +67,8 @@
       render(customers.filter(c => c.name?.toLowerCase().includes(q) || c.contact?.toLowerCase().includes(q)), showContact)
     })
 
-    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))).then(snap => {
+    dataAuthReady.then(() =>
+    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))).then(snap => {
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       const map = new Map()
       for (const o of orders) {

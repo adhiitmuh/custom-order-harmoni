@@ -63,7 +63,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth } from './js/auth.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
 
@@ -71,7 +71,8 @@
   let allOrders = []
 
   requireAuth(() => {
-    getDocs(collection(db,'orders')).then(snap => {
+    dataAuthReady.then(() =>
+    getDocs(collection(db,'orders'))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(o => !['cancelled'].includes(o.status))
       render()

@@ -61,7 +61,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
   import { collection, query, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
 
@@ -112,8 +112,9 @@
       render()
     })
 
-    // Fetch orders async — UI is already interactive
-    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'))).catch(err => {
+    // Tunggu dataAuth siap sebelum query Firestore
+    dataAuthReady.then(() =>
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))).catch(err => {
       document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}</p></div>`
     }).then(snap => { if (!snap) return
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))

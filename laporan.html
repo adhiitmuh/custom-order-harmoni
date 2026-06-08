@@ -91,7 +91,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth } from './js/auth.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate } from './js/utils.js'
 
@@ -101,7 +101,8 @@
 
   requireAuth(() => {
     setupPeriodBtns()
-    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))).then(snap => {
+    dataAuthReady.then(() =>
+    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPeriod('month')
     })

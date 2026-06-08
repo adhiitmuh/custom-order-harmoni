@@ -75,7 +75,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
 
@@ -122,6 +122,7 @@
     const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
 
     try {
+      await dataAuthReady
       // Fetch all knowledge (no orderBy to avoid composite index requirement)
       const snap = await getDocs(query(collection(db,'product_knowledge'), where('division','in', divsToShow.slice(0,10))))
       let allSections = snap.docs.map(x => ({ id: x.id, ...x.data() }))
