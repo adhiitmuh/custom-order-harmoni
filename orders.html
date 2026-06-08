@@ -112,11 +112,21 @@
       render()
     })
 
-    // Tunggu dataAuth siap sebelum query Firestore
-    dataAuthReady.then(() =>
+    // Timeout fallback — kalau 10 detik masih loading, minta refresh
+    const loadTimeout = setTimeout(() => {
+      const el = document.getElementById('orderList')
+      if (el && el.querySelector('.loading')) {
+        el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Koneksi lambat atau perlu refresh.<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Refresh halaman</a></p></div>`
+      }
+    }, 10000)
+
+    // Tunggu dataAuth siap sebelum query Firestore (defensive: fallback jika undefined)
+    ;(dataAuthReady || Promise.resolve()).then(() =>
     getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))).catch(err => {
-      document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}</p></div>`
+      clearTimeout(loadTimeout)
+      document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Coba refresh</a></p></div>`
     }).then(snap => { if (!snap) return
+      clearTimeout(loadTimeout)
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       if (profile.role === 'owner') {
         const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
