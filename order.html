@@ -412,11 +412,18 @@
               </button>`).join('')}
           </div>` : ''}
 
-          <!-- Meta -->
-          <p style="font-size:11px;color:rgba(3,69,67,.35);padding:0 4px">
-            Dibuat: ${fmtDate(order.createdAt)}<br>
-            Diupdate: ${timeAgo(order.updatedAt)}
-          </p>
+          <!-- Audit trail -->
+          <div style="font-size:11px;color:rgba(3,69,67,.35);padding:0 4px;line-height:1.8">
+            ${order.createdByName ? `📝 Dibuat oleh <b style="color:rgba(3,69,67,.55)">${order.createdByName}</b> · ${fmtDate(order.createdAt)}` : `📝 Dibuat: ${fmtDate(order.createdAt)}`}<br>
+            ${order.lastEditBy ? `✏️ Diedit oleh <b style="color:rgba(3,69,67,.55)">${order.lastEditBy}</b> · ${fmtDate(order.lastEditAt)}<br>` : ''}
+            ${order.statusChangedBy ? `🔄 Status diubah oleh <b style="color:rgba(3,69,67,.55)">${order.statusChangedBy}</b> · ${fmtDate(order.statusChangedAt)}<br>` : ''}
+            ${order.paymentEditBy ? `💳 Pembayaran diupdate oleh <b style="color:rgba(3,69,67,.55)">${order.paymentEditBy}</b> · ${fmtDate(order.paymentEditAt)}<br>` : ''}
+            ${order.hargaModalEditBy ? `🏷 Harga modal diisi oleh <b style="color:rgba(3,69,67,.55)">${order.hargaModalEditBy}</b> · ${fmtDate(order.hargaModalEditAt)}<br>` : ''}
+            ${order.ukuranEditBy ? `📐 Ukuran diisi oleh <b style="color:rgba(3,69,67,.55)">${order.ukuranEditBy}</b> · ${fmtDate(order.ukuranEditAt)}<br>` : ''}
+            ${order.voidBy ? `🚫 Dibatalkan oleh <b style="color:rgba(3,69,67,.55)">${order.voidBy}</b><br>` : ''}
+            ${order.priceApprovalByName && order.priceApprovalStatus !== 'pending' ? `${order.priceApprovalStatus==='approved'?'✅':'❌'} Harga ${order.priceApprovalStatus==='approved'?'disetujui':'ditolak'} oleh <b style="color:rgba(3,69,67,.55)">${order.priceApprovalByName}</b> · ${fmtDate(order.priceApprovalAt)}<br>` : ''}
+            ⏱ Terakhir diupdate: ${timeAgo(order.updatedAt)}
+          </div>
         </div>
       </div>
 
@@ -772,9 +779,12 @@
     const btn = document.querySelector('#modalEdit .btn-primary')
     btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
+      const now = Timestamp.now()
       await updateDoc(doc(db, 'orders', orderId), {
         hargaModal: Number(document.getElementById('inputHargaModal').value) || 0,
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
+        hargaModalEditBy: getProfile().name,
+        hargaModalEditAt: now,
       })
       await loadOrder(getProfile())
     } finally { btn.disabled = false; btn.textContent = 'Simpan' }
@@ -794,10 +804,13 @@
     const btn = document.getElementById('savePayBtn')
     btn.disabled=true; btn.textContent='Menyimpan…'
     try {
+      const now = Timestamp.now()
       await updateDoc(doc(db,'orders',orderId), {
         totalPrice: Number(document.getElementById('editTotal').value)||0,
         depositPaid: Number(document.getElementById('editDp').value)||0,
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
+        paymentEditBy: getProfile().name,
+        paymentEditAt: now,
       })
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan' }
@@ -815,9 +828,12 @@
         task.on('state_changed', null, rej, () => res(task.snapshot))
       })
       const url = await getDownloadURL(snap.ref)
+      const now = Timestamp.now()
       await updateDoc(doc(db, 'orders', orderId), {
         paymentProofs: arrayUnion(url),
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
+        paymentEditBy: getProfile().name,
+        paymentEditAt: now,
       })
       await loadOrder(getProfile())
     } catch (err) {
@@ -832,9 +848,12 @@
     const btn = document.getElementById('markPaidBtn')
     if (btn) { btn.disabled=true; btn.textContent='Menyimpan…' }
     try {
+      const now = Timestamp.now()
       await updateDoc(doc(db,'orders',orderId), {
         depositPaid: order.totalPrice||0,
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
+        paymentEditBy: getProfile().name,
+        paymentEditAt: now,
       })
       await loadOrder(getProfile())
     } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Tandai Lunas' } }
@@ -874,7 +893,8 @@
 
   window.changeStatus = async function(status) {
     const now = Timestamp.now()
-    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: now })
+    const profile = getProfile()
+    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: now, statusChangedBy: profile.name, statusChangedAt: now })
     // Sync status ke public_order_info agar chat.html baca status terkini
     if (order.chatToken) {
       updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
@@ -954,7 +974,8 @@
     const measurements = {}
     inputs.forEach(inp => { if (inp.value.trim()) measurements[inp.dataset.field] = inp.value.trim() })
     try {
-      await updateDoc(doc(db,'orders',orderId), { measurements, updatedAt: Timestamp.now() })
+      const now = Timestamp.now()
+      await updateDoc(doc(db,'orders',orderId), { measurements, updatedAt: now, ukuranEditBy: getProfile().name, ukuranEditAt: now })
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
   }
