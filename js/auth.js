@@ -1,4 +1,4 @@
-import { auth, authDb, db } from './config.js'
+import { auth, authDb, db, dataAuth } from './config.js'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
@@ -197,7 +197,7 @@ export function renderSidebar(profile) {
 
   document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     sessionStorage.clear()
-    await signOut(auth)
+    await Promise.all([signOut(auth), signOut(dataAuth).catch(() => {})])
     window.location.href = 'index.html'
   })
 }

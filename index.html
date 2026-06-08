@@ -47,7 +47,7 @@
 </div>
 
 <script type="module">
-  import { auth } from './js/config.js'
+  import { auth, dataAuth } from './js/config.js'
   import { signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 
   onAuthStateChanged(auth, user => {
@@ -62,11 +62,14 @@
     btn.disabled = true
     btn.textContent = 'Memproses...'
 
+    const email = document.getElementById('email').value.trim()
+    const password = document.getElementById('password').value
+
     try {
-      await signInWithEmailAndPassword(auth,
-        document.getElementById('email').value.trim(),
-        document.getElementById('password').value
-      )
+      // Sign in ke harmoni-indonesia (auth utama)
+      await signInWithEmailAndPassword(auth, email, password)
+      // Sign in ke harmoni-custom-order agar Firestore db punya auth token
+      signInWithEmailAndPassword(dataAuth, email, password).catch(() => {})
       window.location.href = 'dashboard.html'
     } catch (err) {
       const msgs = {

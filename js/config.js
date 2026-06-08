@@ -26,9 +26,10 @@ const harmoniConfig = {
 const dataApp    = initializeApp(dataConfig, 'data')
 const harmoniApp = initializeApp(harmoniConfig, 'harmoni-auth')
 
-export const app     = harmoniApp
-export const auth    = getAuth(harmoniApp)
-export const db      = initializeFirestore(dataApp, {
+export const app      = harmoniApp
+export const auth     = getAuth(harmoniApp)
+export const dataAuth = getAuth(dataApp)      // auth untuk harmoni-custom-order Firestore
+export const db       = initializeFirestore(dataApp, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 })
 export const authDb  = getFirestore(harmoniApp)

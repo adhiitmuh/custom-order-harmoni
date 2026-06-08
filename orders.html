@@ -113,7 +113,9 @@
     })
 
     // Fetch orders async — UI is already interactive
-    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'))).then(snap => {
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'))).catch(err => {
+      document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}</p></div>`
+    }).then(snap => { if (!snap) return
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       if (profile.role === 'owner') {
         const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
