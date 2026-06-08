@@ -1,9 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
-// Data app — Firestore tetap di project lama (dengan offline persistence)
 const dataConfig = {
   apiKey: "AIzaSyAy4w2mhgZQfMBto7a9A8dhsrK2Envprf4",
   authDomain: "harmoni-custom-order.firebaseapp.com",
@@ -13,7 +12,6 @@ const dataConfig = {
   appId: "1:230484579154:web:929f7772c2db041466608b",
 }
 
-// Auth terpusat via harmoni-indonesia
 const harmoniConfig = {
   apiKey: 'AIzaSyA9V5Lw40pDeAWeQKijYCkdvnag8AlEe74',
   authDomain: 'harmoni-indonesia.firebaseapp.com',
@@ -28,9 +26,7 @@ const harmoniApp = initializeApp(harmoniConfig, 'harmoni-auth')
 
 export const app      = harmoniApp
 export const auth     = getAuth(harmoniApp)
-export const dataAuth = getAuth(dataApp)      // auth untuk harmoni-custom-order Firestore
-export const db       = initializeFirestore(dataApp, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-})
-export const authDb  = getFirestore(harmoniApp)
-export const storage = getStorage(dataApp)
+export const dataAuth = getAuth(dataApp)
+export const db       = getFirestore(dataApp)   // memory-only cache, no IndexedDB complexity
+export const authDb   = getFirestore(harmoniApp)
+export const storage  = getStorage(dataApp)
