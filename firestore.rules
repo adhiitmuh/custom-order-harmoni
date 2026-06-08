@@ -12,7 +12,7 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isAuth();
-      allow create: if isOwnerOrCS();
+      allow create: if isAuth();
       allow update: if isAuth();
       allow delete: if isOwner();
     }
@@ -34,7 +34,7 @@ service cloud.firestore {
     }
     match /settings/{id} {
       allow read: if isAuth();
-      allow write: if isOwner();
+      allow write: if isAuth();
     }
 
     // Public order info for customer chat (token-based access)
