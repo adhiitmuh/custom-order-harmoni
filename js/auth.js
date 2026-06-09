@@ -73,7 +73,7 @@ export function requireAuth(callback) {
         return
       }
 
-      let appRole
+      let appRole, appDivisions = []
       if (data.role === 'owner') {
         appRole = 'owner'
       } else {
@@ -83,9 +83,11 @@ export function requireAuth(callback) {
           return
         }
         appRole = appAccess.role || 'cs'
+        // Divisi tim produksi diatur di Portal Utama (apps.custom_order.divisions)
+        appDivisions = appAccess.divisions || []
       }
 
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
       // Sync role to harmoni-custom-order so Firestore Rules can check it
