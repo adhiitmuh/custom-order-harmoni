@@ -276,6 +276,40 @@
             </table>
           </div>` : ''}
 
+          <!-- Info Penjahit (jersey/tailor, production+owner only) -->
+          ${['jersey','tailor'].includes(order.division) && (profile.role === 'production' || profile.role === 'owner') ? `
+          <div class="card" style="margin-bottom:16px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">🧵 Info Penjahit</h2>
+            <div style="margin-bottom:14px">
+              <label style="font-size:11px;color:rgba(3,69,67,.45);display:block;margin-bottom:4px">Nama Penjahit</label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="tailorNameInput" value="${order.tailorName||''}" placeholder="Nama penjahit…"
+                  style="flex:1;font-size:13px" onkeydown="if(event.key==='Enter') saveTailorName()">
+                <button onclick="saveTailorName()" class="btn btn-ghost btn-sm" id="saveTailorNameBtn">Simpan</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:600">Sudah Dicek</div>
+                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorChecked ? `${order.tailorCheckedBy||'—'} · ${timeAgo(order.tailorCheckedAt)}` : 'Belum dicek'}</div>
+                </div>
+                <button onclick="toggleTailorCheck()" class="btn ${order.tailorChecked ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorCheckBtn">
+                  ${order.tailorChecked ? '✓ Sudah' : 'Tandai'}
+                </button>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:600">Upah Sudah Ditransfer</div>
+                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorPaid ? `${order.tailorPaidBy||'—'} · ${timeAgo(order.tailorPaidAt)}` : 'Belum ditransfer'}</div>
+                </div>
+                <button onclick="toggleTailorPaid()" class="btn ${order.tailorPaid ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorPaidBtn">
+                  ${order.tailorPaid ? '✓ Sudah' : 'Tandai'}
+                </button>
+              </div>
+            </div>
+          </div>` : ''}
+
           <!-- Progress -->
           <div class="card" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -806,6 +840,51 @@
       alert('Gagal upload: ' + err.message)
       if (progressEl) progressEl.style.display = 'none'
     }
+  }
+
+  window.saveTailorName = async function() {
+    const val = document.getElementById('tailorNameInput')?.value.trim() ?? ''
+    const btn = document.getElementById('saveTailorNameBtn')
+    btn.disabled = true; btn.textContent = '…'
+    try {
+      await updateDoc(doc(db,'orders',orderId), { tailorName: val, updatedAt: Timestamp.now() })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+    finally { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+
+  window.toggleTailorCheck = async function() {
+    const btn = document.getElementById('tailorCheckBtn')
+    btn.disabled = true
+    try {
+      const profile = getProfile()
+      const now = Timestamp.now()
+      const newVal = !order.tailorChecked
+      await updateDoc(doc(db,'orders',orderId), {
+        tailorChecked: newVal,
+        tailorCheckedBy: newVal ? profile.name : null,
+        tailorCheckedAt: newVal ? now : null,
+        updatedAt: now,
+      })
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
+  }
+
+  window.toggleTailorPaid = async function() {
+    const btn = document.getElementById('tailorPaidBtn')
+    btn.disabled = true
+    try {
+      const profile = getProfile()
+      const now = Timestamp.now()
+      const newVal = !order.tailorPaid
+      await updateDoc(doc(db,'orders',orderId), {
+        tailorPaid: newVal,
+        tailorPaidBy: newVal ? profile.name : null,
+        tailorPaidAt: newVal ? now : null,
+        updatedAt: now,
+      })
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
   }
 
   window.toggleModalEdit = function() {
