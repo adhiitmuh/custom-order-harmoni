@@ -123,6 +123,7 @@ export function renderSidebar(profile) {
     </a>`).join('')
 
   el.innerHTML = `
+    <div class="sidebar-nav">
     <div class="sidebar-logo">
       <div style="display:flex;align-items:center;gap:10px">
         <svg viewBox="0 0 100 100" width="28" height="28">
@@ -193,6 +194,7 @@ export function renderSidebar(profile) {
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
         <span class="icon">💳</span>Metode Pembayaran
       </a>` : ''}
+    </div>
     </div>
 
     <div class="sidebar-user">
