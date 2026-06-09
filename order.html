@@ -584,15 +584,6 @@
             </div>
           </div>
           ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p></div>` : ''}
-          ${order.designFiles?.filter(f => /\.(jpg|jpeg|png|gif|webp)/i.test(f)).length ? `
-          <div style="margin-bottom:22px">
-            <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:10px">FOTO DESAIN</p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${order.designFiles.filter(f => /\.(jpg|jpeg|png|gif|webp)/i.test(f)).map(f =>
-                `<img src="${f}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)">`
-              ).join('')}
-            </div>
-          </div>` : ''}
           <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
             <thead><tr style="border-bottom:1.5px solid rgba(3,69,67,.12)">
               <th style="text-align:left;padding-bottom:8px;font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em">KETERANGAN</th>
