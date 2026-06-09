@@ -184,16 +184,26 @@
   let selectedDiv = ''
   let itemRowCount = 0
 
-  async function loadPaymentMethods() {
+  let _paymentInfoCache = null
+
+  async function loadPaymentMethods(division = '') {
     try {
-      const snap = await getDoc(fsDoc(db, 'settings', 'payment_info'))
-      if (!snap.exists()) return
-      const info = snap.data()
+      if (!_paymentInfoCache) {
+        const snap = await getDoc(fsDoc(db, 'settings', 'payment_info'))
+        if (!snap.exists()) return
+        _paymentInfoCache = snap.data()
+      }
+      const info = _paymentInfoCache
       const sel = document.getElementById('paymentMethod')
+      sel.innerHTML = '<option value="">— Pilih Metode —</option>'
       if (info.cashActive !== false) {
         const o = document.createElement('option'); o.value = 'cash'; o.textContent = '💵 Tunai / Cash'; sel.appendChild(o)
       }
-      ;(info.banks || []).filter(b => b.isActive !== false).forEach(b => {
+      ;(info.banks || []).filter(b => {
+        if (b.isActive === false) return false
+        if (!b.division || !division) return true
+        return b.division === division
+      }).forEach(b => {
         const o = document.createElement('option')
         o.value = `transfer_${b.bankName.toLowerCase().replace(/\s+/g,'_')}`
         o.textContent = `🏦 Transfer ${b.bankName} — ${b.accountNumber}`
@@ -394,6 +404,7 @@
       b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
     })
     loadPriceList(d)
+    loadPaymentMethods(d)
   }
 
   // Set today
