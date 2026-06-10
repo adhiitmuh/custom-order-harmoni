@@ -73,7 +73,7 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
@@ -233,7 +233,7 @@
           <div class="card" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <h2 style="font-size:14px;font-weight:700;margin:0">File Desain</h2>
-              ${(canEdit || profile.role === 'production') ? `
+              ${(canEdit || hasProductionAccess(profile, order.division)) ? `
               <label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--green);padding:5px 10px;border:1.5px solid rgba(3,69,67,.15);border-radius:8px">
                 + Tambah Foto
                 <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="addDesignFiles(this)">
@@ -282,8 +282,8 @@
             </table>
           </div>` : ''}
 
-          <!-- Info Penjahit (jersey/tailor, production+owner only) -->
-          ${['jersey','tailor'].includes(order.division) && (profile.role === 'production' || profile.role === 'owner') ? `
+          <!-- Info Penjahit (jersey/tailor, production+owner+merangkap only) -->
+          ${['jersey','tailor'].includes(order.division) && (profile.role === 'owner' || hasProductionAccess(profile, order.division)) ? `
           <div class="card" style="margin-bottom:16px">
             <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">🧵 Info Penjahit</h2>
             <div style="margin-bottom:14px">

@@ -23,6 +23,17 @@ export const getUser = () => _user
 export const getProfile = () => _profile
 export const canViewContact = (role) => role === 'owner'
 
+// Returns true if user has production access for the given division
+// (either pure production role, or merangkap production with that division)
+export function hasProductionAccess(profile, division) {
+  if (!profile) return false
+  if (profile.role === 'production') return true
+  if (profile.merangkapProduction) {
+    return !division || (profile.divisions?.includes(division) ?? false)
+  }
+  return false
+}
+
 function showAccessDenied(msg) {
   document.body.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#f9fafb;font-family:sans-serif;text-align:center;padding:24px;">
@@ -73,7 +84,7 @@ export function requireAuth(callback) {
         return
       }
 
-      let appRole, appDivisions = []
+      let appRole, appDivisions = [], appMerangkapProduction = false
       if (data.role === 'owner') {
         appRole = 'owner'
       } else {
@@ -85,13 +96,15 @@ export function requireAuth(callback) {
         appRole = appAccess.role || 'cs'
         // Divisi tim produksi diatur di Portal Utama (apps.custom_order.divisions)
         appDivisions = appAccess.divisions || []
+        // Merangkap production: user punya role utama + akses fitur produksi untuk divisi tertentu
+        appMerangkapProduction = appAccess.merangkapProduction === true
       }
 
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, merangkapProduction: appMerangkapProduction }
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
       // Sync role to harmoni-custom-order so Firestore Rules can check it
-      setDoc(doc(db, 'users', snap.id), { role: appRole, branch: data.branch || '' }, { merge: true }).catch(() => {})
+      setDoc(doc(db, 'users', snap.id), { role: appRole, branch: data.branch || '', merangkapProduction: appMerangkapProduction, divisions: appDivisions }, { merge: true }).catch(() => {})
 
       _profile = fresh
       renderSidebar(fresh)
@@ -203,7 +216,7 @@ export function renderSidebar(profile) {
       <div class="avatar">${(profile.name||'U')[0].toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="user-name">${profile.name}</div>
-        <div class="user-role">${(profile.role||'').toUpperCase()}${profile.branch ? ' · ' + profile.branch : ''}</div>
+        <div class="user-role">${(profile.role||'').toUpperCase()}${profile.merangkapProduction ? ' + PROD' : ''}${profile.branch ? ' · ' + profile.branch : ''}</div>
       </div>
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
     </div>`
