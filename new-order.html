@@ -139,7 +139,7 @@
             <label style="font-size:12px;font-weight:600;color:rgba(3,69,67,.6);display:block;margin-bottom:4px">Alasan / Justifikasi Diskon <span style="color:red">*</span></label>
             <input type="text" id="approvalReason" placeholder="cth: pelanggan lama, order besar, promosi khusus…" style="font-size:13px">
           </div>
-          <div id="priceRefWrap" style="margin-top:8px;font-size:11px;color:rgba(3,69,67,.45)" id="priceRefWrap"></div>
+          <div id="priceRefWrap" style="margin-top:8px;font-size:11px;color:rgba(3,69,67,.45)"></div>
         </div>
       </div>
 
@@ -174,7 +174,7 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
   import { collection, doc, setDoc, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -189,6 +189,7 @@
   async function loadPaymentMethods(division = '') {
     try {
       if (!_paymentInfoCache) {
+        await dataAuthReady
         const snap = await getDoc(fsDoc(db, 'settings', 'payment_info'))
         if (!snap.exists()) return
         _paymentInfoCache = snap.data()
@@ -440,7 +441,6 @@
   })
 
   async function generateOrderNumber(division) {
-    const { doc: fsDoc, runTransaction: fsRun } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
     const CODES = { bordir:'BRD',butik:'BTK',jersey:'JRS',jilbab:'JLB',sablon:'SBL',konveksi:'KNV','medali-pin':'MPL','papan-nama':'PPN','pin-fiber':'PFB','sewa-kostum':'SKT',tailor:'TLR' }
     const code = CODES[division]||'ORD'
     const year = new Date().getFullYear()
