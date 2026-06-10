@@ -166,9 +166,11 @@
   }
 
   async function loadRecent() {
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(8))
-    const snap = await getDocs(q)
+    await dataAuthReady
     const el = document.getElementById('recentOrders')
+    let snap
+    try { snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(8))) }
+    catch(err) { el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`; return }
 
     if (snap.empty) {
       el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>Belum ada order</p></div>`

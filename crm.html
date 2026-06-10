@@ -88,6 +88,8 @@
       customers = [...map.values()].sort((a,b) => b.orders.length - a.orders.length)
       document.getElementById('custCount').textContent = `${customers.length} pelanggan`
       render(customers, showContact)
+    }).catch(err => {
+      document.getElementById('custList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
     })
   })
 

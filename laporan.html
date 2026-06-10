@@ -105,6 +105,8 @@
     getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPeriod('month')
+    }).catch(err => {
+      document.getElementById('reportContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat data: ${err.message}</p></div>`
     })
   })
 

@@ -430,7 +430,7 @@
 
   async function generateOrderNumber(division) {
     const { doc: fsDoc, runTransaction: fsRun } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
-    const CODES = { bordir:'BRD','papan-nama':'PPN',konveksi:'KNV',tailor:'TLR',jersey:'JRS',sablon:'SBL' }
+    const CODES = { bordir:'BRD',butik:'BTK',jersey:'JRS',jilbab:'JLB',sablon:'SBL',konveksi:'KNV','medali-pin':'MPL','papan-nama':'PPN','pin-fiber':'PFB','sewa-kostum':'SKT',tailor:'TLR' }
     const code = CODES[division]||'ORD'
     const year = new Date().getFullYear()
     const counterRef = fsDoc(db, 'order_counters', division)

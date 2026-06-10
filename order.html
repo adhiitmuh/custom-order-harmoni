@@ -73,7 +73,7 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
@@ -87,6 +87,7 @@
 
   async function loadPaymentInfo() {
     try {
+      await dataAuthReady
       const snap = await getDoc(doc(db,'settings','payment_info'))
       if (snap.exists()) paymentInfo = snap.data()
     } catch(e) { /* ignore */ }
@@ -98,6 +99,8 @@
   })
 
   async function loadOrder(profile) {
+    try {
+    await dataAuthReady
     const snap = await getDoc(doc(db,'orders',orderId))
     if (!snap.exists()) { document.getElementById('pageContent').innerHTML = '<p>Order tidak ditemukan</p>'; return }
     order = { id: snap.id, ...snap.data() }
@@ -120,6 +123,9 @@
     renderPage(profile)
     if (chatUnsub) chatUnsub()
     setTimeout(() => initChat(), 200)
+    } catch(err) {
+      document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
+    }
   }
 
   function renderPage(profile) {
