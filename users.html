@@ -15,12 +15,19 @@
 <div class="layout">
   <nav id="sidebar"></nav>
   <main class="main" style="max-width:700px">
+    <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px">
+      <span style="font-size:20px;flex-shrink:0">⚠️</span>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:3px">Manajemen user sudah pindah ke Portal Utama</div>
+        <div style="font-size:12px;color:#b45309">Tambah user, atur role, dan set divisi tim produksi dilakukan di <a href="https://adhiitmuh.github.io/harmoni-indonesia/" target="_blank" style="color:#92400e;font-weight:700">Portal Harmoni →</a>. Halaman ini hanya sebagai referensi data lama.</div>
+      </div>
+    </div>
+
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
       <div>
         <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">REFERENSI</p>
         <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Pengguna</h1>
       </div>
-      <button onclick="showAddForm()" class="btn btn-primary">＋ Tambah Pengguna</button>
     </div>
 
     <div id="error" class="alert alert-error" style="display:none"></div>
@@ -44,11 +51,9 @@
         <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
         <div class="form-group" style="grid-column:1/-1"><label>Cabang</label><input type="text" id="newBranch" placeholder="cth: Cabang Makassar, CS Online…"></div>
         <div class="form-group" id="divisiWrap" style="grid-column:1/-1;display:none">
-          <label>Divisi <span class="req">*</span></label>
-          <select id="newDivision">
-            <option value="">— Pilih Divisi —</option>
-          </select>
-          <p class="form-hint">Tim produksi hanya melihat order dari divisi ini secara default</p>
+          <label>Divisi <span class="req">*</span> <span style="font-size:11px;font-weight:400;color:rgba(3,69,67,.4)">(boleh lebih dari satu)</span></label>
+          <div id="divisionCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
+          <p class="form-hint">Tim produksi hanya melihat order dari divisi yang dipilih</p>
         </div>
         <div class="form-group" id="pinWrap" style="grid-column:1/-1;display:none">
           <label>PIN Approval <span class="req">*</span></label>
@@ -76,12 +81,13 @@
 
   const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
 
-  // Populate division select
-  const divSel = document.getElementById('newDivision')
+  // Populate division checkboxes
+  const divContainer = document.getElementById('divisionCheckboxes')
   DIVISIONS.forEach(d => {
-    const opt = document.createElement('option')
-    opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-    divSel.appendChild(opt)
+    const lbl = document.createElement('label')
+    lbl.style.cssText = 'display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid rgba(3,69,67,.15);border-radius:8px'
+    lbl.innerHTML = `<input type="checkbox" class="div-check" value="${d}" style="width:14px;height:14px;accent-color:var(--green)"> ${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+    divContainer.appendChild(lbl)
   })
 
   window.onRoleChange = function(role) {
@@ -111,7 +117,7 @@
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : ''}
-          ${u.role==='production' && u.division ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${DIVISION_META[u.division]?.icon||''} ${DIVISION_META[u.division]?.label||u.division}</div>` : ''}
+          ${u.role==='production' ? (() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); return dd.length ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` : '' })() : ''}
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
         ${u.id !== getProfile()?.id ? `<button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
@@ -147,11 +153,11 @@
 
       // Save to Firestore
       const branch = document.getElementById('newBranch').value.trim()
-      const division = role === 'production' ? document.getElementById('newDivision').value : ''
+      const divisions = role === 'production' ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
       const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
-      if (role === 'production' && !division) throw new Error('Pilih divisi untuk tim produksi')
+      if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
-      await setDoc(doc(db,'users',newUid), { name, email, role, branch, division, pin, createdAt: Timestamp.now() })
+      await setDoc(doc(db,'users',newUid), { name, email, role, branch, divisions, pin, createdAt: Timestamp.now() })
 
       // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
       // → harus sign out lalu owner login ulang

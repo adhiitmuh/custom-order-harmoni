@@ -73,7 +73,7 @@ export function requireAuth(callback) {
         return
       }
 
-      let appRole
+      let appRole, appDivisions = []
       if (data.role === 'owner') {
         appRole = 'owner'
       } else {
@@ -83,9 +83,11 @@ export function requireAuth(callback) {
           return
         }
         appRole = appAccess.role || 'cs'
+        // Divisi tim produksi diatur di Portal Utama (apps.custom_order.divisions)
+        appDivisions = appAccess.divisions || []
       }
 
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
       // Sync role to harmoni-custom-order so Firestore Rules can check it
@@ -188,7 +190,7 @@ export function renderSidebar(profile) {
         <span class="icon">📖</span>Product Knowledge
       </a>
       ${profile.role === 'owner' ? `
-      <a href="users.html" class="sidebar-link ${page==='users.html'?'active':''}">
+      <a href="https://adhiitmuh.github.io/harmoni-indonesia/" target="_blank" class="sidebar-link">
         <span class="icon">⚙️</span>Kelola Pengguna
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">

@@ -76,18 +76,26 @@
   })
 
   let lockedDivision = null
+  let lockedDivisions = null
   let lockedBranch = null
 
   requireAuth((profile) => {
     if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
 
-    if (profile.role === 'production' && profile.division) {
-      lockedDivision = profile.division
-      const meta = DIVISION_META[lockedDivision] || {}
-      const badge = document.getElementById('divLockBadge')
-      badge.innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
-      badge.style.display = 'inline-flex'
-      document.getElementById('divFilter').style.display = 'none'
+    if (profile.role === 'production') {
+      const userDivs = profile.divisions?.length ? profile.divisions : (profile.division ? [profile.division] : [])
+      if (userDivs.length === 1) {
+        lockedDivision = userDivs[0]
+        const meta = DIVISION_META[lockedDivision] || {}
+        document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
+        document.getElementById('divLockBadge').style.display = 'inline-flex'
+        document.getElementById('divFilter').style.display = 'none'
+      } else if (userDivs.length > 1) {
+        lockedDivisions = userDivs
+        document.getElementById('divLockBadge').innerHTML = userDivs.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')
+        document.getElementById('divLockBadge').style.display = 'inline-flex'
+        document.getElementById('divFilter').style.display = 'none'
+      }
     }
 
     if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
@@ -105,7 +113,7 @@
     )
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
-      if (!lockedDivision) document.getElementById('divFilter').value = ''
+      if (!lockedDivision && !lockedDivisions) document.getElementById('divFilter').value = ''
       if (!lockedBranch) document.getElementById('branchFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
@@ -156,8 +164,9 @@
 
     const filtered = allOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
-      const divCheck = lockedDivision || div
-      if (divCheck && o.division !== divCheck) return false
+      if (lockedDivision && o.division !== lockedDivision) return false
+      if (lockedDivisions && !lockedDivisions.includes(o.division)) return false
+      if (!lockedDivision && !lockedDivisions && div && o.division !== div) return false
       const branchCheck = lockedBranch || branch
       if (branchCheck && o.branch !== branchCheck) return false
       if (status && o.status !== status) return false

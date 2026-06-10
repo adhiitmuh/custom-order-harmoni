@@ -230,9 +230,17 @@
           </div>` : ''}
 
           <!-- Files -->
-          ${order.designFiles?.length ? `
           <div class="card" style="margin-bottom:16px">
-            <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">File Desain</h2>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700;margin:0">File Desain</h2>
+              ${(canEdit || profile.role === 'production') ? `
+              <label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--green);padding:5px 10px;border:1.5px solid rgba(3,69,67,.15);border-radius:8px">
+                + Tambah Foto
+                <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="addDesignFiles(this)">
+              </label>` : ''}
+            </div>
+            <div id="designFilesProgress" style="display:none;font-size:12px;color:var(--green);margin-bottom:8px">⏳ Mengupload foto desain…</div>
+            ${order.designFiles?.length ? `
             <div style="display:flex;flex-wrap:wrap;gap:8px">
               ${order.designFiles.map((f,i) => {
                 const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(f)
@@ -240,8 +248,8 @@
                   ? `<a href="${f}" target="_blank"><img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`
                   : `<a href="${f}" target="_blank" style="width:80px;height:80px;border-radius:8px;border:1px solid rgba(3,69,67,.1);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:24px;text-decoration:none">📎<span style="font-size:10px;color:rgba(3,69,67,.5);margin-top:4px">File ${i+1}</span></a>`
               }).join('')}
-            </div>
-          </div>` : ''}
+            </div>` : `<p style="font-size:13px;color:rgba(3,69,67,.35)">Belum ada file desain</p>`}
+          </div>
 
           <!-- Rincian Item -->
           ${order.orderItems?.length ? `
@@ -272,6 +280,40 @@
                 </tr>
               </tfoot>
             </table>
+          </div>` : ''}
+
+          <!-- Info Penjahit (jersey/tailor, production+owner only) -->
+          ${['jersey','tailor'].includes(order.division) && (profile.role === 'production' || profile.role === 'owner') ? `
+          <div class="card" style="margin-bottom:16px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">🧵 Info Penjahit</h2>
+            <div style="margin-bottom:14px">
+              <label style="font-size:11px;color:rgba(3,69,67,.45);display:block;margin-bottom:4px">Nama Penjahit</label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="tailorNameInput" value="${order.tailorName||''}" placeholder="Nama penjahit…"
+                  style="flex:1;font-size:13px" onkeydown="if(event.key==='Enter') saveTailorName()">
+                <button onclick="saveTailorName()" class="btn btn-ghost btn-sm" id="saveTailorNameBtn">Simpan</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:600">Sudah Dicek</div>
+                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorChecked ? `${order.tailorCheckedBy||'—'} · ${timeAgo(order.tailorCheckedAt)}` : 'Belum dicek'}</div>
+                </div>
+                <button onclick="toggleTailorCheck()" class="btn ${order.tailorChecked ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorCheckBtn">
+                  ${order.tailorChecked ? '✓ Sudah' : 'Tandai'}
+                </button>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
+                <div>
+                  <div style="font-size:13px;font-weight:600">Upah Sudah Ditransfer</div>
+                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorPaid ? `${order.tailorPaidBy||'—'} · ${timeAgo(order.tailorPaidAt)}` : 'Belum ditransfer'}</div>
+                </div>
+                <button onclick="toggleTailorPaid()" class="btn ${order.tailorPaid ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorPaidBtn">
+                  ${order.tailorPaid ? '✓ Sudah' : 'Tandai'}
+                </button>
+              </div>
+            </div>
           </div>` : ''}
 
           <!-- Progress -->
@@ -496,10 +538,12 @@
     }
 
     if (method.startsWith('transfer_')) {
-      const bankKey = method.replace('transfer_','').replace(/_/g,' ')
-      const bank = (paymentInfo.banks || []).find(b =>
-        b.bankName.toLowerCase().replace(/\s+/g,'_') === method.replace('transfer_','')
-      )
+      const banks = paymentInfo.banks || []
+      const bankName = method.replace('transfer_','')
+      // Prefer bank yang spesifik untuk divisi order ini, fallback ke bank umum
+      const bank = banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName && b.division === order.division)
+                 || banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName && !b.division)
+                 || banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName)
       if (!bank) return ''
       return `<div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px">
         <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:8px">TRANSFER BANK</p>
@@ -769,6 +813,77 @@
       })
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.addDesignFiles = async function(input) {
+    if (!input.files.length) return
+    const progressEl = document.getElementById('designFilesProgress')
+    if (progressEl) progressEl.style.display = ''
+    try {
+      const urls = []
+      for (const f of input.files) {
+        const storRef = ref(storage, `orders/${orderId}/design/${Date.now()}_${f.name}`)
+        const snap = await new Promise((res, rej) => {
+          const task = uploadBytesResumable(storRef, f)
+          task.on('state_changed', null, rej, () => res(task.snapshot))
+        })
+        urls.push(await getDownloadURL(snap.ref))
+      }
+      await updateDoc(doc(db,'orders',orderId), {
+        designFiles: arrayUnion(...urls),
+        updatedAt: Timestamp.now(),
+      })
+      input.value = ''
+      await loadOrder(getProfile())
+    } catch(err) {
+      alert('Gagal upload: ' + err.message)
+      if (progressEl) progressEl.style.display = 'none'
+    }
+  }
+
+  window.saveTailorName = async function() {
+    const val = document.getElementById('tailorNameInput')?.value.trim() ?? ''
+    const btn = document.getElementById('saveTailorNameBtn')
+    btn.disabled = true; btn.textContent = '…'
+    try {
+      await updateDoc(doc(db,'orders',orderId), { tailorName: val, updatedAt: Timestamp.now() })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+    finally { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+
+  window.toggleTailorCheck = async function() {
+    const btn = document.getElementById('tailorCheckBtn')
+    btn.disabled = true
+    try {
+      const profile = getProfile()
+      const now = Timestamp.now()
+      const newVal = !order.tailorChecked
+      await updateDoc(doc(db,'orders',orderId), {
+        tailorChecked: newVal,
+        tailorCheckedBy: newVal ? profile.name : null,
+        tailorCheckedAt: newVal ? now : null,
+        updatedAt: now,
+      })
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
+  }
+
+  window.toggleTailorPaid = async function() {
+    const btn = document.getElementById('tailorPaidBtn')
+    btn.disabled = true
+    try {
+      const profile = getProfile()
+      const now = Timestamp.now()
+      const newVal = !order.tailorPaid
+      await updateDoc(doc(db,'orders',orderId), {
+        tailorPaid: newVal,
+        tailorPaidBy: newVal ? profile.name : null,
+        tailorPaidAt: newVal ? now : null,
+        updatedAt: now,
+      })
+      await loadOrder(profile)
+    } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
   }
 
   window.toggleModalEdit = function() {
