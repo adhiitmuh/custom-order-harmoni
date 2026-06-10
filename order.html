@@ -1000,28 +1000,31 @@
   window.rejectPrice = async function() {
     const reason = prompt('Alasan penolakan:')
     if (reason === null) return
-    const profile = getProfile()
-    await updateDoc(doc(db,'orders',orderId), {
-      priceApprovalStatus: 'rejected',
-      priceApprovalReason: reason,
-      priceApprovalBy: profile.id,
-      priceApprovalAt: Timestamp.now(),
-      status: 'cancelled',
-      updatedAt: Timestamp.now(),
-    })
-    await loadOrder(profile)
+    try {
+      const profile = getProfile()
+      await updateDoc(doc(db,'orders',orderId), {
+        priceApprovalStatus: 'rejected',
+        priceApprovalReason: reason,
+        priceApprovalBy: profile.id,
+        priceApprovalAt: Timestamp.now(),
+        status: 'cancelled',
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(profile)
+    } catch(e) { alert('Gagal menolak harga: ' + e.message) }
   }
 
   window.changeStatus = async function(status) {
-    const now = Timestamp.now()
-    const profile = getProfile()
-    await updateDoc(doc(db,'orders',orderId), { status, updatedAt: now, statusChangedBy: profile.name, statusChangedAt: now })
-    // Sync status ke public_order_info agar chat.html baca status terkini
-    if (order.chatToken) {
-      updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
-    }
-    await loadOrder(getProfile())
-    showWAToast(status)
+    try {
+      const now = Timestamp.now()
+      const profile = getProfile()
+      await updateDoc(doc(db,'orders',orderId), { status, updatedAt: now, statusChangedBy: profile.name, statusChangedAt: now })
+      if (order.chatToken) {
+        updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
+      }
+      await loadOrder(getProfile())
+      showWAToast(status)
+    } catch(e) { alert('Gagal mengubah status: ' + e.message) }
   }
 
   function showWAToast(status) {
