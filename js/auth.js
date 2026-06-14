@@ -203,6 +203,9 @@ export function renderSidebar(profile) {
       <a href="https://adhiitmuh.github.io/harmoni-indonesia/" target="_blank" class="sidebar-link">
         <span class="icon">⚙️</span>Kelola Pengguna
       </a>
+      <a href="lokasi.html" class="sidebar-link ${page==='lokasi.html'?'active':''}">
+        <span class="icon">🏪</span>Lokasi Harmoni
+      </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
         <span class="icon">💳</span>Metode Pembayaran
       </a>` : ''}
