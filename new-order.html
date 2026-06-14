@@ -201,6 +201,7 @@
 
   async function loadLokasi(profile) {
     try {
+      await dataAuthReady
       const snap = await getDocs(collection(db, 'lokasi'))
       lokasiList = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
       const sel = document.getElementById('lokasiId')
