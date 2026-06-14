@@ -80,6 +80,10 @@ designFiles         string[]  — array URL Firebase Storage
 chatToken           string    — token unik untuk customer chat (24 chars)
 sumberOrder         string    — 'staff' | 'wa_bot' | 'walk_in' | 'shopee' | 'instagram'
 agentSessionId      string    — ID sesi WA bot (kosong kalau dari staff)
+lokasiId            string    — FK ke collection `lokasi`
+lokasiNama          string    — denormalized nama lokasi
+lokasiTipe          string    — 'pusat' | 'cabang' | 'titik'
+produksiUnit        string    — unit produksi yang handle (dari PRODUKSI_UNIT di utils.js)
 priceApprovalStatus string    — 'approved' | 'pending'
 priceApprovalTier   string    — null | 'promo' | 'admin'
 priceApprovalReason string
@@ -115,6 +119,18 @@ Dibuat saat order baru, key = chatToken. Untuk akses customer chat publik.
 
 ### Collection `chat_messages/{chatToken}/messages/{msgId}`
 Chat realtime. Public read + create (siapapun dengan token bisa kirim pesan).
+
+### Collection `lokasi/{id}`
+```
+nama            string    — "Titik Harmoni Manggala"
+tipe            string    — 'pusat' | 'cabang' | 'titik'
+kota            string    — "Makassar"
+pj              string    — penanggung jawab
+komisiPersen    number    — % komisi mitra (hanya tipe 'titik', default 15)
+aktif           boolean
+createdAt       timestamp
+updatedAt       timestamp
+```
 
 ### Collection `settings/{id}`
 - `monthly_target`: `{ amount: number }` — target omzet bulanan
@@ -351,6 +367,10 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 ### Phase 1 (Sekarang — deploy dulu)
 - [x] Cloudflare Worker API (`api/create-order.js`)
 - [x] Field `sumberOrder` di app
+- [x] Tag lokasi per order (lokasiId, lokasiNama, lokasiTipe, produksiUnit)
+- [x] Halaman `lokasi.html` — CRUD kelola lokasi (owner only)
+- [x] `laporan.html` — section per lokasi + komisi mitra
+- [x] `orders.html` — filter per lokasi + badge
 - [ ] Deploy Worker ke Cloudflare
 - [ ] Setup n8n + Fonnte webhook
 - [ ] Build CS Agent flow (1 divisi dulu — Jersey)

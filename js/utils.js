@@ -111,6 +111,32 @@ export const ROLE_LABEL = {
   production: 'Tim Produksi',
 }
 
+export const PRODUKSI_UNIT = {
+  jersey:       'Gaara Apparel',
+  konveksi:     'Young Harmonis Konveksi',
+  jilbab:       'Young Harmonis Konveksi',
+  butik:        'Young Harmonis Konveksi',
+  tailor:       'Young Harmonis Konveksi',
+  bordir:       'Bordir Unit',
+  'papan-nama': 'Bordir Unit',
+  sablon:       'Sablon Unit',
+  'medali-pin': 'Medali & Pin Unit',
+  'pin-fiber':  'Medali & Pin Unit',
+  'sewa-kostum':'Sewa Kostum Unit',
+}
+
+export const LOKASI_TIPE_LABEL = {
+  pusat:  'Harmoni Indonesia (Pusat)',
+  cabang: 'Harmoni Cabang',
+  titik:  'Titik Harmoni',
+}
+
+export const LOKASI_TIPE_ICON = {
+  pusat:  '🏢',
+  cabang: '🏬',
+  titik:  '📍',
+}
+
 // Check which price tier a given price falls into for a division
 // Returns: 'normal' | 'promo' | 'admin' | 'blocked'
 export function checkPriceTier(totalPrice, priceList) {

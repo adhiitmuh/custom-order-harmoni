@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lokasi Harmoni — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .lokasi-card { background:var(--white); border-radius:14px; border:1px solid rgba(3,69,67,.08); padding:18px 20px; margin-bottom:10px; display:flex; align-items:flex-start; gap:14px; transition:box-shadow .12s; }
+    .lokasi-card:hover { box-shadow:0 2px 12px rgba(3,69,67,.08); }
+    .tipe-badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+    .tipe-pusat { background:#e0f2f1; color:#00695c; }
+    .tipe-cabang { background:#e8f5e9; color:#2e7d32; }
+    .tipe-titik { background:rgba(3,69,67,.08); color:var(--green); }
+    .form-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:100; align-items:center; justify-content:center; padding:20px; }
+    .form-modal.open { display:flex; }
+    .form-box { background:var(--white); border-radius:18px; padding:28px; width:100%; max-width:480px; max-height:90vh; overflow-y:auto; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main" style="max-width:760px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px">
+      <div>
+        <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PENGATURAN</p>
+        <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Lokasi Harmoni</h1>
+        <p style="font-size:12px;color:rgba(3,69,67,.4);margin-top:3px">Kelola Harmoni Indonesia, Cabang, dan Titik Harmoni</p>
+      </div>
+      <button onclick="openForm()" class="btn btn-primary">+ Tambah Lokasi</button>
+    </div>
+
+    <div id="alert" class="alert" style="display:none;margin-bottom:16px"></div>
+
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px" id="statsRow">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:22px;font-weight:800;color:var(--green)" id="countPusat">—</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">🏢 Pusat</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:22px;font-weight:800;color:var(--green)" id="countCabang">—</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">🏬 Cabang</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:22px;font-weight:800;color:var(--green)" id="countTitik">—</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">📍 Titik</div>
+      </div>
+    </div>
+
+    <div id="lokasiList"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<!-- Form Modal -->
+<div class="form-modal" id="formModal">
+  <div class="form-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 style="font-size:17px;font-weight:800;color:var(--black)" id="formTitle">Tambah Lokasi</h2>
+      <button onclick="closeForm()" style="background:none;border:none;cursor:pointer;font-size:20px;color:rgba(3,69,67,.4);padding:4px;line-height:1">✕</button>
+    </div>
+
+    <div id="formAlert" class="alert alert-error" style="display:none;margin-bottom:14px"></div>
+
+    <input type="hidden" id="editId">
+
+    <div class="form-group">
+      <label>Nama Lokasi <span class="req">*</span></label>
+      <input type="text" id="fNama" placeholder="cth: Titik Harmoni Manggala">
+    </div>
+
+    <div class="form-group">
+      <label>Tipe <span class="req">*</span></label>
+      <select id="fTipe" onchange="toggleKomisi()">
+        <option value="">— Pilih Tipe —</option>
+        <option value="pusat">🏢 Harmoni Indonesia (Pusat)</option>
+        <option value="cabang">🏬 Harmoni Cabang</option>
+        <option value="titik">📍 Titik Harmoni</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Kota / Area</label>
+      <input type="text" id="fKota" placeholder="cth: Makassar, Gowa">
+    </div>
+
+    <div class="form-group">
+      <label>Penanggung Jawab</label>
+      <input type="text" id="fPJ" placeholder="Nama penanggung jawab lokasi">
+    </div>
+
+    <div class="form-group" id="komisiWrap" style="display:none">
+      <label>Komisi Mitra (%)</label>
+      <input type="number" id="fKomisi" placeholder="15" min="0" max="100" step="0.5">
+      <p class="form-hint">Persentase komisi dari total omzet order di titik ini</p>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button type="button" onclick="closeForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button type="button" onclick="saveLokasi()" class="btn btn-primary" style="flex:1;justify-content:center" id="saveBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, Timestamp, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
+
+  let lokasiList = []
+
+  requireAuth((profile) => {
+    if (profile.role !== 'owner') {
+      document.querySelector('.main').innerHTML = '<div class="empty"><div class="empty-icon">🚫</div><p>Halaman ini hanya untuk Owner.</p></div>'
+      return
+    }
+    loadLokasi()
+  })
+
+  async function loadLokasi() {
+    try {
+      await dataAuthReady
+      const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('createdAt', 'asc')))
+      lokasiList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      render()
+    } catch(e) {
+      document.getElementById('lokasiList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${e.message}</p></div>`
+    }
+  }
+
+  function render() {
+    const active = lokasiList.filter(l => l.aktif !== false)
+    document.getElementById('countPusat').textContent = active.filter(l => l.tipe === 'pusat').length
+    document.getElementById('countCabang').textContent = active.filter(l => l.tipe === 'cabang').length
+    document.getElementById('countTitik').textContent = active.filter(l => l.tipe === 'titik').length
+
+    const el = document.getElementById('lokasiList')
+    if (!lokasiList.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div><p>Belum ada lokasi. Klik "+ Tambah Lokasi" untuk mulai.</p></div>'
+      return
+    }
+
+    const order = ['pusat','cabang','titik']
+    const sorted = [...lokasiList].sort((a,b) => order.indexOf(a.tipe) - order.indexOf(b.tipe) || a.nama?.localeCompare(b.nama))
+
+    el.innerHTML = sorted.map(l => `
+      <div class="lokasi-card" style="${l.aktif===false?'opacity:.5':''}">
+        <div style="font-size:28px;line-height:1;flex-shrink:0">${LOKASI_TIPE_ICON[l.tipe]||'📍'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <span style="font-size:15px;font-weight:700;color:var(--black)">${l.nama}</span>
+            <span class="tipe-badge tipe-${l.tipe}">${LOKASI_TIPE_LABEL[l.tipe]||l.tipe}</span>
+            ${l.aktif===false?'<span style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:999px;font-weight:700">NONAKTIF</span>':''}
+          </div>
+          <div style="font-size:12px;color:rgba(3,69,67,.5);display:flex;gap:14px;flex-wrap:wrap">
+            ${l.kota?`<span>📌 ${l.kota}</span>`:''}
+            ${l.pj?`<span>👤 ${l.pj}</span>`:''}
+            ${l.tipe==='titik'&&l.komisiPersen!=null?`<span>💰 Komisi ${l.komisiPersen}%</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button onclick="editLokasi('${l.id}')" class="btn btn-ghost btn-sm">Edit</button>
+          <button onclick="toggleAktif('${l.id}',${l.aktif!==false})" class="btn btn-ghost btn-sm" style="color:${l.aktif===false?'#059669':'#b91c1c'}">${l.aktif===false?'Aktifkan':'Nonaktifkan'}</button>
+        </div>
+      </div>`).join('')
+  }
+
+  window.openForm = function() {
+    document.getElementById('editId').value = ''
+    document.getElementById('formTitle').textContent = 'Tambah Lokasi'
+    document.getElementById('fNama').value = ''
+    document.getElementById('fTipe').value = ''
+    document.getElementById('fKota').value = ''
+    document.getElementById('fPJ').value = ''
+    document.getElementById('fKomisi').value = ''
+    document.getElementById('komisiWrap').style.display = 'none'
+    document.getElementById('formAlert').style.display = 'none'
+    document.getElementById('formModal').classList.add('open')
+    document.getElementById('fNama').focus()
+  }
+
+  window.closeForm = function() {
+    document.getElementById('formModal').classList.remove('open')
+  }
+
+  window.toggleKomisi = function() {
+    document.getElementById('komisiWrap').style.display =
+      document.getElementById('fTipe').value === 'titik' ? '' : 'none'
+  }
+
+  window.editLokasi = function(id) {
+    const l = lokasiList.find(x => x.id === id)
+    if (!l) return
+    document.getElementById('editId').value = id
+    document.getElementById('formTitle').textContent = 'Edit Lokasi'
+    document.getElementById('fNama').value = l.nama || ''
+    document.getElementById('fTipe').value = l.tipe || ''
+    document.getElementById('fKota').value = l.kota || ''
+    document.getElementById('fPJ').value = l.pj || ''
+    document.getElementById('fKomisi').value = l.komisiPersen ?? 15
+    document.getElementById('komisiWrap').style.display = l.tipe === 'titik' ? '' : 'none'
+    document.getElementById('formAlert').style.display = 'none'
+    document.getElementById('formModal').classList.add('open')
+  }
+
+  window.saveLokasi = async function() {
+    const errEl = document.getElementById('formAlert')
+    const nama = document.getElementById('fNama').value.trim()
+    const tipe = document.getElementById('fTipe').value
+    if (!nama) { errEl.textContent = 'Nama lokasi harus diisi'; errEl.style.display=''; return }
+    if (!tipe) { errEl.textContent = 'Pilih tipe lokasi'; errEl.style.display=''; return }
+
+    const btn = document.getElementById('saveBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    errEl.style.display = 'none'
+
+    try {
+      const editId = document.getElementById('editId').value
+      const data = {
+        nama,
+        tipe,
+        kota: document.getElementById('fKota').value.trim() || '',
+        pj: document.getElementById('fPJ').value.trim() || '',
+        komisiPersen: tipe === 'titik' ? (Number(document.getElementById('fKomisi').value) || 15) : null,
+        aktif: true,
+      }
+      if (editId) {
+        await updateDoc(doc(db, 'lokasi', editId), { ...data, updatedAt: Timestamp.now() })
+        const idx = lokasiList.findIndex(l => l.id === editId)
+        if (idx >= 0) lokasiList[idx] = { ...lokasiList[idx], ...data }
+      } else {
+        data.createdAt = Timestamp.now()
+        const ref = doc(collection(db, 'lokasi'))
+        await setDoc(ref, data)
+        lokasiList.push({ id: ref.id, ...data })
+      }
+      closeForm()
+      render()
+      showAlert('Lokasi berhasil disimpan', false)
+    } catch(e) {
+      errEl.textContent = 'Gagal menyimpan: ' + e.message
+      errEl.style.display = ''
+    } finally {
+      btn.disabled = false; btn.textContent = 'Simpan'
+    }
+  }
+
+  window.toggleAktif = async function(id, isAktif) {
+    try {
+      await updateDoc(doc(db, 'lokasi', id), { aktif: !isAktif, updatedAt: Timestamp.now() })
+      const l = lokasiList.find(x => x.id === id)
+      if (l) l.aktif = !isAktif
+      render()
+      showAlert(isAktif ? 'Lokasi dinonaktifkan' : 'Lokasi diaktifkan', false)
+    } catch(e) {
+      showAlert('Gagal: ' + e.message, true)
+    }
+  }
+
+  function showAlert(msg, isError) {
+    const el = document.getElementById('alert')
+    el.textContent = msg
+    el.className = `alert ${isError ? 'alert-error' : 'alert-success'}`
+    el.style.display = ''
+    setTimeout(() => { el.style.display = 'none' }, 3000)
+  }
+
+  document.getElementById('formModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeForm()
+  })
+</script>
+</body>
+</html>

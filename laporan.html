@@ -78,6 +78,12 @@
       <div id="topCustomers"></div>
     </div>
 
+    <!-- Per Lokasi & Komisi (owner only) -->
+    <div class="card" id="lokasiSection" style="margin-bottom:16px;display:none">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Laporan per Lokasi & Komisi Mitra</h2>
+      <div id="lokasiReport"></div>
+    </div>
+
     <!-- Order table -->
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -91,22 +97,30 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
   import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate } from './js/utils.js'
+  import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
   let allOrders = []
+  let lokasiList = []
   let currentFrom = null
   let currentTo = null
 
-  requireAuth(() => {
+  requireAuth((profile) => {
     setupPeriodBtns()
-    dataAuthReady.then(() =>
-    getDocs(query(collection(db,'orders'), orderBy('createdAt','desc')))).then(snap => {
-      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    if (profile.role === 'owner') document.getElementById('lokasiSection').style.display = ''
+
+    dataAuthReady.then(() => Promise.all([
+      getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))),
+      profile.role === 'owner'
+        ? getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))
+        : Promise.resolve({ docs: [] })
+    ])).then(([ordersSnap, lokasiSnap]) => {
+      lokasiList = lokasiSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPeriod('month')
     }).catch(err => {
-      document.getElementById('reportContent').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat data: ${err.message}</p></div>`
+      document.getElementById('summaryCards').innerHTML = `<div class="stat-card" style="grid-column:1/-1"><p style="color:red;font-size:13px">Gagal memuat data: ${err.message}</p></div>`
     })
   })
 
@@ -238,6 +252,8 @@
         </div>
       </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35)">Belum ada data</p>'
 
+    renderLokasiReport(orders)
+
     // Order table
     document.getElementById('orderTableCount').textContent = `${orders.length} order`
     document.getElementById('orderTable').innerHTML = orders.length ? `
@@ -276,6 +292,69 @@
           </tr>
         </tfoot>
       </table>` : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Tidak ada order di periode ini</p>'
+  }
+  function renderLokasiReport(orders) {
+    const profile = getProfile()
+    const el = document.getElementById('lokasiReport')
+    if (!el || profile?.role !== 'owner') return
+
+    const lokasiMap = new Map()
+    for (const o of orders) {
+      if (!o.lokasiId) continue
+      if (!lokasiMap.has(o.lokasiId)) {
+        const meta = lokasiList.find(l => l.id === o.lokasiId) || {}
+        lokasiMap.set(o.lokasiId, {
+          nama: o.lokasiNama || meta.nama || o.lokasiId,
+          tipe: o.lokasiTipe || meta.tipe || 'titik',
+          komisiPersen: meta.komisiPersen ?? 15,
+          count: 0,
+          totalOmzet: 0,
+        })
+      }
+      const e = lokasiMap.get(o.lokasiId)
+      e.count++
+      e.totalOmzet += o.totalPrice || 0
+    }
+
+    if (lokasiMap.size === 0) {
+      el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px">Belum ada order dengan tag lokasi di periode ini</p>'
+      return
+    }
+
+    const rows = [...lokasiMap.values()].sort((a,b) => b.totalOmzet - a.totalOmzet)
+    const totalKomisi = rows.filter(r => r.tipe === 'titik').reduce((s,r) => s + Math.round(r.totalOmzet * r.komisiPersen / 100), 0)
+
+    el.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:2px solid rgba(3,69,67,.1)">
+          <th style="text-align:left;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">LOKASI</th>
+          <th style="text-align:left;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">TIPE</th>
+          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">ORDER</th>
+          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">OMZET</th>
+          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">KOMISI</th>
+          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">NILAI KOMISI</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => {
+          const komisi = r.tipe === 'titik' ? Math.round(r.totalOmzet * r.komisiPersen / 100) : 0
+          return `<tr style="border-bottom:1px solid rgba(3,69,67,.05)" onmouseover="this.style.background='rgba(3,69,67,.02)'" onmouseout="this.style.background=''">
+            <td style="padding:9px 6px;font-weight:600;color:var(--black)">${LOKASI_TIPE_ICON[r.tipe]||'📍'} ${r.nama}</td>
+            <td style="padding:9px 6px;font-size:12px;color:rgba(3,69,67,.55)">${LOKASI_TIPE_LABEL[r.tipe]||r.tipe}</td>
+            <td style="padding:9px 6px;text-align:right;font-family:monospace">${r.count}</td>
+            <td style="padding:9px 6px;text-align:right;font-weight:700;color:var(--green)">${fmtCurrency(r.totalOmzet)}</td>
+            <td style="padding:9px 6px;text-align:right;color:rgba(3,69,67,.5)">${r.tipe==='titik'?r.komisiPersen+'%':'—'}</td>
+            <td style="padding:9px 6px;text-align:right;font-weight:700;color:${komisi>0?'#059669':'rgba(3,69,67,.3)'}">${komisi>0?fmtCurrency(komisi):'—'}</td>
+          </tr>`
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid rgba(3,69,67,.1);background:rgba(3,69,67,.02)">
+          <td colspan="5" style="padding:10px 6px;font-weight:800;font-size:13px">TOTAL KOMISI MITRA</td>
+          <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#059669">${fmtCurrency(totalKomisi)}</td>
+        </tr>
+      </tfoot>
+    </table></div>`
   }
 </script>
 </body>

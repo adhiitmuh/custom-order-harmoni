@@ -36,6 +36,9 @@
           <option value="">Semua Cabang</option>
         </select>
         <span id="branchLockBadge" style="display:none;align-items:center;gap:6px;padding:6px 12px;background:rgba(3,69,67,.07);border-radius:999px;font-size:12px;font-weight:600;color:var(--green)"></span>
+        <select id="lokasiFilter" style="display:none;flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Lokasi</option>
+        </select>
         <select id="statusFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
           <option value="">Semua Status</option>
           <option value="pending">Menunggu Konfirmasi</option>
@@ -108,13 +111,14 @@
     if (profile.role === 'owner') document.getElementById('branchFilter').style.display = ''
 
     // Wire up filters immediately (allOrders starts empty, fills when fetch returns)
-    ;['searchInput','divFilter','branchFilter','statusFilter','payFilter'].forEach(id =>
+    ;['searchInput','divFilter','branchFilter','lokasiFilter','statusFilter','payFilter'].forEach(id =>
       document.getElementById(id).addEventListener('input', render)
     )
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
       if (!lockedDivision && !lockedDivisions) document.getElementById('divFilter').value = ''
       if (!lockedBranch) document.getElementById('branchFilter').value = ''
+      document.getElementById('lokasiFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
       render()
@@ -144,6 +148,16 @@
           opt.value = b; opt.textContent = `📍 ${b}`
           sel.appendChild(opt)
         })
+
+        const lokasiNames = {}
+        allOrders.filter(o => o.lokasiId).forEach(o => { lokasiNames[o.lokasiId] = o.lokasiNama || o.lokasiId })
+        const lokasiSel = document.getElementById('lokasiFilter')
+        Object.entries(lokasiNames).sort((a,b) => a[1].localeCompare(b[1])).forEach(([id, nama]) => {
+          const opt = document.createElement('option')
+          opt.value = id; opt.textContent = `📍 ${nama}`
+          lokasiSel.appendChild(opt)
+        })
+        if (Object.keys(lokasiNames).length > 0) lokasiSel.style.display = ''
       }
       render()
     })
@@ -152,9 +166,10 @@
   function render() {
     const search = document.getElementById('searchInput').value.toLowerCase()
     const div = document.getElementById('divFilter').value
+    const lokasiF = document.getElementById('lokasiFilter').value
     const status = document.getElementById('statusFilter').value
     const pay = document.getElementById('payFilter').value
-    const isFiltered = search || div || status || pay
+    const isFiltered = search || div || lokasiF || status || pay
     document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
 
     const profile = getProfile()
@@ -169,6 +184,7 @@
       if (!lockedDivision && !lockedDivisions && div && o.division !== div) return false
       const branchCheck = lockedBranch || branch
       if (branchCheck && o.branch !== branchCheck) return false
+      if (lokasiF && o.lokasiId !== lokasiF) return false
       if (status && o.status !== status) return false
       if (pay) {
         const total = o.totalPrice||0, paid = o.depositPaid||0
@@ -206,7 +222,7 @@
                 <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
                 <span style="font-size:11px;color:rgba(3,69,67,.4)">${meta.label||''}</span>
                 ${o.sumberOrder && o.sumberOrder !== 'staff' ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ede9fe;color:#7c3aed">${o.sumberOrder==='wa_bot'?'🤖 WA Bot':o.sumberOrder==='walk_in'?'🚶 Walk In':o.sumberOrder==='instagram'?'📸 IG':o.sumberOrder==='shopee'?'🛒 Shopee':o.sumberOrder}</span>` : ''}
-                ${showContact && o.branch ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:rgba(3,69,67,.07);color:rgba(3,69,67,.6)">📍 ${o.branch}</span>` : ''}
+                ${showContact && (o.lokasiNama || o.branch) ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:rgba(3,69,67,.07);color:rgba(3,69,67,.6)">📍 ${o.lokasiNama || o.branch}</span>` : ''}
               </div>
               <div style="font-weight:700;font-size:15px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
               ${showContact && o.customerContact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace;margin-top:1px">${o.customerContact}</div>` : ''}

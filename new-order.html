@@ -149,6 +149,18 @@
         <textarea id="notes" placeholder="Ukuran, warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
       </div>
 
+      <!-- Lokasi -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Lokasi Order Masuk</h2>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Diterima di <span class="req">*</span></label>
+          <select id="lokasiId" required>
+            <option value="">— Pilih Lokasi —</option>
+          </select>
+          <p class="form-hint">Lokasi tempat pelanggan menyerahkan atau order diterima</p>
+        </div>
+      </div>
+
       <!-- Source -->
       <div class="card" style="margin-bottom:16px">
         <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Sumber Order</h2>
@@ -175,16 +187,35 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
-  import { collection, doc, setDoc, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, doc, setDoc, runTransaction, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken } from './js/utils.js'
+  import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
   import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
   let selectedDiv = ''
   let itemRowCount = 0
 
   let _paymentInfoCache = null
+  let lokasiList = []
+
+  async function loadLokasi(profile) {
+    try {
+      const snap = await getDocs(collection(db, 'lokasi'))
+      lokasiList = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
+      const sel = document.getElementById('lokasiId')
+      lokasiList.forEach(l => {
+        const opt = document.createElement('option')
+        opt.value = l.id
+        opt.textContent = `${LOKASI_TIPE_ICON[l.tipe] || '📍'} ${l.nama}`
+        sel.appendChild(opt)
+      })
+      if (profile.branch) {
+        const match = lokasiList.find(l => l.nama === profile.branch || l.kode === profile.branch)
+        if (match) sel.value = match.id
+      }
+    } catch(e) { console.error('Gagal load lokasi:', e) }
+  }
 
   async function loadPaymentMethods(division = '') {
     try {
@@ -438,6 +469,7 @@
   requireAuth((profile) => {
     if (profile.role === 'production') { window.location.href = 'orders.html'; return }
     loadPaymentMethods()
+    loadLokasi(profile)
   })
 
   async function generateOrderNumber(division) {
@@ -478,6 +510,7 @@
     errEl.style.display = 'none'
 
     if (!selectedDiv) { errEl.textContent = 'Pilih divisi terlebih dahulu'; errEl.style.display=''; return }
+    if (!document.getElementById('lokasiId').value) { errEl.textContent = 'Pilih lokasi order masuk'; errEl.style.display=''; return }
     const dueDate = document.getElementById('dueDate').value
     if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
     if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
@@ -490,6 +523,8 @@
 
     try {
       const profile = getProfile()
+      const lokasiSel = document.getElementById('lokasiId')
+      const selectedLokasi = lokasiList.find(l => l.id === lokasiSel.value) || null
       const files = document.getElementById('designFiles').files
       const orderId = doc(collection(db,'orders')).id
       const chatToken = generateChatToken()
@@ -518,6 +553,10 @@
         sumberOrder: document.getElementById('sumberOrder').value || 'staff',
         agentSessionId: '',
         branch: profile.branch || '',
+        lokasiId: selectedLokasi?.id || '',
+        lokasiNama: selectedLokasi?.nama || '',
+        lokasiTipe: selectedLokasi?.tipe || '',
+        produksiUnit: PRODUKSI_UNIT[selectedDiv] || '',
         createdBy: profile.id,
         createdByName: profile.name,
         createdAt: now,
