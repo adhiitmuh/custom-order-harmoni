@@ -148,17 +148,8 @@ export function renderSidebar(profile) {
   el.innerHTML = `
     <div class="sidebar-nav">
     <div class="sidebar-logo">
-      <div style="display:flex;align-items:center;gap:10px">
-        <svg viewBox="0 0 100 100" width="28" height="28">
-          <circle cx="74" cy="20" r="11" fill="#FFFBD5"/>
-          <rect x="22" y="8" width="22" height="80" fill="#FFFBD5"/>
-          <path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#FFFBD5"/>
-        </svg>
-        <div>
-          <div class="brand-name">harmoni</div>
-          <div class="brand-sub">ORDER SYSTEM</div>
-        </div>
-      </div>
+      <img src="img/logo-beige.png" alt="harmoni" style="width:120px;display:block;margin-bottom:4px">
+      <div class="brand-sub">ORDER SYSTEM</div>
     </div>
 
     <div class="sidebar-section">
