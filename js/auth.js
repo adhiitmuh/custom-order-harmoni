@@ -119,8 +119,14 @@ export function renderSidebar(profile) {
   const params = new URLSearchParams(location.search)
   const activeDiv = params.get('div')
 
+  // Divisi collapse state: expanded on knowledge.html, otherwise remember last state
+  const onKnowledge = page === 'knowledge.html'
+  const divisiOpen = onKnowledge
+    ? true
+    : localStorage.getItem('sidebar_divisi_open') !== 'false'
+
   const divLinks = DIVISIONS.map(d => `
-    <a href="knowledge.html?div=${d}" class="sidebar-link ${page === 'knowledge.html' && activeDiv === d ? 'active' : ''}">
+    <a href="knowledge.html?div=${d}" class="sidebar-link ${onKnowledge && activeDiv === d ? 'active' : ''}">
       <span class="icon">${DIVISION_META[d].icon}</span>${DIVISION_META[d].label}
     </a>`).join('')
 
@@ -148,14 +154,19 @@ export function renderSidebar(profile) {
         <span class="icon">＋</span>Order Baru
       </a>` : ''}
       ${(profile.role==='manager'||profile.role==='owner') ? `
-      <a href="orders.html?approval=promo" class="sidebar-link ${page==='orders.html'?'':''}">
+      <a href="orders.html?approval=promo" class="sidebar-link">
         <span class="icon">🔑</span>Approval Harga
       </a>` : ''}
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-label">DIVISI</div>
-      ${divLinks}
+      <button id="divisiToggle" onclick="sidebarToggleDivisi()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;padding:0 8px;margin-bottom:3px">
+        <span class="sidebar-label" style="margin-bottom:0">DIVISI</span>
+        <span id="divisiArrow" style="font-size:9px;color:var(--beige);opacity:.35;transition:transform .2s;transform:rotate(${divisiOpen?'90':'0'}deg)">▶</span>
+      </button>
+      <div id="divisiLinks" style="display:${divisiOpen?'':'none'}">
+        ${divLinks}
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -204,4 +215,14 @@ export function renderSidebar(profile) {
     await Promise.all([signOut(auth), signOut(dataAuth).catch(() => {})])
     window.location.href = 'index.html'
   })
+}
+
+window.sidebarToggleDivisi = function() {
+  const links = document.getElementById('divisiLinks')
+  const arrow = document.getElementById('divisiArrow')
+  if (!links) return
+  const open = links.style.display === 'none'
+  links.style.display = open ? '' : 'none'
+  if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)'
+  localStorage.setItem('sidebar_divisi_open', open)
 }
