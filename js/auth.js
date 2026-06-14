@@ -127,10 +127,8 @@ export function renderSidebar(profile) {
   el.innerHTML = `
     <div class="sidebar-nav">
     <div class="sidebar-logo">
-      <div>
-        <div class="brand-name">h<span style="display:inline-block;width:5px;height:5px;background:#FFFBD5;border-radius:50%;margin:0 1px;position:relative;bottom:4px;flex-shrink:0"></span>armoni</div>
-        <div class="brand-sub">ORDER SYSTEM</div>
-      </div>
+      <img src="img/logo-beige.png" alt="harmoni" style="width:110px;display:block;margin-bottom:4px">
+      <div class="brand-sub">ORDER SYSTEM</div>
     </div>
 
     <div class="sidebar-section">
