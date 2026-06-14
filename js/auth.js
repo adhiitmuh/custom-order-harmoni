@@ -103,8 +103,16 @@ export function requireAuth(callback) {
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, merangkapProduction: appMerangkapProduction }
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
-      // Sync role to harmoni-custom-order so Firestore Rules can check it
-      setDoc(doc(db, 'users', snap.id), { role: appRole, branch: data.branch || '', merangkapProduction: appMerangkapProduction, divisions: appDivisions }, { merge: true }).catch(() => {})
+      // Sync role to harmoni-custom-order so Firestore Rules can check it.
+      // Rules check request.auth.uid = the anonymous UID from dataAuth (not the portal UID),
+      // so we must also write under the anon UID for isOwner() / role() to work correctly.
+      const roleDoc = { role: appRole, branch: data.branch || '', merangkapProduction: appMerangkapProduction, divisions: appDivisions }
+      setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
+      dataAuthReady.then(anonUser => {
+        if (anonUser && anonUser.uid !== snap.id) {
+          setDoc(doc(db, 'users', anonUser.uid), roleDoc, { merge: true }).catch(() => {})
+        }
+      })
 
       _profile = fresh
       renderSidebar(fresh)
