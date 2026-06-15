@@ -23,6 +23,13 @@ export const getUser = () => _user
 export const getProfile = () => _profile
 export const canViewContact = (role) => role === 'owner'
 
+export function hasProductionAccess(profile, division) {
+  if (!profile) return false
+  if (profile.role !== 'production') return false
+  const userDivs = profile.divisions || []
+  return userDivs.length === 0 || !division || userDivs.includes(division)
+}
+
 function showAccessDenied(msg) {
   document.body.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#f9fafb;font-family:sans-serif;text-align:center;padding:24px;">
