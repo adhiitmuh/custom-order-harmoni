@@ -191,6 +191,7 @@ export function renderSidebar(profile) {
       </a>
     </div>
 
+    ${(profile.role === 'owner' || profile.role === 'manager') ? `
     <div class="sidebar-section">
       <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
       <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
@@ -199,7 +200,7 @@ export function renderSidebar(profile) {
       <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
         <span class="icon">📊</span>Laporan Keuangan
       </a>
-    </div>
+    </div>` : ''}
 
     <div class="sidebar-section">
       <div class="sidebar-label">REFERENSI</div>

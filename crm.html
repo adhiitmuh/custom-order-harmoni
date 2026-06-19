@@ -59,7 +59,10 @@
   let customers = []
 
   requireAuth((profile) => {
-    const showContact = profile.role !== 'production'
+    if (profile.role !== 'owner' && profile.role !== 'manager') {
+      window.location.href = 'dashboard.html'; return
+    }
+    const showContact = true
 
     // Wire up search immediately
     document.getElementById('searchInput').addEventListener('input', e => {

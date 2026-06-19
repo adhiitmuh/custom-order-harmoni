@@ -107,6 +107,9 @@
   let currentTo = null
 
   requireAuth((profile) => {
+    if (profile.role !== 'owner' && profile.role !== 'manager') {
+      window.location.href = 'dashboard.html'; return
+    }
     setupPeriodBtns()
     if (profile.role === 'owner') document.getElementById('lokasiSection').style.display = ''
 
