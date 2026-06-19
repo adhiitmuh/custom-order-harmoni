@@ -199,6 +199,63 @@
   let _paymentInfoCache = null
   let lokasiList = []
 
+  // ── Draft localStorage ──────────────────────────────────────────────────────
+  const DRAFT_KEY = 'harmoni_new_order_draft'
+  let _draftSaveTimer
+
+  function saveDraft() {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        division: selectedDiv,
+        customerName: document.getElementById('customerName').value,
+        customerContact: document.getElementById('customerContact').value,
+        orderDate: document.getElementById('orderDate').value,
+        dueDate: document.getElementById('dueDate').value,
+        totalPrice: document.getElementById('totalPrice').value,
+        depositPaid: document.getElementById('depositPaid').value,
+        paymentMethod: document.getElementById('paymentMethod').value,
+        notes: document.getElementById('notes').value,
+        lokasiId: document.getElementById('lokasiId').value,
+        sumberOrder: document.getElementById('sumberOrder').value,
+        approvalReason: document.getElementById('approvalReason')?.value || '',
+        items: getItemRows(),
+      }))
+    } catch {}
+  }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY) } catch {} }
+  function getDraft() { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null') } catch { return null } }
+  function debouncedSaveDraft() { clearTimeout(_draftSaveTimer); _draftSaveTimer = setTimeout(saveDraft, 600) }
+
+  function showDraftBanner() {
+    if (document.getElementById('draftBanner')) return
+    const banner = document.createElement('div')
+    banner.id = 'draftBanner'
+    banner.style.cssText = 'background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px'
+    banner.innerHTML = `<span style="font-size:13px;color:#059669;font-weight:600">📋 Draft ditemukan — form diisi otomatis</span><button type="button" id="clearDraftBtn" style="flex-shrink:0;background:none;border:1.5px solid #059669;color:#059669;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600">Hapus Draft</button>`
+    const form = document.getElementById('orderForm')
+    form.insertBefore(banner, form.firstChild)
+    document.getElementById('clearDraftBtn').addEventListener('click', () => { clearDraft(); window.location.reload() })
+  }
+
+  function restoreDraftAfterLoad(draft) {
+    if (draft.customerName)    document.getElementById('customerName').value    = draft.customerName
+    if (draft.customerContact) document.getElementById('customerContact').value = draft.customerContact
+    if (draft.orderDate)       document.getElementById('orderDate').value       = draft.orderDate
+    if (draft.dueDate)         document.getElementById('dueDate').value         = draft.dueDate
+    if (draft.totalPrice)      document.getElementById('totalPrice').value      = draft.totalPrice
+    if (draft.depositPaid)     document.getElementById('depositPaid').value     = draft.depositPaid
+    if (draft.notes)           document.getElementById('notes').value           = draft.notes
+    if (draft.sumberOrder)     document.getElementById('sumberOrder').value     = draft.sumberOrder
+    if (draft.approvalReason)  document.getElementById('approvalReason').value  = draft.approvalReason
+    if (draft.lokasiId)        document.getElementById('lokasiId').value        = draft.lokasiId
+    if (draft.paymentMethod)   document.getElementById('paymentMethod').value   = draft.paymentMethod
+    if (draft.division)        selectDiv(draft.division, true)
+    if (draft.items?.length)   draft.items.forEach(item => addItemRow(item))
+    updateSisa()
+    showDraftBanner()
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   async function loadLokasi(profile) {
     try {
       await dataAuthReady
@@ -285,6 +342,7 @@
       </td>`
     tbody.appendChild(tr)
     recalcTotal()
+    debouncedSaveDraft()
   }
 
   window.calcRow = function(id) {
@@ -299,6 +357,7 @@
   window.removeRow = function(id) {
     document.getElementById(`row-${id}`)?.remove()
     recalcTotal()
+    debouncedSaveDraft()
   }
 
   function recalcTotal() {
@@ -429,7 +488,7 @@
     grid.appendChild(btn)
   })
 
-  function selectDiv(d) {
+  function selectDiv(d, skipPaymentLoad = false) {
     selectedDiv = d
     DIVISIONS.forEach(x => {
       const b = document.getElementById(`div-${x}`)
@@ -437,7 +496,8 @@
       b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
     })
     loadPriceList(d)
-    loadPaymentMethods(d)
+    if (!skipPaymentLoad) loadPaymentMethods(d)
+    debouncedSaveDraft()
   }
 
   // Set today
@@ -459,6 +519,10 @@
   document.getElementById('totalPrice').addEventListener('input', updateSisa)
   document.getElementById('depositPaid').addEventListener('input', updateSisa)
 
+  // Auto-save draft on any form input
+  document.getElementById('orderForm').addEventListener('input', debouncedSaveDraft)
+  document.getElementById('orderForm').addEventListener('change', debouncedSaveDraft)
+
   // File list preview
   document.getElementById('designFiles').addEventListener('change', e => {
     const fl = document.getElementById('fileList')
@@ -467,10 +531,14 @@
     ).join('')
   })
 
-  requireAuth((profile) => {
+  requireAuth(async (profile) => {
     if (profile.role === 'production') { window.location.href = 'orders.html'; return }
-    loadPaymentMethods()
-    loadLokasi(profile)
+    const draft = getDraft()
+    await Promise.all([
+      loadLokasi(profile),
+      draft?.division ? loadPaymentMethods(draft.division) : loadPaymentMethods()
+    ])
+    if (draft) restoreDraftAfterLoad(draft)
   })
 
   async function generateOrderNumber(division) {
@@ -595,6 +663,7 @@
         })
 
         clearTimeout(timeoutId)
+        clearDraft()
         window.location.href = `order.html?id=${orderId}`
       })()])
     } catch(err) {
