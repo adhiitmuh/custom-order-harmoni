@@ -89,6 +89,7 @@ textarea { resize: vertical; min-height: 80px; }
 .pay-dp { background: #fef3c7; color: #92400e; }
 .pay-belum { background: #fee2e2; color: #b91c1c; }
 
+.status-draft    { background: #f1f5f9; color: #475569; }
 .status-approval { background: #fdf2f8; color: #9d174d; }
 .status-pending { background: #fef9c3; color: #854d0e; }
 .status-in-progress { background: #dbeafe; color: #1e40af; }

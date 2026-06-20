@@ -194,6 +194,15 @@
         ${canEdit?`<button onclick="location.href='new-order.html'" class="btn btn-ghost btn-sm" style="margin-top:8px">Buat Order Baru</button>`:''}
       </div>` : ''}
 
+      ${order.status === 'draft' ? `
+      <div style="background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:12px;padding:14px 18px;margin-bottom:20px">
+        <div style="font-weight:700;font-size:14px;color:#475569">⏳ Draft — Menunggu Pembayaran</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:3px">
+          Order belum dikonfirmasi. Target selesai akan otomatis bergeser saat DP pertama masuk.
+        </div>
+        ${order.originalDueDate ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">Target awal: ${fmtDate(order.originalDueDate)}</div>` : ''}
+      </div>` : ''}
+
       <div style="display:grid;grid-template-columns:1fr 300px;gap:20px" class="no-print">
         <!-- Left -->
         <div>
@@ -203,7 +212,7 @@
             <div class="grid-2" style="gap:14px;font-size:13px">
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Divisi</p><p style="font-weight:600">${meta.label||''}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
-              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p></div>
+              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
             </div>
             ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
@@ -921,18 +930,36 @@
     btn.textContent = isEditing ? 'Edit' : 'Batal'
   }
 
+  function calcDraftShift() {
+    const orderDate = new Date(order.orderDate || order.createdAt?.toDate?.() || order.createdAt)
+    const today = new Date()
+    today.setHours(0,0,0,0); orderDate.setHours(0,0,0,0)
+    const delayDays = Math.round((today - orderDate) / 86400000)
+    if (delayDays <= 0) return {}
+    const origDue = new Date(order.originalDueDate || order.dueDate)
+    origDue.setDate(origDue.getDate() + delayDays)
+    const newDueDate = origDue.toISOString().split('T')[0]
+    const newStatus = order.priceApprovalStatus === 'pending' ? 'pending-approval' : 'pending'
+    return { dueDate: newDueDate, status: newStatus }
+  }
+
   window.savePayment = async function() {
     const btn = document.getElementById('savePayBtn')
     btn.disabled=true; btn.textContent='Menyimpan…'
     try {
       const now = Timestamp.now()
-      await updateDoc(doc(db,'orders',orderId), {
+      const newDp = Number(document.getElementById('editDp').value)||0
+      const updates = {
         totalPrice: Number(document.getElementById('editTotal').value)||0,
-        depositPaid: Number(document.getElementById('editDp').value)||0,
+        depositPaid: newDp,
         updatedAt: now,
         paymentEditBy: getProfile().name,
         paymentEditAt: now,
-      })
+      }
+      if (order.status === 'draft' && newDp > 0 && (order.depositPaid||0) === 0) {
+        Object.assign(updates, calcDraftShift())
+      }
+      await updateDoc(doc(db,'orders',orderId), updates)
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -970,12 +997,16 @@
     if (btn) { btn.disabled=true; btn.textContent='Menyimpan…' }
     try {
       const now = Timestamp.now()
-      await updateDoc(doc(db,'orders',orderId), {
+      const updates = {
         depositPaid: order.totalPrice||0,
         updatedAt: now,
         paymentEditBy: getProfile().name,
         paymentEditAt: now,
-      })
+      }
+      if (order.status === 'draft' && (order.depositPaid||0) === 0) {
+        Object.assign(updates, calcDraftShift())
+      }
+      await updateDoc(doc(db,'orders',orderId), updates)
       await loadOrder(getProfile())
     } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Tandai Lunas' } }
   }

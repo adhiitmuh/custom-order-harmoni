@@ -15,6 +15,7 @@ export const DIVISION_META = {
 export const DIVISIONS = ['bordir','butik','jersey','jilbab','sablon','konveksi','medali-pin','papan-nama','pin-fiber','sewa-kostum','tailor']
 
 export const STATUS_LABEL = {
+  'draft':            'Draft — Belum Bayar',
   'pending':          'Menunggu Konfirmasi',
   'pending-approval': 'Menunggu Approval Harga',
   'in-progress':      'Sedang Dikerjakan',
@@ -25,6 +26,7 @@ export const STATUS_LABEL = {
 }
 
 export const STATUS_CLASS = {
+  'draft':            'status-draft',
   'pending':          'status-pending',
   'pending-approval': 'status-approval',
   'in-progress':      'status-in-progress',

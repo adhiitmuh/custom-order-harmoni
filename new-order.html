@@ -176,6 +176,17 @@
         </div>
       </div>
 
+      <!-- Draft option -->
+      <div class="card" style="margin-bottom:16px">
+        <label style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="isDraft" style="width:18px;height:18px;accent-color:var(--green);flex-shrink:0">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--black)">Belum ada pembayaran (Draft)</div>
+            <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:2px">Due date akan bergeser otomatis sesuai selisih hari saat DP masuk nanti</div>
+          </div>
+        </label>
+      </div>
+
       <div style="display:flex;gap:12px;padding-bottom:24px">
         <a href="orders.html" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</a>
         <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center" id="submitBtn">Buat Order</button>
@@ -600,6 +611,7 @@
     try {
       await Promise.race([timeoutPromise, (async () => {
         const profile = getProfile()
+        const isDraft = document.getElementById('isDraft').checked
         const lokasiSel = document.getElementById('lokasiId')
         const selectedLokasi = lokasiList.find(l => l.id === lokasiSel.value) || null
         const files = document.getElementById('designFiles').files
@@ -626,7 +638,8 @@
           orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
           dueDate,
           designFiles,
-          status: currentPriceTier==='normal' ? 'pending' : 'pending-approval',
+          status: isDraft ? 'draft' : (currentPriceTier==='normal' ? 'pending' : 'pending-approval'),
+          originalDueDate: dueDate,
           progressPercentage: 0,
           totalPrice: Number(document.getElementById('totalPrice').value)||0,
           depositPaid: Number(document.getElementById('depositPaid').value)||0,
