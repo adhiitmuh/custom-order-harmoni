@@ -50,6 +50,16 @@ export default {
       return handleNotifyCS(request, env)
     }
 
+    // /incoming-chat: webhook dari n8n/Fonnte, pakai NOTIFY_KEY
+    if (request.method === 'POST' && url.pathname === '/incoming-chat') {
+      return handleIncomingChat(request, env)
+    }
+
+    // /send-chat-reply: dari inbox.html, verifikasi Firebase ID token (tidak perlu API_SECRET_KEY)
+    if (request.method === 'POST' && url.pathname === '/send-chat-reply') {
+      return handleSendChatReply(request, env)
+    }
+
     // Endpoint lain: wajib API_SECRET_KEY
     const apiKey = request.headers.get('X-API-Key')
     if (apiKey !== env.API_SECRET_KEY) {
@@ -324,6 +334,224 @@ async function handleUpdateStatus(request, env, token) {
   )
 
   return json({ success: true, message: `Status order berhasil diubah ke: ${status}` }, 200)
+}
+
+// ── Chat Inbox ────────────────────────────────────────────────────────────────
+
+// Webhook dari n8n/Fonnte saat customer kirim WA — buat/update thread
+async function handleIncomingChat(request, env) {
+  const notifyKey = request.headers.get('X-Notify-Key')
+  if (notifyKey !== env.NOTIFY_KEY) return json({ error: 'Unauthorized' }, 401)
+
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Invalid body' }, 400)
+
+  const { waNumber, customerName = 'Customer', message, senderType = 'customer' } = body
+  if (!waNumber || !message) return json({ error: 'waNumber dan message wajib diisi' }, 400)
+
+  const token = await getFirebaseToken(env)
+  const projectId = env.FIREBASE_PROJECT_ID
+  const now = new Date().toISOString()
+
+  // Cari thread yang sudah ada berdasarkan waNumber (doc ID = waNumber)
+  const waRef = `chat_wa_numbers/${encodeURIComponent(waNumber)}`
+  const waDoc = await firestoreGet(projectId, token, waRef).catch(() => null)
+
+  let threadId, threadToken
+
+  if (waDoc?.fields) {
+    threadId    = waDoc.fields.threadId?.stringValue
+    threadToken = waDoc.fields.token?.stringValue
+    // Update thread: lastMessage, unreadCount
+    const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
+    const unread = parseInt(threadDoc?.fields?.unreadCount?.integerValue || '0') + 1
+    await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
+      ...((threadDoc?.fields) || {}),
+      lastMessage:    { stringValue: message.substring(0, 100) },
+      lastMessageAt:  { timestampValue: now },
+      unreadCount:    { integerValue: String(unread) },
+      updatedAt:      { timestampValue: now },
+    })
+  } else {
+    // Thread baru — generate token CUST-XXXX
+    const counterPath = `chat_counters/threads`
+    const counterDoc  = await firestoreGet(projectId, token, counterPath).catch(() => null)
+    const counter = parseInt(counterDoc?.fields?.counter?.integerValue || '0') + 1
+    threadToken = `CUST-${String(counter).padStart(4, '0')}`
+    threadId    = crypto.randomUUID()
+
+    // Simpan counter baru
+    await firestoreSet(projectId, token, counterPath, { counter: { integerValue: String(counter) } })
+
+    // Buat thread doc
+    await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
+      token:           { stringValue: threadToken },
+      customerName:    { stringValue: customerName },
+      status:          { stringValue: 'open' },
+      orderId:         { nullValue: null },
+      orderNumber:     { nullValue: null },
+      assignedAdminId: { nullValue: null },
+      lastMessage:     { stringValue: message.substring(0, 100) },
+      lastMessageAt:   { timestampValue: now },
+      hasFlag:         { booleanValue: false },
+      unreadCount:     { integerValue: '1' },
+      createdAt:       { timestampValue: now },
+      updatedAt:       { timestampValue: now },
+    })
+
+    // Simpan mapping WA → thread (collection yang diblokir dari client)
+    await firestoreSet(projectId, token, `chat_wa_numbers/${waNumber}`, {
+      token:     { stringValue: threadToken },
+      threadId:  { stringValue: threadId },
+      createdAt: { timestampValue: now },
+    })
+  }
+
+  // Simpan pesan
+  const msgId = crypto.randomUUID()
+  await firestoreSet(projectId, token, `chat_threads/${threadId}/messages/${msgId}`, {
+    senderType:  { stringValue: senderType },
+    senderName:  { nullValue: null },
+    senderId:    { nullValue: null },
+    content:     { stringValue: message },
+    flagged:     { booleanValue: false },
+    flagReason:  { nullValue: null },
+    createdAt:   { timestampValue: now },
+  })
+
+  return json({ success: true, threadId, token: threadToken })
+}
+
+// Dari inbox.html — admin balas pesan customer
+async function handleSendChatReply(request, env) {
+  // Verifikasi Firebase ID token dari harmoni-indonesia (auth project)
+  const authHeader = request.headers.get('Authorization')
+  const idToken = authHeader?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+
+  const firebaseUser = await verifyFirebaseIdToken(idToken, env)
+  if (!firebaseUser) return json({ error: 'Token tidak valid atau sudah expired' }, 401)
+
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Invalid body' }, 400)
+
+  const { threadId, message, adminId, adminName } = body
+  if (!threadId || !message?.trim()) return json({ error: 'threadId dan message wajib diisi' }, 400)
+
+  const token = await getFirebaseToken(env)
+  const projectId = env.FIREBASE_PROJECT_ID
+  const now = new Date().toISOString()
+
+  // Validasi thread ada
+  const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
+  if (!threadDoc?.fields) return json({ error: 'Thread tidak ditemukan' }, 404)
+
+  const threadToken = threadDoc.fields.token?.stringValue
+
+  // Deteksi red flag
+  const flagReason = detectRedFlag(message)
+
+  // Simpan pesan ke Firestore
+  const msgId = crypto.randomUUID()
+  await firestoreSet(projectId, token, `chat_threads/${threadId}/messages/${msgId}`, {
+    senderType:  { stringValue: 'admin' },
+    senderName:  { stringValue: adminName || 'Admin' },
+    senderId:    { stringValue: adminId || '' },
+    content:     { stringValue: message },
+    flagged:     { booleanValue: !!flagReason },
+    flagReason:  flagReason ? { stringValue: flagReason } : { nullValue: null },
+    createdAt:   { timestampValue: now },
+  })
+
+  // Update thread metadata
+  const updateFields = {
+    ...threadDoc.fields,
+    lastMessage:   { stringValue: `[Admin] ${message.substring(0, 80)}` },
+    lastMessageAt: { timestampValue: now },
+    updatedAt:     { timestampValue: now },
+  }
+  if (flagReason) updateFields.hasFlag = { booleanValue: true }
+  await firestoreSet(projectId, token, `chat_threads/${threadId}`, updateFields)
+
+  // Kirim via Fonnte jika WA number tersedia
+  if (threadToken && env.FONNTE_API_KEY) {
+    const waResult = await firestoreQuery(projectId, token, 'chat_wa_numbers',
+      [{ field: 'token', op: 'EQUAL', value: threadToken }])
+    if (waResult.length) {
+      const waNumber = waResult[0].document.name.split('/').pop()
+      await fonnteSend(env.FONNTE_API_KEY, waNumber, message).catch(err => console.error('Fonnte:', err))
+    }
+  }
+
+  // Notifikasi owner jika ada red flag
+  if (flagReason && env.FONNTE_API_KEY && env.OWNER_WA_NUMBER) {
+    const alert = [
+      `🚩 *PERINGATAN CHAT*`,
+      ``,
+      `Admin *${adminName || 'unknown'}* mengirim pesan mencurigakan:`,
+      `"${message.substring(0, 200)}"`,
+      ``,
+      `Alasan: ${flagReason}`,
+      `Thread: ${threadToken}`,
+    ].join('\n')
+    await fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, alert).catch(() => {})
+  }
+
+  return json({ success: true, flagged: !!flagReason, flagReason: flagReason || null })
+}
+
+function detectRedFlag(content) {
+  const t = content
+  if (/\b0\d{8,12}\b/.test(t)) return 'Nomor HP terdeteksi'
+  if (/\+62\d{7,12}/.test(t)) return 'Nomor HP terdeteksi'
+  if (/\b62\d{8,12}\b/.test(t)) return 'Nomor HP terdeteksi'
+  if (/wa\s*(pribadi|ku|saya|aku)/i.test(t)) return 'Referensi WA pribadi'
+  if (/langsung\s*(aja|saja|ke|hub|chat)/i.test(t)) return 'Ajakan bypass sistem'
+  if (/gak\s*usah\s*lewat\s*(toko|sistem|app|aplikasi)/i.test(t)) return 'Ajakan bypass sistem'
+  if (/transfer\s*(ke\s*)?(rekening|rek)\s*(saya|aku|ku|pribadi)/i.test(t)) return 'Arahan transfer pribadi'
+  if (/chat\s*(di\s*)?(luar|pribadi|personal)/i.test(t)) return 'Ajakan chat di luar sistem'
+  if (/inbox\s*(saya|aku|ku)/i.test(t)) return 'Ajakan ke inbox pribadi'
+  if (/diskon\s*(khusus|tambahan|ekstra)\s*(?:buat|untuk|bagi)/i.test(t)) return 'Penawaran diskon di luar sistem'
+  return null
+}
+
+async function verifyFirebaseIdToken(idToken, env) {
+  // API key harmoni-indonesia (auth project) — nilai ini publik, aman di Worker
+  const apiKey = env.FIREBASE_AUTH_API_KEY || 'AIzaSyA9V5Lw40pDeAWeQKijYCkdvnag8AlEe74'
+  const resp = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) }
+  )
+  if (!resp.ok) return null
+  const data = await resp.json()
+  return data.users?.[0] || null
+}
+
+async function firestoreGet(projectId, token, docPath) {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${docPath}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  if (!res.ok) return null
+  return res.json()
+}
+
+async function firestoreQuery(projectId, token, collectionId, filters) {
+  const where = filters.length === 1 ? {
+    fieldFilter: { field: { fieldPath: filters[0].field }, op: filters[0].op, value: { stringValue: filters[0].value } }
+  } : {
+    compositeFilter: { op: 'AND', filters: filters.map(f => ({
+      fieldFilter: { field: { fieldPath: f.field }, op: f.op, value: { stringValue: f.value } }
+    }))}
+  }
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], where } }) }
+  )
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.filter(r => r.document)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

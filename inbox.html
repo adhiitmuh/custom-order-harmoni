@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Inbox — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Override main for full-height chat layout */
+    .main { padding: 0 !important; display: flex; flex-direction: column; height: 100vh; overflow: hidden; max-width: none !important; }
+
+    /* Top header bar */
+    .inbox-topbar {
+      padding: 14px 20px 12px; border-bottom: 1px solid rgba(3,69,67,.08);
+      background: var(--white); display: flex; align-items: center;
+      justify-content: space-between; flex-shrink: 0;
+    }
+
+    /* Two-column body */
+    .inbox-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* Thread list */
+    .thread-panel {
+      width: 280px; flex-shrink: 0; border-right: 1px solid rgba(3,69,67,.08);
+      display: flex; flex-direction: column; overflow: hidden; background: var(--white);
+    }
+    .thread-panel-head {
+      padding: 12px 14px 10px; border-bottom: 1px solid rgba(3,69,67,.07); flex-shrink: 0;
+    }
+    .filter-tabs { display: flex; gap: 3px; flex-wrap: wrap; }
+    .ftab {
+      font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
+      cursor: pointer; border: 1.5px solid transparent; color: rgba(3,69,67,.5);
+      background: none; font-family: inherit; transition: all .1s;
+    }
+    .ftab.active { background: var(--green); color: var(--beige); }
+    .ftab:hover:not(.active) { background: rgba(3,69,67,.06); }
+    .thread-list { flex: 1; overflow-y: auto; }
+
+    /* Thread row */
+    .thread-row {
+      padding: 11px 14px; border-bottom: 1px solid rgba(3,69,67,.05);
+      cursor: pointer; transition: background .1s;
+    }
+    .thread-row:hover { background: rgba(3,69,67,.03); }
+    .thread-row.active { background: rgba(3,69,67,.07); }
+    .tr-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+    .tr-token { font-family: monospace; font-size: 11px; font-weight: 700; color: var(--green); }
+    .tr-time { font-size: 10px; color: rgba(3,69,67,.35); }
+    .tr-name { font-size: 13px; font-weight: 600; color: var(--black); }
+    .tr-preview { font-size: 12px; color: rgba(3,69,67,.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .tr-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .unread-pill { background: var(--green); color: var(--beige); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; min-width: 18px; text-align: center; }
+
+    /* Status badges for threads */
+    .th-open       { background: #dbeafe; color: #1e40af; }
+    .th-closed     { background: #f1f5f9; color: #475569; }
+    .th-escalated  { background: #fef3c7; color: #92400e; }
+
+    /* Chat panel */
+    .chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--white); }
+
+    /* Empty state */
+    .chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: rgba(3,69,67,.3); background: #f7faf7; }
+
+    /* Chat header */
+    .chat-head {
+      padding: 12px 18px; border-bottom: 1px solid rgba(3,69,67,.08);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+      background: var(--white);
+    }
+    .chat-avatar {
+      width: 36px; height: 36px; border-radius: 50%; background: rgba(3,69,67,.1);
+      display: flex; align-items: center; justify-content: center; font-weight: 700;
+      font-size: 14px; color: var(--green); flex-shrink: 0;
+    }
+
+    /* Messages area */
+    .chat-messages {
+      flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column;
+      gap: 10px; background: #f3f7f3;
+    }
+
+    /* Message rows */
+    .msg-row { display: flex; align-items: flex-end; gap: 8px; }
+    .msg-row.customer { justify-content: flex-start; }
+    .msg-row.admin, .msg-row.ai { justify-content: flex-end; }
+
+    .bubble {
+      max-width: 68%; padding: 9px 13px; border-radius: 14px;
+      font-size: 13px; line-height: 1.55;
+    }
+    .bubble.customer { background: var(--white); border-radius: 14px 14px 14px 4px; color: var(--black); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .bubble.admin    { background: var(--green); color: var(--beige); border-radius: 14px 14px 4px 14px; }
+    .bubble.ai       { background: #e0f2fe; color: #0c4a6e; border-radius: 14px 14px 4px 14px; }
+    .bubble.flagged  { outline: 2px solid #ef4444; }
+    .bubble-time { font-size: 10px; opacity: .5; margin-top: 4px; text-align: right; }
+    .sender-label { font-size: 10px; color: rgba(3,69,67,.4); margin-bottom: 3px; }
+    .flag-tag { background: #fee2e2; color: #b91c1c; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-top: 5px; display: inline-block; }
+
+    .msg-icon {
+      width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+
+    /* Reply input */
+    .chat-input {
+      padding: 11px 14px; border-top: 1px solid rgba(3,69,67,.08);
+      background: var(--white); display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0;
+    }
+    .reply-ta {
+      flex: 1; border: 1.5px solid rgba(3,69,67,.15); border-radius: 20px;
+      padding: 9px 15px; font-size: 14px; font-family: inherit;
+      resize: none; outline: none; max-height: 120px; min-height: 40px; line-height: 1.4;
+    }
+    .reply-ta:focus { border-color: var(--green); }
+    .send-btn {
+      background: var(--green); color: var(--beige); border: none; border-radius: 50%;
+      width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; font-size: 18px; flex-shrink: 0;
+    }
+    .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* Closed footer */
+    .closed-bar {
+      padding: 11px 18px; background: #f8fafc; border-top: 1px solid rgba(3,69,67,.08);
+      text-align: center; font-size: 12px; color: rgba(3,69,67,.45); flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+
+    <!-- Top bar -->
+    <div class="inbox-topbar">
+      <div>
+        <p style="font-size:10px;color:var(--green);opacity:.4;letter-spacing:.07em;margin-bottom:2px">KOMUNIKASI</p>
+        <h1 style="font-size:19px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Chat Inbox</h1>
+      </div>
+      <span id="inboxCount" style="font-size:12px;color:rgba(3,69,67,.4);font-family:monospace">—</span>
+    </div>
+
+    <div class="inbox-body">
+
+      <!-- Thread list panel -->
+      <div class="thread-panel">
+        <div class="thread-panel-head">
+          <div class="filter-tabs">
+            <button class="ftab active" data-f="open"      onclick="setFilter('open')">Aktif</button>
+            <button class="ftab"        data-f="escalated" onclick="setFilter('escalated')">Eskalasi</button>
+            <button class="ftab"        data-f="closed"    onclick="setFilter('closed')">Selesai</button>
+            <button class="ftab"        data-f="all"       onclick="setFilter('all')">Semua</button>
+          </div>
+        </div>
+        <div class="thread-list" id="threadListEl">
+          <div class="loading">Memuat…</div>
+        </div>
+      </div>
+
+      <!-- Chat panel -->
+      <div class="chat-panel" id="chatPanelEl">
+        <div class="chat-empty" id="chatEmptyEl">
+          <div style="font-size:42px">💬</div>
+          <p style="font-size:14px;font-weight:600">Pilih chat di sebelah kiri</p>
+          <p style="font-size:12px">untuk mulai membalas pesan customer</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import { db, auth } from './js/config.js'
+import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
+import {
+  collection, doc, query, orderBy, onSnapshot, updateDoc, Timestamp
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { timeAgo } from './js/utils.js'
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+// Set ke URL Cloudflare Worker Anda (contoh: 'https://harmoni-order-api.username.workers.dev')
+const WORKER_URL = ''
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let allThreads     = []
+let currentFilter  = 'open'
+let activeThreadId = null
+let unsubMsgs      = null
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+requireAuth(async (profile) => {
+  if (!['owner', 'manager', 'cs'].includes(profile.role)) {
+    window.location.href = 'dashboard.html'; return
+  }
+
+  await dataAuthReady
+
+  onSnapshot(
+    query(collection(db, 'chat_threads'), orderBy('lastMessageAt', 'desc')),
+    snap => {
+      allThreads = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const openCount = allThreads.filter(t => t.status === 'open').length
+      document.getElementById('inboxCount').textContent =
+        `${openCount} aktif · ${allThreads.length} total`
+      renderList()
+    },
+    err => {
+      document.getElementById('threadListEl').innerHTML =
+        `<div class="empty" style="margin:16px"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
+    }
+  )
+})
+
+// ─── Filter ───────────────────────────────────────────────────────────────────
+window.setFilter = function(f) {
+  currentFilter = f
+  document.querySelectorAll('.ftab').forEach(el => {
+    el.classList.toggle('active', el.dataset.f === f)
+  })
+  renderList()
+}
+
+// ─── Render thread list ───────────────────────────────────────────────────────
+function renderList() {
+  const list = currentFilter === 'all'
+    ? allThreads
+    : allThreads.filter(t => t.status === currentFilter)
+  const el = document.getElementById('threadListEl')
+
+  if (!list.length) {
+    el.innerHTML = `<div style="padding:32px 16px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada thread</div>`
+    return
+  }
+
+  el.innerHTML = list.map(t => {
+    const stCls = { open: 'th-open', closed: 'th-closed', escalated: 'th-escalated' }[t.status] || 'th-open'
+    const stLabel = { open: 'Aktif', closed: 'Selesai', escalated: 'Eskalasi' }[t.status] || t.status
+    const unread = t.unreadCount > 0
+    return `
+      <div class="thread-row ${t.id === activeThreadId ? 'active' : ''}" onclick="openThread('${t.id}')">
+        <div class="tr-head">
+          <span class="tr-token">${t.token || '—'}</span>
+          <span class="tr-time">${timeAgo(t.lastMessageAt)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="tr-name">${esc(t.customerName || 'Customer')}</span>
+          ${t.hasFlag ? `<span title="Ada pesan mencurigakan" style="font-size:12px">🚩</span>` : ''}
+        </div>
+        <div class="tr-preview">${esc(t.lastMessage || '—')}</div>
+        <div class="tr-footer">
+          <span class="badge ${stCls}" style="font-size:9px;padding:2px 6px">${stLabel}</span>
+          <div style="display:flex;align-items:center;gap:4px">
+            ${t.orderId ? `<span style="font-size:10px;font-family:monospace;color:rgba(3,69,67,.4)">${esc(t.orderNumber || '·')}</span>` : ''}
+            ${unread ? `<span class="unread-pill">${t.unreadCount}</span>` : ''}
+          </div>
+        </div>
+      </div>`
+  }).join('')
+}
+
+// ─── Open thread ──────────────────────────────────────────────────────────────
+window.openThread = function(threadId) {
+  activeThreadId = threadId
+  renderList()
+
+  const thread = allThreads.find(t => t.id === threadId)
+  if (!thread) return
+
+  // Clear unread
+  if (thread.unreadCount > 0) {
+    updateDoc(doc(db, 'chat_threads', threadId), { unreadCount: 0 }).catch(() => {})
+    const idx = allThreads.findIndex(t => t.id === threadId)
+    if (idx >= 0) allThreads[idx] = { ...allThreads[idx], unreadCount: 0 }
+  }
+
+  // Unsubscribe old messages listener
+  if (unsubMsgs) { unsubMsgs(); unsubMsgs = null }
+
+  const stCls   = { open: 'th-open', closed: 'th-closed', escalated: 'th-escalated' }[thread.status] || 'th-open'
+  const stLabel = { open: 'Aktif', closed: 'Selesai', escalated: 'Eskalasi' }[thread.status] || thread.status
+  const isClosed = thread.status === 'closed'
+
+  const panel = document.getElementById('chatPanelEl')
+  panel.innerHTML = `
+    <!-- Header -->
+    <div class="chat-head">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="chat-avatar">${(thread.customerName || '?')[0].toUpperCase()}</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--black)">${esc(thread.customerName || 'Customer')}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.45)">${esc(thread.token || '')}</span>
+            <span class="badge ${stCls}" style="font-size:9px;padding:2px 6px">${stLabel}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        ${thread.orderId ? `<a href="order.html?id=${thread.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 Order</a>` : ''}
+        ${!isClosed ? `<button onclick="setStatus('closed')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tutup</button>` : ''}
+        ${thread.status === 'open' ? `<button onclick="setStatus('escalated')" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1.5px solid #fde68a;font-size:11px">⚠ Eskalasi</button>` : ''}
+        ${!isClosed && thread.status !== 'open' ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka</button>` : ''}
+        ${isClosed ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka Lagi</button>` : ''}
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages" id="msgAreaEl">
+      <div class="loading">Memuat pesan…</div>
+    </div>
+
+    <!-- Input or closed bar -->
+    ${!isClosed ? `
+    <div class="chat-input">
+      <textarea class="reply-ta" id="replyTa" placeholder="Ketik balasan… (Enter kirim, Shift+Enter baris baru)"
+        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply()}"></textarea>
+      <button class="send-btn" id="sendBtnEl" onclick="sendReply()" title="Kirim">↑</button>
+    </div>` : `
+    <div class="closed-bar">
+      Thread ditutup —
+      <button onclick="setStatus('open')" style="background:none;border:none;cursor:pointer;color:var(--green);font-size:12px;font-weight:600;font-family:inherit">buka kembali</button>
+    </div>`}
+  `
+
+  // Subscribe to messages
+  unsubMsgs = onSnapshot(
+    query(collection(db, 'chat_threads', threadId, 'messages'), orderBy('createdAt', 'asc')),
+    snap => {
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      renderMessages(msgs)
+    }
+  )
+}
+
+// ─── Render messages ──────────────────────────────────────────────────────────
+function renderMessages(msgs) {
+  const el = document.getElementById('msgAreaEl')
+  if (!el) return
+
+  if (!msgs.length) {
+    el.innerHTML = `<div style="text-align:center;padding:32px;font-size:13px;color:rgba(3,69,67,.35)">Belum ada pesan</div>`
+    return
+  }
+
+  const wasAtBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 60
+
+  el.innerHTML = msgs.map(m => {
+    const st = m.senderType || 'customer'
+    const isCustomer = st === 'customer'
+    const isAI = st === 'ai'
+    const time = timeAgo(m.createdAt)
+    const iconBg = isCustomer ? 'rgba(3,69,67,.1)' : isAI ? '#e0f2fe' : 'var(--green)'
+    const iconColor = isCustomer ? 'var(--green)' : isAI ? '#0c4a6e' : 'var(--beige)'
+    const iconLabel = isCustomer ? (m.customerInitial || 'C') : isAI ? '🤖' : (m.senderName?.[0] || 'A')
+
+    return `
+      <div class="msg-row ${st}">
+        ${isCustomer ? `<div class="msg-icon" style="background:${iconBg};color:${iconColor}">${iconLabel}</div>` : ''}
+        <div style="display:flex;flex-direction:column;align-items:${isCustomer ? 'flex-start' : 'flex-end'}">
+          ${isAI ? `<div class="sender-label">🤖 AI Agent</div>` : ''}
+          ${!isCustomer && !isAI && m.senderName ? `<div class="sender-label">${esc(m.senderName)}</div>` : ''}
+          <div class="bubble ${st}${m.flagged ? ' flagged' : ''}">
+            <div style="white-space:pre-wrap">${esc(m.content || '')}</div>
+            ${m.flagged ? `<div class="flag-tag">🚩 ${esc(m.flagReason || 'Konten mencurigakan')}</div>` : ''}
+            <div class="bubble-time">${time}</div>
+          </div>
+        </div>
+        ${!isCustomer ? `<div class="msg-icon" style="background:${iconBg};color:${iconColor}">${iconLabel}</div>` : ''}
+      </div>`
+  }).join('')
+
+  if (wasAtBottom) el.scrollTop = el.scrollHeight
+}
+
+// ─── Send reply ───────────────────────────────────────────────────────────────
+window.sendReply = async function() {
+  const ta  = document.getElementById('replyTa')
+  const btn = document.getElementById('sendBtnEl')
+  const msg = ta?.value.trim()
+  if (!msg || !activeThreadId) return
+
+  if (!WORKER_URL) {
+    alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dengan URL Cloudflare Worker Anda.')
+    return
+  }
+
+  btn.disabled = true
+  ta.disabled  = true
+
+  try {
+    const profile  = getProfile()
+    const idToken  = await auth.currentUser.getIdToken()
+    const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: activeThreadId, message: msg, adminId: profile.id, adminName: profile.name }),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${resp.status}`)
+    }
+    ta.value = ''
+    ta.style.height = 'auto'
+  } catch (err) {
+    alert('Gagal kirim: ' + err.message)
+  } finally {
+    btn.disabled = false
+    ta.disabled  = false
+    ta?.focus()
+  }
+}
+
+// ─── Set thread status ────────────────────────────────────────────────────────
+window.setStatus = async function(status) {
+  if (!activeThreadId) return
+  try {
+    await updateDoc(doc(db, 'chat_threads', activeThreadId), { status, updatedAt: Timestamp.now() })
+    // Update local cache so openThread sees the new status immediately
+    const idx = allThreads.findIndex(t => t.id === activeThreadId)
+    if (idx >= 0) allThreads[idx] = { ...allThreads[idx], status }
+    openThread(activeThreadId)
+  } catch (err) {
+    alert('Gagal update: ' + err.message)
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+</script>
+</body>
+</html>

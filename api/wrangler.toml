@@ -11,4 +11,5 @@ crons = ["0 0 * * *"]  # Setiap hari jam 08.00 WITA (00:00 UTC)
 #   npx wrangler secret put FONNTE_API_KEY
 #   npx wrangler secret put OWNER_WA_NUMBER
 #   npx wrangler secret put API_SECRET_KEY
-#   npx wrangler secret put NOTIFY_KEY      (key untuk chat.html → /notify-cs, boleh beda dari API_SECRET_KEY)
+#   npx wrangler secret put NOTIFY_KEY      (key untuk chat.html → /notify-cs dan n8n → /incoming-chat)
+#   npx wrangler secret put FIREBASE_AUTH_API_KEY  (opsional — default sudah hardcoded, nilai: AIzaSyA9V5Lw40pDeAWeQKijYCkdvnag8AlEe74)

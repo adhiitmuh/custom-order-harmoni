@@ -54,5 +54,27 @@ service cloud.firestore {
       allow create: if true; // Anyone with token can send
       allow delete: if isOwner();
     }
+
+    // Chat inbox threads — readable by all staff, writable by owner/cs
+    match /chat_threads/{threadId} {
+      allow read: if isAuth();
+      allow write: if isOwnerOrCS();
+    }
+    match /chat_threads/{threadId}/messages/{msgId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow delete: if isOwner();
+    }
+
+    // WA number mapping — HANYA backend (Cloudflare Worker) yang boleh akses
+    // Firestore Rules memblokir semua client — Worker pakai service account yang bypass rules
+    match /chat_wa_numbers/{waNumber} {
+      allow read, write: if false;
+    }
+
+    // Chat thread counter — backend only
+    match /chat_counters/{id} {
+      allow read, write: if false;
+    }
   }
 }

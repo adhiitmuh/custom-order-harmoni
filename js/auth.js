@@ -191,6 +191,14 @@ export function renderSidebar(profile) {
       </a>
     </div>
 
+    ${(profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
+    <div class="sidebar-section">
+      <div class="sidebar-label">KOMUNIKASI</div>
+      <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
+        <span class="icon">💬</span>Chat Inbox
+      </a>
+    </div>` : ''}
+
     ${(profile.role === 'owner' || profile.role === 'manager') ? `
     <div class="sidebar-section">
       <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
