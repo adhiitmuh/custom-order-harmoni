@@ -49,7 +49,13 @@
         </div>
         <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" id="newEmail" placeholder="email@harmoni.id"></div>
         <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
-        <div class="form-group" style="grid-column:1/-1"><label>Cabang</label><input type="text" id="newBranch" placeholder="cth: Cabang Makassar, CS Online…"></div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Lokasi</label>
+          <select id="newLokasiId">
+            <option value="">— Tidak ditentukan (akses semua) —</option>
+          </select>
+          <p class="form-hint">CS dan Tim Produksi hanya melihat order & chat dari lokasi yang dipilih</p>
+        </div>
         <div class="form-group" id="divisiWrap" style="grid-column:1/-1;display:none">
           <label>Divisi <span class="req">*</span> <span style="font-size:11px;font-weight:400;color:rgba(3,69,67,.4)">(boleh lebih dari satu)</span></label>
           <div id="divisionCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
@@ -75,11 +81,26 @@
 <script type="module">
   import { auth, db } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp, query, orderBy, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
   const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
+
+  let lokasiOptions = []
+
+  async function loadLokasiOptions() {
+    const snap = await getDocs(query(collection(db, 'lokasi'), where('aktif', '!=', false), orderBy('aktif'), orderBy('tipe')))
+    lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const sel = document.getElementById('newLokasiId')
+    lokasiOptions.forEach(l => {
+      const opt = document.createElement('option')
+      opt.value = l.id
+      const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
+      opt.textContent = `${icon} ${l.nama}`
+      sel.appendChild(opt)
+    })
+  }
 
   // Populate division checkboxes
   const divContainer = document.getElementById('divisionCheckboxes')
@@ -97,6 +118,7 @@
 
   requireAuth((profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
+    loadLokasiOptions()
     loadUsers()
   })
 
@@ -116,7 +138,7 @@
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
-          ${u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : ''}
+          ${u.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.lokasiNama}</div>` : (u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : '')}
           ${(() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
@@ -152,12 +174,13 @@
       const newUid = cred.user.uid
 
       // Save to Firestore
-      const branch = document.getElementById('newBranch').value.trim()
+      const lokasiId = document.getElementById('newLokasiId').value
+      const lokasiNama = lokasiId ? (lokasiOptions.find(l => l.id === lokasiId)?.nama || '') : ''
       const divisions = role === 'production' ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
       const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
       if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
-      await setDoc(doc(db,'users',newUid), { name, email, role, branch, divisions, pin, createdAt: Timestamp.now() })
+      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, divisions, pin, createdAt: Timestamp.now() })
 
       // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
       // → harus sign out lalu owner login ulang

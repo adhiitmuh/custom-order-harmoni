@@ -243,10 +243,15 @@ requireAuth(async (profile) => {
 
   await dataAuthReady
 
+  const userLokasiId = profile.lokasiId || null
+  const isOwner = profile.role === 'owner'
+
   onSnapshot(
     query(collection(db, 'chat_threads'), orderBy('lastMessageAt', 'desc')),
     snap => {
-      allThreads = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Owner lihat semua; CS/manager lihat thread lokasi mereka + thread belum di-assign
+      allThreads = isOwner ? all : all.filter(t => !t.lokasiId || t.lokasiId === userLokasiId)
       const openCount = allThreads.filter(t => t.status === 'open').length
       document.getElementById('inboxCount').textContent =
         `${openCount} aktif · ${allThreads.length} total`
