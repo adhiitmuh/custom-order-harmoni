@@ -21,6 +21,11 @@ service cloud.firestore {
       allow create: if isAuth();
       allow delete: if isOwner();
     }
+    match /orders/{orderId}/internal_chat/{msgId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow delete: if isOwner();
+    }
     match /product_knowledge/{id} {
       allow read: if true; // Public — customer can read
       allow write: if isOwnerOrCS();

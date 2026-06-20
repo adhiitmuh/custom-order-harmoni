@@ -122,7 +122,8 @@
 
     renderPage(profile)
     if (chatUnsub) chatUnsub()
-    setTimeout(() => initChat(), 200)
+    if (internalChatUnsub) internalChatUnsub()
+    setTimeout(() => { initChat(); initInternalChat() }, 200)
     } catch(err) {
       document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
     }
@@ -515,6 +516,23 @@
             </label>
             <button onclick="sendChatMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px">Kirim</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Internal Chat -->
+      <div class="card no-print" style="margin-top:20px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <h2 style="font-size:14px;font-weight:700">🔒 Chat Internal Tim</h2>
+          <span style="font-size:10px;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:999px;font-weight:600">Hanya terlihat oleh tim internal</span>
+        </div>
+        <div id="internalChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
+          <div class="loading">Memuat…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <textarea id="internalChatInput" placeholder="Tulis pesan untuk tim… (Enter kirim, Shift+Enter baris baru)" rows="2"
+            style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"></textarea>
+          <button onclick="sendInternalMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>
 
@@ -1156,6 +1174,7 @@
 
   // ===== CHAT =====
   let chatUnsub = null
+  let internalChatUnsub = null
 
   function initChat() {
     if (!order.chatToken) return
@@ -1246,6 +1265,64 @@
       createdAt: Timestamp.now(),
     })
     input.value = ''
+  }
+
+  // ===== INTERNAL CHAT =====
+  const ROLE_COLOR = {
+    owner:      { bg: '#034543', text: '#FFFBD5', label: 'Owner' },
+    manager:    { bg: '#6d28d9', text: '#ede9fe', label: 'Kepala Cabang' },
+    cs:         { bg: '#0d9488', text: '#ccfbf1', label: 'CS' },
+    production: { bg: '#1d4ed8', text: '#dbeafe', label: 'Tim Produksi' },
+  }
+
+  function initInternalChat() {
+    const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
+    internalChatUnsub = onSnapshot(q, snap => {
+      const el = document.getElementById('internalChatMessages')
+      if (!el) return
+      if (snap.empty) {
+        el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan internal. Mulai diskusi tim.</p>'
+        return
+      }
+      const profile = getProfile()
+      el.innerHTML = snap.docs.map(d => {
+        const m = d.data()
+        const isMe = m.senderId === profile?.id
+        const rc = ROLE_COLOR[m.senderRole] || ROLE_COLOR.cs
+        const align = isMe ? 'flex-end' : 'flex-start'
+        const bubbleBg = isMe ? rc.bg : '#fff'
+        const bubbleColor = isMe ? rc.text : '#282828'
+        const bubbleBorder = isMe ? 'none' : '1px solid rgba(3,69,67,.1)'
+        return `
+          <div style="display:flex;flex-direction:column;align-items:${align}">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
+              <span style="font-size:10px;font-weight:700;background:${rc.bg};color:${rc.text};padding:1px 6px;border-radius:999px">${rc.label}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
+              <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
+            </div>
+            <div style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              ${(m.content || '').replace(/\n/g, '<br>')}
+            </div>
+          </div>`
+      }).join('')
+      el.scrollTop = el.scrollHeight
+    })
+  }
+
+  window.sendInternalMsg = async function() {
+    const input = document.getElementById('internalChatInput')
+    const content = input?.value.trim()
+    if (!content) return
+    const profile = getProfile()
+    input.value = ''
+    input.style.height = 'auto'
+    await addDoc(collection(db, 'orders', orderId, 'internal_chat'), {
+      content,
+      senderId:   profile.id,
+      senderName: profile.name,
+      senderRole: profile.role,
+      createdAt:  Timestamp.now(),
+    })
   }
 
   window.copyChatLink = function(token) {
