@@ -27,7 +27,14 @@ const DIVISION_CODES = {
 const DIVISION_LABELS = {
   bordir:'Bordir', butik:'Butik', jersey:'Jersey', jilbab:'Jilbab',
   sablon:'Kaos & Sablon', konveksi:'Konveksi', 'medali-pin':'Medali & Pin Logam',
-  'papan-nama':'Papan Nama', 'pin-fiber':'Pin Fiber', 'sewa-kostum':'Sewa Kostum', tailor:'Tailor'
+  'papan-nama':'Papan Nama', 'pin-fiber':'Pin Fiber', 'sewa-kostum':'Sewa Kostum', tailor:'Tailor',
+}
+
+const PRODUKSI_UNIT = {
+  jersey:'Gaara Apparel', konveksi:'Young Harmonis Konveksi', jilbab:'Young Harmonis Konveksi',
+  butik:'Young Harmonis Konveksi', tailor:'Young Harmonis Konveksi', bordir:'Bordir Unit',
+  'papan-nama':'Bordir Unit', sablon:'Sablon Unit', 'medali-pin':'Medali & Pin Unit',
+  'pin-fiber':'Medali & Pin Unit', 'sewa-kostum':'Sewa Kostum Unit',
 }
 
 const CORS = {
@@ -58,6 +65,11 @@ export default {
     // /send-chat-reply: dari inbox.html, verifikasi Firebase ID token (tidak perlu API_SECRET_KEY)
     if (request.method === 'POST' && url.pathname === '/send-chat-reply') {
       return handleSendChatReply(request, env)
+    }
+
+    // /create-order-from-chat: buat order langsung dari chat inbox
+    if (request.method === 'POST' && url.pathname === '/create-order-from-chat') {
+      return handleCreateOrderFromChat(request, env)
     }
 
     // Endpoint lain: wajib API_SECRET_KEY
@@ -498,6 +510,134 @@ async function handleSendChatReply(request, env) {
   }
 
   return json({ success: true, flagged: !!flagReason, flagReason: flagReason || null })
+}
+
+// Buat order dari chat inbox — admin isi form, Worker resolve WA asli & buat order
+async function handleCreateOrderFromChat(request, env) {
+  const authHeader = request.headers.get('Authorization')
+  const idToken = authHeader?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+
+  const firebaseUser = await verifyFirebaseIdToken(idToken, env)
+  if (!firebaseUser) return json({ error: 'Token tidak valid' }, 401)
+
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Invalid body' }, 400)
+
+  const { threadId, division, totalPrice = 0, dp = 0, dueDate, notes = '' } = body
+  if (!threadId)                              return json({ error: 'threadId wajib' }, 400)
+  if (!division || !VALID_DIVISIONS.includes(division)) return json({ error: 'division tidak valid' }, 400)
+  if (!dueDate)                               return json({ error: 'dueDate wajib (YYYY-MM-DD)' }, 400)
+
+  const token = await getFirebaseToken(env)
+  const projectId = env.FIREBASE_PROJECT_ID
+  const now = new Date().toISOString()
+  const today = now.split('T')[0]
+
+  // Ambil data thread
+  const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
+  if (!threadDoc?.fields) return json({ error: 'Thread tidak ditemukan' }, 404)
+
+  const threadToken  = threadDoc.fields.token?.stringValue
+  const customerName = threadDoc.fields.customerName?.stringValue || 'Customer'
+
+  // Resolve nomor WA asli dari collection terproteksi
+  let customerContact = ''
+  const waResult = await firestoreQuery(projectId, token, 'chat_wa_numbers',
+    [{ field: 'token', op: 'EQUAL', value: threadToken }])
+  if (waResult.length) {
+    customerContact = waResult[0].document.name.split('/').pop()
+  }
+
+  // Generate nomor order & ID-ID
+  const orderNumber = await generateOrderNumber(projectId, token, division)
+  const orderId     = crypto.randomUUID()
+  const chatToken   = generateChatToken()
+
+  // Buat order
+  await firestoreSet(projectId, token, `orders/${orderId}`, {
+    orderNumber:         { stringValue: orderNumber },
+    division:            { stringValue: division },
+    customerName:        { stringValue: customerName },
+    customerContact:     { stringValue: customerContact },
+    orderDate:           { stringValue: today },
+    dueDate:             { stringValue: dueDate },
+    originalDueDate:     { stringValue: dueDate },
+    status:              { stringValue: 'pending' },
+    progressPercentage:  { integerValue: '0' },
+    totalPrice:          { doubleValue: Number(totalPrice) },
+    depositPaid:         { doubleValue: Number(dp) },
+    notes:               { stringValue: notes },
+    designFiles:         { arrayValue: { values: [] } },
+    chatToken:           { stringValue: chatToken },
+    sumberOrder:         { stringValue: 'inbox' },
+    agentSessionId:      { stringValue: threadId },
+    produksiUnit:        { stringValue: PRODUKSI_UNIT[division] || '' },
+    lokasiId:            { stringValue: '' },
+    lokasiNama:          { stringValue: '' },
+    lokasiTipe:          { stringValue: '' },
+    priceApprovalStatus: { stringValue: 'approved' },
+    priceApprovalTier:   { nullValue: null },
+    priceApprovalReason: { stringValue: '' },
+    priceApprovalBy:     { nullValue: null },
+    priceApprovalAt:     { nullValue: null },
+    chatInboxThreadId:   { stringValue: threadId },
+    createdBy:           { stringValue: firebaseUser.localId || 'inbox' },
+    createdAt:           { timestampValue: now },
+    updatedAt:           { timestampValue: now },
+  })
+
+  // Buat public_order_info supaya customer bisa akses chat.html
+  await firestoreSet(projectId, token, `public_order_info/${chatToken}`, {
+    orderId:      { stringValue: orderId },
+    orderNumber:  { stringValue: orderNumber },
+    division:     { stringValue: division },
+    customerName: { stringValue: customerName },
+    status:       { stringValue: 'pending' },
+    dueDate:      { stringValue: dueDate },
+    totalPrice:   { doubleValue: Number(totalPrice) },
+    depositPaid:  { doubleValue: Number(dp) },
+    notes:        { stringValue: notes },
+    createdAt:    { timestampValue: now },
+  })
+
+  // Hubungkan thread ke order
+  await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
+    ...threadDoc.fields,
+    orderId:     { stringValue: orderId },
+    orderNumber: { stringValue: orderNumber },
+    updatedAt:   { timestampValue: now },
+  })
+
+  const chatUrl = `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${chatToken}`
+
+  // Notif WA ke customer
+  if (customerContact && env.FONNTE_API_KEY) {
+    const divLabel = DIVISION_LABELS[division] || division
+    const priceFmt = new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', maximumFractionDigits:0 }).format(Number(totalPrice))
+    const dpFmt    = Number(dp) > 0
+      ? new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', maximumFractionDigits:0 }).format(Number(dp))
+      : null
+    const msg = [
+      `✅ *Order Anda Sudah Dibuat!*`,
+      ``,
+      `No. Order: *${orderNumber}*`,
+      `Divisi: ${divLabel}`,
+      `Total: ${priceFmt}`,
+      dpFmt ? `DP: ${dpFmt}` : '',
+      `Target Selesai: ${dueDate}`,
+      notes ? `Catatan: ${notes}` : '',
+      ``,
+      `Pantau status order Anda di:`,
+      chatUrl,
+    ].filter(Boolean).join('\n')
+    await fonnteSend(env.FONNTE_API_KEY, customerContact, msg).catch(() => {})
+  }
+
+  // Notif owner
+  await sendFonnteNotif(env, orderNumber, customerName, division, Number(totalPrice), dueDate, notes, 'inbox')
+
+  return json({ success: true, orderId, orderNumber, chatToken, chatUrl })
 }
 
 function detectRedFlag(content) {

@@ -176,13 +176,54 @@
   </main>
 </div>
 
+<!-- Modal: Buat Order dari Chat -->
+<div id="orderModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--white);border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
+    <div style="padding:18px 22px;border-bottom:1px solid rgba(3,69,67,.08);display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h2 style="font-size:16px;font-weight:800;color:var(--black)">Buat Order dari Chat</h2>
+        <p id="omThreadInfo" style="font-size:12px;color:rgba(3,69,67,.45);margin-top:2px"></p>
+      </div>
+      <button onclick="closeOrderModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:rgba(3,69,67,.4);padding:4px">✕</button>
+    </div>
+    <form onsubmit="event.preventDefault();submitOrder()" style="padding:18px 22px">
+      <div class="form-group">
+        <label>Divisi <span class="req">*</span></label>
+        <select id="om_div" required></select>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Total Harga (Rp) <span class="req">*</span></label>
+          <input type="number" id="om_price" min="0" required placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>DP Masuk (Rp)</label>
+          <input type="number" id="om_dp" min="0" placeholder="0 (opsional)">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Target Selesai <span class="req">*</span></label>
+        <input type="date" id="om_due" required>
+      </div>
+      <div class="form-group">
+        <label>Catatan / Spesifikasi</label>
+        <textarea id="om_notes" rows="3" placeholder="Qty, warna, bahan, dll…"></textarea>
+      </div>
+      <div id="omAlert"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px" id="omSubmitBtn">
+        Buat Order
+      </button>
+    </form>
+  </div>
+</div>
+
 <script type="module">
 import { db, auth } from './js/config.js'
 import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
 import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-import { timeAgo } from './js/utils.js'
+import { timeAgo, DIVISION_META, DIVISIONS } from './js/utils.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 // Set ke URL Cloudflare Worker Anda (contoh: 'https://harmoni-order-api.username.workers.dev')
@@ -302,7 +343,9 @@ window.openThread = function(threadId) {
         </div>
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap">
-        ${thread.orderId ? `<a href="order.html?id=${thread.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 Order</a>` : ''}
+        ${thread.orderId
+          ? `<a href="order.html?id=${thread.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${thread.orderNumber || 'Lihat Order'}</a>`
+          : (!isClosed ? `<button onclick="openOrderModal()" class="btn btn-primary btn-sm" style="font-size:11px">+ Buat Order</button>` : '')}
         ${!isClosed ? `<button onclick="setStatus('closed')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tutup</button>` : ''}
         ${thread.status === 'open' ? `<button onclick="setStatus('escalated')" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1.5px solid #fde68a;font-size:11px">⚠ Eskalasi</button>` : ''}
         ${!isClosed && thread.status !== 'open' ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka</button>` : ''}
@@ -429,6 +472,102 @@ window.setStatus = async function(status) {
   } catch (err) {
     alert('Gagal update: ' + err.message)
   }
+}
+
+// ─── Buat Order Modal ────────────────────────────────────────────────────────
+window.openOrderModal = function() {
+  const thread = allThreads.find(t => t.id === activeThreadId)
+  if (!thread) return
+
+  document.getElementById('omThreadInfo').textContent =
+    `${thread.token || ''} — ${thread.customerName || 'Customer'}`
+
+  // Default due date: 7 hari ke depan
+  const due = new Date()
+  due.setDate(due.getDate() + 7)
+  document.getElementById('om_due').value = due.toISOString().split('T')[0]
+
+  // Isi dropdown divisi
+  document.getElementById('om_div').innerHTML =
+    DIVISIONS.map(d => `<option value="${d}">${DIVISION_META[d].icon} ${DIVISION_META[d].label}</option>`).join('')
+
+  // Reset form
+  document.getElementById('om_price').value = ''
+  document.getElementById('om_dp').value = ''
+  document.getElementById('om_notes').value = ''
+  document.getElementById('omAlert').innerHTML = ''
+  const btn = document.getElementById('omSubmitBtn')
+  btn.disabled = false; btn.textContent = 'Buat Order'
+
+  document.getElementById('orderModal').style.display = 'flex'
+}
+
+window.closeOrderModal = function() {
+  document.getElementById('orderModal').style.display = 'none'
+}
+
+// Tutup modal klik di luar
+document.getElementById('orderModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('orderModal')) closeOrderModal()
+})
+
+window.submitOrder = async function() {
+  if (!WORKER_URL) {
+    alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dulu dengan URL Cloudflare Worker Anda.')
+    return
+  }
+
+  const btn     = document.getElementById('omSubmitBtn')
+  const alertEl = document.getElementById('omAlert')
+  btn.disabled = true; btn.textContent = 'Membuat order…'
+  alertEl.innerHTML = ''
+
+  try {
+    const idToken = await auth.currentUser.getIdToken()
+    const resp = await fetch(`${WORKER_URL}/create-order-from-chat`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        threadId:   activeThreadId,
+        division:   document.getElementById('om_div').value,
+        totalPrice: Number(document.getElementById('om_price').value) || 0,
+        dp:         Number(document.getElementById('om_dp').value) || 0,
+        dueDate:    document.getElementById('om_due').value,
+        notes:      document.getElementById('om_notes').value.trim(),
+      }),
+    })
+
+    const result = await resp.json()
+    if (!resp.ok) throw new Error(result.error || `HTTP ${resp.status}`)
+
+    // Update cache lokal supaya tombol langsung berubah jadi link order
+    const idx = allThreads.findIndex(t => t.id === activeThreadId)
+    if (idx >= 0) {
+      allThreads[idx] = { ...allThreads[idx], orderId: result.orderId, orderNumber: result.orderNumber }
+    }
+
+    closeOrderModal()
+    openThread(activeThreadId) // Refresh panel — header sekarang tampilkan "📋 HRM-xxx"
+
+    // Toast sukses singkat
+    showToast(`✅ ${result.orderNumber} berhasil dibuat! Customer sudah dikirimi notif WA.`)
+  } catch (err) {
+    alertEl.innerHTML = `<div class="alert alert-error" style="margin-top:10px">${err.message}</div>`
+    btn.disabled = false; btn.textContent = 'Buat Order'
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div')
+  t.textContent = msg
+  Object.assign(t.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)',
+    background:'#034543', color:'#FFFBD5', padding:'11px 20px', borderRadius:'10px',
+    fontSize:'13px', fontWeight:'600', zIndex:'999', animation:'slideUp .2s ease',
+    whiteSpace:'nowrap', boxShadow:'0 4px 16px rgba(0,0,0,.2)',
+  })
+  document.body.appendChild(t)
+  setTimeout(() => t.remove(), 4000)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
