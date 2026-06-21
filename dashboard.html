@@ -65,6 +65,7 @@
     const active = orders.filter(o => !['done','delivered','cancelled','pending-approval'].includes(o.status))
     const pendingPromo  = orders.filter(o => o.priceApprovalStatus==='pending' && o.priceApprovalTier==='promo')
     const pendingAdmin  = orders.filter(o => o.priceApprovalStatus==='pending' && o.priceApprovalTier==='admin')
+    const pendingModal  = orders.filter(o => o.modalApprovalStatus==='pending')
     const unpaid = orders.filter(o => (o.totalPrice||0) > 0 && (o.depositPaid||0) < (o.totalPrice||0) && o.status !== 'cancelled')
 
     // Omzet bulan ini
@@ -108,6 +109,12 @@
           <div><div style="font-weight:700;font-size:14px;color:#b91c1c">🔒 ${pendingAdmin.length} order menunggu approval Harga Admin</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:2px">Hanya Owner yang dapat menyetujui</div></div>
           <a href="orders.html?approval=admin" class="btn btn-sm" style="background:#b91c1c;color:white;border:none;flex-shrink:0">Lihat</a>
+        </div>` : '',
+      canApproveAdmin && pendingModal.length > 0 ? `
+        <div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div><div style="font-weight:700;font-size:14px;color:#c2410c">⏳ ${pendingModal.length} order menunggu approval Harga Modal</div>
+          <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:2px">Data entry sudah mengajukan — perlu disetujui Owner</div></div>
+          <a href="orders.html" class="btn btn-sm" style="background:#c2410c;color:white;border:none;flex-shrink:0">Lihat</a>
         </div>` : '',
     ].filter(Boolean).join('')
     if (alertHtml) {

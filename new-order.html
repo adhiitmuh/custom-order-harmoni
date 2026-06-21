@@ -706,7 +706,7 @@
   })
 
   requireAuth(async (profile) => {
-    if (profile.role === 'production') { window.location.href = 'orders.html'; return }
+    if (profile.role === 'production' || profile.role === 'data') { window.location.href = 'orders.html'; return }
     if (profile.role === 'owner') {
       document.getElementById('modalColHeader').style.display = ''
       document.getElementById('modalTotalFooterCell').style.display = ''
