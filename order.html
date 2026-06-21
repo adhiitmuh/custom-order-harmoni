@@ -743,12 +743,14 @@
   window.requestEdit = function() {
     const profile = getProfile()
     if (profile.role === 'owner') { openEditModal(null); return }
+    if (profile.role === 'manager') { openEditModal(profile); return }
     openPinModal('edit')
   }
 
   window.requestVoid = function() {
     const profile = getProfile()
     if (profile.role === 'owner') { executeVoid(null); return }
+    if (profile.role === 'manager') { executeVoid(profile); return }
     openPinModal('void')
   }
 
