@@ -136,7 +136,7 @@
 
   function renderPage(profile) {
     const meta = DIVISION_META[order.division] || {}
-    const showContact  = profile.role === 'owner' || profile.role === 'manager'
+    const showContact  = profile.role === 'owner'
     const canEdit      = profile.role === 'owner' || profile.role === 'cs'
     const canEditModal = profile.role === 'owner'
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
@@ -604,7 +604,7 @@
 
   function renderInvoiceDoc() {
     const meta = DIVISION_META[order.division] || {}
-    const showContact = ['owner','manager'].includes(getProfile()?.role)
+    const showContact = getProfile()?.role === 'owner'
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
     document.getElementById('invoiceDoc').innerHTML = `
