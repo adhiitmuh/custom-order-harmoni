@@ -276,42 +276,72 @@ async function handleGetKnowledge(url, env, token) {
   }
 
   const projectId = env.FIREBASE_PROJECT_ID
-  const res = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/product_knowledge/${division}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  )
+  const divLabel = DIVISION_LABELS[division] || division
+  const fmt = (n) => n ? `Rp ${Number(n).toLocaleString('id-ID')}` : '-'
 
-  if (!res.ok || res.status === 404) {
+  // Fetch product knowledge sections + price list in parallel
+  const [sectionsRes, priceRes] = await Promise.all([
+    fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'product_knowledge' }],
+            where: { fieldFilter: { field: { fieldPath: 'division' }, op: 'EQUAL', value: { stringValue: division } } },
+            orderBy: [{ field: { fieldPath: 'orderIndex' }, direction: 'ASCENDING' }],
+          }
+        })
+      }
+    ),
+    fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/price_list/${division}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    ),
+  ])
+
+  // Parse knowledge sections
+  let knowledgeSections = ''
+  if (sectionsRes.ok) {
+    const docs = await sectionsRes.json()
+    const sections = docs
+      .filter(d => d.document)
+      .map(d => {
+        const f = d.document.fields || {}
+        return { title: val(f.title) || '', content: val(f.content) || '', orderIndex: Number(val(f.orderIndex)) || 0 }
+      })
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .filter(s => s.title && s.content)
+    knowledgeSections = sections.map(s => `### ${s.title}\n${s.content}`).join('\n\n')
+  }
+
+  // Parse price list (priceModal & priceAdmin tidak dikirim ke agent — internal only)
+  let priceLines = ''
+  if (priceRes.ok) {
+    const priceData = await priceRes.json()
+    const items = priceData.fields?.items?.arrayValue?.values || []
+    priceLines = items.map(i => {
+      const fld = i.mapValue?.fields || {}
+      const name = val(fld.name) || ''
+      if (!name) return null
+      const priceNormal = val(fld.priceNormal)
+      const pricePromo  = val(fld.pricePromo)
+      const unit        = val(fld.unit) || 'pcs'
+      const note        = val(fld.note) || ''
+      return `- ${name}: ${fmt(priceNormal)}/${unit}${pricePromo ? ` (promo: ${fmt(pricePromo)})` : ''}${note ? ` — ${note}` : ''}`
+    }).filter(Boolean).join('\n')
+  }
+
+  if (!knowledgeSections && !priceLines) {
     return json({ error: `Knowledge untuk divisi '${division}' belum tersedia` }, 404)
   }
 
-  const data = await res.json()
-  const f = data.fields || {}
-
-  const divLabel = DIVISION_LABELS[division] || division
-  const description = val(f.description) || ''
-
-  // Format knowledge as markdown for Claude system prompt injection
-  const items = f.items?.arrayValue?.values || []
-  const priceLines = items.map(i => {
-    const fld = i.mapValue?.fields || {}
-    const name       = val(fld.name) || ''
-    const priceNormal= val(fld.priceNormal)
-    const pricePromo = val(fld.pricePromo)
-    const unit       = val(fld.unit) || 'pcs'
-    const minQty     = val(fld.minQty)
-    const notes      = val(fld.notes) || ''
-    const fmt = (n) => n ? `Rp ${Number(n).toLocaleString('id-ID')}` : '-'
-    return `- ${name}: ${fmt(priceNormal)}/${unit}${pricePromo ? ` (promo: ${fmt(pricePromo)})` : ''}${minQty ? `, min ${minQty} ${unit}` : ''}${notes ? ` — ${notes}` : ''}`
-  }).join('\n')
-
   const knowledge = [
     `# Knowledge Divisi: ${divLabel}`,
-    '',
-    description,
-    '',
+    knowledgeSections,
     priceLines ? `## Harga & Produk\n${priceLines}` : '',
-  ].filter(Boolean).join('\n')
+  ].filter(Boolean).join('\n\n')
 
   return json({ success: true, division, label: divLabel, knowledge }, 200)
 }
