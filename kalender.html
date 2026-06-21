@@ -51,6 +51,9 @@
       <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#f1f5f9;display:inline-block"></span>Selesai</span>
     </div>
 
+    <!-- Division filter -->
+    <div id="divFilter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px"></div>
+
     <div id="calendarGrid"><div class="loading">Memuat…</div></div>
 
     <!-- Week view orders -->
@@ -65,16 +68,18 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
+  import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
 
   let currentDate = new Date()
   let allOrders = []
+  let activeDivFilter = null
 
   requireAuth(() => {
     dataAuthReady.then(() =>
     getDocs(collection(db,'orders'))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(o => !['cancelled'].includes(o.status))
+      renderDivFilter()
       render()
       renderWeek()
     }).catch(err => {
@@ -85,6 +90,27 @@
   function getOrderDate(o) {
     if (!o.dueDate) return null
     return o.dueDate.toDate ? o.dueDate.toDate() : new Date(o.dueDate)
+  }
+
+  function filteredOrders() {
+    return activeDivFilter ? allOrders.filter(o => o.division === activeDivFilter) : allOrders
+  }
+
+  function renderDivFilter() {
+    const usedDivs = [...new Set(allOrders.map(o => o.division).filter(Boolean))]
+    const chips = [{ key: null, label: 'Semua' }, ...usedDivs.map(d => ({ key: d, label: (DIVISION_META[d]?.icon || '') + ' ' + (DIVISION_META[d]?.label || d) }))]
+    document.getElementById('divFilter').innerHTML = chips.map(c => `
+      <button onclick="setDivFilter(${c.key ? `'${c.key}'` : 'null'})"
+        style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${activeDivFilter===c.key?'var(--green)':'rgba(3,69,67,.15)'};background:${activeDivFilter===c.key?'var(--green)':'transparent'};color:${activeDivFilter===c.key?'var(--beige)':'var(--green)'};font-family:inherit;transition:all .12s">
+        ${c.label}
+      </button>`).join('')
+  }
+
+  window.setDivFilter = function(div) {
+    activeDivFilter = div
+    renderDivFilter()
+    render()
+    renderWeek()
   }
 
   function render() {
@@ -99,7 +125,7 @@
 
     // Build day map: orders by due date
     const ordersByDay = {}
-    for (const o of allOrders) {
+    for (const o of filteredOrders()) {
       const d = getOrderDate(o)
       if (!d) continue
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
@@ -157,7 +183,7 @@
     const today = new Date(); today.setHours(0,0,0,0)
     const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
 
-    const weekOrders = allOrders
+    const weekOrders = filteredOrders()
       .filter(o => {
         const d = getOrderDate(o)
         return d && d >= today && d <= weekEnd && !['done','delivered'].includes(o.status)

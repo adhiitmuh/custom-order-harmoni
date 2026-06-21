@@ -671,6 +671,22 @@
           </table>
           ${isPaid ? `<div style="background:rgba(5,150,105,.07);border:1.5px solid rgba(5,150,105,.2);border-radius:10px;padding:12px;text-align:center;font-weight:700;font-size:13px;color:#065f46;margin-bottom:22px">✅ LUNAS</div>` : ''}
           ${renderPaymentInfoBlock(order, sisa, isPaid)}
+          ${showContact && order.hargaModal ? `
+          <div class="no-print" style="background:rgba(5,150,105,.05);border:1.5px solid rgba(5,150,105,.2);border-radius:12px;padding:14px 18px;margin-bottom:18px">
+            <p style="font-size:10px;font-weight:700;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:10px">INTERNAL · PROFIT ANALYSIS</p>
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:13px;color:rgba(3,69,67,.5)">Harga Modal</span>
+              <span style="font-weight:700">${fmtCurrency(order.hargaModal)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:13px;color:rgba(3,69,67,.5)">Profit</span>
+              <span style="font-weight:800;color:${(order.totalPrice||0)-(order.hargaModal||0)>=0?'#059669':'#b91c1c'}">${fmtCurrency((order.totalPrice||0)-(order.hargaModal||0))}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:13px;color:rgba(3,69,67,.5)">Margin</span>
+              <span style="font-weight:700;color:${Math.round(((order.totalPrice||0)-(order.hargaModal||0))/(order.totalPrice||1)*100)>=30?'#059669':Math.round(((order.totalPrice||0)-(order.hargaModal||0))/(order.totalPrice||1)*100)>=15?'#d97706':'#b91c1c'}">${(order.totalPrice||0)>0?Math.round(((order.totalPrice||0)-(order.hargaModal||0))/(order.totalPrice||0)*100):0}%</span>
+            </div>
+          </div>` : ''}
           ${order.chatToken ? `
           <div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px;text-align:center">
             <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:6px">Pantau progress & diskusi desain pesanan Anda:</p>
