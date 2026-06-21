@@ -456,7 +456,7 @@
     const typed = nameEl?.value.trim().toLowerCase()
     if (!typed) return
     const match = currentPriceList.items.find(p => p.name.trim().toLowerCase() === typed)
-    if (match?.priceModal) {
+    if (match?.priceModal && getProfile()?.role === 'owner') {
       const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
       if (modalEl && !modalEl.value) {
         modalEl.value = match.priceModal
