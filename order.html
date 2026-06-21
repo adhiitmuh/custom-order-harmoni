@@ -80,7 +80,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
 
@@ -138,8 +138,10 @@
   function renderPage(profile) {
     const meta = DIVISION_META[order.division] || {}
     const showContact  = profile.role === 'owner'
-    const canEdit      = profile.role === 'owner' || profile.role === 'cs'
-    const canEditModal = profile.role === 'owner'
+    const canEdit        = profile.role === 'owner' || profile.role === 'cs'
+    const canEditModal   = profile.role === 'owner'
+    const canSubmitModal = profile.role === 'data'
+    const canSeeModal    = canEditModal || canSubmitModal
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const pStatus = paymentStatus(order.totalPrice, order.depositPaid)
     const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
@@ -292,12 +294,12 @@
                   <th style="text-align:left;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600">Nama Item / Produk</th>
                   <th style="text-align:center;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:50px">Qty</th>
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Harga/Pcs</th>
-                  ${canEditModal ? `<th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:100px">Modal/Pcs</th>` : ''}
+                  ${canSeeModal ? `<th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:100px">Modal/Pcs</th>` : ''}
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                ${order.orderItems.map(it => `
+                ${order.orderItems.map((it, i) => `
                 <tr style="border-bottom:1px solid rgba(3,69,67,.06)">
                   <td style="padding:9px 0">
                     <div style="font-weight:500">${it.name||'-'}</div>
@@ -305,17 +307,77 @@
                   </td>
                   <td style="padding:9px 0;text-align:center;color:rgba(3,69,67,.6)">${it.qty||0}</td>
                   <td style="padding:9px 0;text-align:right;color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</td>
-                  ${canEditModal ? `<td style="padding:9px 0;text-align:right;color:rgba(3,69,67,.45);font-size:12px">${it.priceModal ? fmtCurrency(it.priceModal) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>` : ''}
+                  ${canEditModal ? `
+                  <td style="padding:9px 0;text-align:right">
+                    <span id="mval-${i}" style="font-size:12px;color:rgba(3,69,67,.45);cursor:pointer;padding:2px 5px;border-radius:4px" onclick="editItemModal(${i})" title="Klik untuk edit">
+                      ${it.priceModal ? fmtCurrency(it.priceModal) : '<span style="color:rgba(3,69,67,.2)">— edit</span>'}
+                    </span>
+                    <input id="minp-${i}" type="number" value="${it.priceModal||''}"
+                      style="display:none;width:90px;text-align:right;font-size:12px;border:1.5px solid #034543;border-radius:6px;padding:3px 8px;outline:none"
+                      onblur="saveItemModal(${i}, this.value)"
+                      onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')cancelItemModal(${i})">
+                  </td>` : canSubmitModal ? `
+                  <td style="padding:9px 0;text-align:right;font-size:12px">
+                    ${order.pendingOrderItems?.[${i}]?.priceModal
+                      ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[${i}].priceModal)}</span>`
+                      : `<span style="color:rgba(3,69,67,.2)">—</span>`}
+                  </td>` : ''}
                   <td style="padding:9px 0;text-align:right;font-weight:600">${fmtCurrency(it.subtotal)}</td>
                 </tr>`).join('')}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="${canEditModal ? 4 : 3}" style="padding-top:10px;font-weight:700;font-size:13px">Total Item</td>
+                  <td colspan="${canSeeModal ? 4 : 3}" style="padding-top:10px;font-weight:700;font-size:13px">Total Item</td>
                   <td style="padding-top:10px;text-align:right;font-weight:800;font-size:14px;color:var(--green)">${fmtCurrency(order.orderItems.reduce((s,it)=>s+(it.subtotal||0),0))}</td>
                 </tr>
               </tfoot>
             </table>
+          </div>` : ''}
+
+          <!-- Owner: approval banner untuk pengajuan modal dari data role -->
+          ${canEditModal && order.modalApprovalStatus === 'pending' ? `
+          <div class="card no-print" style="margin-bottom:16px;border:1.5px solid #fde68a;background:#fffbeb">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-weight:700;font-size:14px;color:#d97706">⏳ Pengajuan Harga Modal</div>
+                <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">Diajukan oleh <b>${order.modalSubmittedBy||'—'}</b></div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button onclick="rejectModalApproval()" class="btn btn-danger btn-sm">✕ Tolak</button>
+                <button onclick="approveModalApproval()" class="btn btn-green btn-sm">✓ Setujui</button>
+              </div>
+            </div>
+            <table style="width:100%;font-size:13px;border-collapse:collapse">
+              ${(order.pendingOrderItems||[]).map(it => `
+              <tr style="border-bottom:1px solid rgba(3,69,67,.08)">
+                <td style="padding:7px 0;font-weight:500">${it.name||'-'}${it.varian?`<span style="font-size:11px;color:rgba(3,69,67,.45)"> · ${it.varian}</span>`:''}</td>
+                <td style="padding:7px 0;text-align:right;font-weight:700;color:#d97706">${it.priceModal ? fmtCurrency(it.priceModal) : '—'}</td>
+              </tr>`).join('')}
+              <tr><td style="padding-top:8px;font-weight:700;font-size:13px">Total Modal</td><td style="padding-top:8px;text-align:right;font-weight:800;font-size:14px;color:#d97706">${fmtCurrency(order.pendingHargaModal||0)}</td></tr>
+            </table>
+          </div>` : ''}
+
+          <!-- Data role: form ajukan harga modal -->
+          ${canSubmitModal ? `
+          <div class="card no-print" style="margin-bottom:16px">
+            <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">💜 Ajukan Harga Modal</h2>
+            ${order.modalApprovalStatus === 'pending' ? `
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:13px;color:#92400e;font-weight:600">
+                ⏳ Pengajuan sedang menunggu approval Owner
+              </div>` : `
+              <table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:12px">
+                ${(order.orderItems||[]).map((it,i) => `
+                <tr style="border-bottom:1px solid rgba(3,69,67,.06)">
+                  <td style="padding:8px 0;font-weight:500">${it.name||'-'}${it.varian?`<br><span style="font-size:11px;color:rgba(3,69,67,.45)">${it.varian}</span>`:''}</td>
+                  <td style="padding:8px 0;text-align:center;color:rgba(3,69,67,.5);font-size:12px">${it.qty||0}</td>
+                  <td style="padding:8px 0;text-align:right">
+                    <input type="number" id="pm-${i}" value="${it.priceModal||''}" placeholder="0"
+                      style="width:90px;text-align:right;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:5px 8px;font-size:12px;outline:none"
+                      onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'">
+                  </td>
+                </tr>`).join('')}
+              </table>
+              <button onclick="submitPendingModal()" class="btn btn-primary" style="width:100%;justify-content:center">Ajukan untuk Approval Owner</button>`}
           </div>` : ''}
 
           <!-- Info Penjahit (jersey/tailor, production+owner+merangkap only) -->
@@ -1027,6 +1089,95 @@
       })
       await loadOrder(profile)
     } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
+  }
+
+  // === MODAL PER ITEM (inline edit for owner) ===
+  window.editItemModal = function(i) {
+    document.getElementById(`mval-${i}`).style.display = 'none'
+    const inp = document.getElementById(`minp-${i}`)
+    inp.style.display = 'inline-block'
+    inp.focus(); inp.select()
+  }
+
+  window.cancelItemModal = function(i) {
+    document.getElementById(`mval-${i}`).style.display = ''
+    document.getElementById(`minp-${i}`).style.display = 'none'
+  }
+
+  window.saveItemModal = async function(i, val) {
+    cancelItemModal(i)
+    const newModal = Number(val) || 0
+    const items = (order.orderItems||[]).map((it, idx) => idx === i ? {...it, priceModal: newModal || undefined} : it)
+    const hargaModal = items.reduce((s, it) => s + (it.qty||0) * (it.priceModal||0), 0)
+    const now = Timestamp.now()
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        orderItems: items,
+        hargaModal: hargaModal || null,
+        updatedAt: now,
+        hargaModalEditBy: getProfile().name,
+        hargaModalEditAt: now,
+      })
+      order.orderItems = items
+      order.hargaModal = hargaModal || null
+      const disp = document.getElementById(`mval-${i}`)
+      if (disp) disp.innerHTML = newModal ? fmtCurrency(newModal) : '<span style="color:rgba(3,69,67,.2)">— edit</span>'
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+  }
+
+  // === MODAL APPROVAL (data role submit, owner approve/reject) ===
+  window.submitPendingModal = async function() {
+    const pendingItems = (order.orderItems||[]).map((it, i) => ({
+      ...it,
+      priceModal: Number(document.getElementById(`pm-${i}`)?.value) || it.priceModal || 0
+    }))
+    const pendingHargaModal = pendingItems.reduce((s, it) => s + (it.qty||0) * (it.priceModal||0), 0)
+    const btn = document.querySelector('[onclick="submitPendingModal()"]')
+    if (btn) { btn.disabled = true; btn.textContent = 'Mengajukan…' }
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        pendingOrderItems: pendingItems,
+        pendingHargaModal,
+        modalApprovalStatus: 'pending',
+        modalSubmittedBy: getProfile().name,
+        modalSubmittedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal submit: ' + err.message); if (btn) { btn.disabled = false; btn.textContent = 'Ajukan untuk Approval Owner' } }
+  }
+
+  window.approveModalApproval = async function() {
+    if (!confirm('Setujui dan terapkan harga modal ini?')) return
+    const now = Timestamp.now()
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        orderItems: order.pendingOrderItems,
+        hargaModal: order.pendingHargaModal || null,
+        pendingOrderItems: deleteField(),
+        pendingHargaModal: deleteField(),
+        modalApprovalStatus: 'approved',
+        modalApprovedBy: getProfile().name,
+        modalApprovedAt: now,
+        hargaModalEditBy: getProfile().name,
+        hargaModalEditAt: now,
+        updatedAt: now,
+      })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal approve: ' + err.message) }
+  }
+
+  window.rejectModalApproval = async function() {
+    const now = Timestamp.now()
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        pendingOrderItems: deleteField(),
+        pendingHargaModal: deleteField(),
+        modalApprovalStatus: null,
+        updatedAt: now,
+      })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal tolak: ' + err.message) }
   }
 
   window.toggleModalEdit = function() {

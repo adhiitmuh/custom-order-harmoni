@@ -44,6 +44,7 @@
             <option value="cs">CS (Customer Service)</option>
             <option value="manager">Kepala Cabang</option>
             <option value="production">Tim Produksi</option>
+            <option value="data">Data Entry (input modal, perlu approval)</option>
             <option value="owner">Owner</option>
           </select>
         </div>
@@ -85,7 +86,7 @@
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
-  const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi' }
+  const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi', data: 'Data Entry' }
 
   let lokasiOptions = []
 

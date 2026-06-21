@@ -5,6 +5,7 @@ service cloud.firestore {
     function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
     function isOwner() { return isAuth() && role() == 'owner'; }
     function isOwnerOrCS() { return isAuth() && role() in ['owner','cs']; }
+    function isData() { return isAuth() && role() == 'data'; }
 
     match /users/{uid} {
       allow read: if isAuth();
@@ -35,7 +36,7 @@ service cloud.firestore {
     }
     match /price_list/{div} {
       allow read: if true; // Public — customer can read (UI filters to Normal only)
-      allow write: if isOwnerOrCS();
+      allow write: if isOwnerOrCS() || isData();
     }
     match /settings/{id} {
       allow read: if isAuth();
