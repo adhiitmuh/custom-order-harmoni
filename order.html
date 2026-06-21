@@ -292,21 +292,26 @@
                   <th style="text-align:left;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600">Nama Item / Produk</th>
                   <th style="text-align:center;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:50px">Qty</th>
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Harga/Pcs</th>
+                  ${canEditModal ? `<th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:100px">Modal/Pcs</th>` : ''}
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
                 ${order.orderItems.map(it => `
                 <tr style="border-bottom:1px solid rgba(3,69,67,.06)">
-                  <td style="padding:9px 0;font-weight:500">${it.name||'-'}</td>
+                  <td style="padding:9px 0">
+                    <div style="font-weight:500">${it.name||'-'}</div>
+                    ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
+                  </td>
                   <td style="padding:9px 0;text-align:center;color:rgba(3,69,67,.6)">${it.qty||0}</td>
                   <td style="padding:9px 0;text-align:right;color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</td>
+                  ${canEditModal ? `<td style="padding:9px 0;text-align:right;color:rgba(3,69,67,.45);font-size:12px">${it.priceModal ? fmtCurrency(it.priceModal) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>` : ''}
                   <td style="padding:9px 0;text-align:right;font-weight:600">${fmtCurrency(it.subtotal)}</td>
                 </tr>`).join('')}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="3" style="padding-top:10px;font-weight:700;font-size:13px">Total Item</td>
+                  <td colspan="${canEditModal ? 4 : 3}" style="padding-top:10px;font-weight:700;font-size:13px">Total Item</td>
                   <td style="padding-top:10px;text-align:right;font-weight:800;font-size:14px;color:var(--green)">${fmtCurrency(order.orderItems.reduce((s,it)=>s+(it.subtotal||0),0))}</td>
                 </tr>
               </tfoot>
