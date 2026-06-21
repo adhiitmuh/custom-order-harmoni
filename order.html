@@ -454,8 +454,14 @@
               <button onclick="toggleModalEdit()" class="btn btn-ghost btn-sm" id="modalEditBtn">Edit</button>
             </div>
             <div id="modalView">
-              ${order.hargaModal
-                ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+              ${(() => {
+                const hasItemModal = order.orderItems?.some(i => i.priceModal > 0)
+                const autoTag = hasItemModal
+                  ? `<p style="font-size:10px;color:#059669;font-weight:600;margin-bottom:8px">🔄 Dihitung otomatis dari rincian item</p>`
+                  : ''
+                if (order.hargaModal) return `
+                  ${autoTag}
+                  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                     <span style="color:rgba(3,69,67,.5);font-size:13px">Modal</span>
                     <span style="font-weight:700">${fmtCurrency(order.hargaModal)}</span>
                   </div>
@@ -463,7 +469,8 @@
                     <span style="color:rgba(3,69,67,.5);font-size:13px">Keuntungan</span>
                     <span style="font-weight:700;color:${(order.totalPrice-order.hargaModal)>=0?'#059669':'#b91c1c'}">${fmtCurrency((order.totalPrice||0)-(order.hargaModal||0))}</span>
                   </div>`
-                : `<p style="font-size:12px;color:rgba(3,69,67,.35)">Belum diisi</p>`}
+                return `<p style="font-size:12px;color:rgba(3,69,67,.35)">Belum diisi — isi kolom modal per item di form order untuk auto-hitung</p>`
+              })()}
             </div>
             <div id="modalEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
