@@ -526,7 +526,7 @@
           </div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <label style="background:var(--beige-soft);border:1.5px solid rgba(3,69,67,.15);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px;text-align:center" title="Kirim foto desain">
-              📎 <input type="file" id="chatFileInput" accept="image/*,.pdf" style="display:none" onchange="sendChatFile(this)">
+              📎 <input type="file" id="chatFileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="sendChatFile(this)">
             </label>
             <button onclick="sendChatMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px">Kirim</button>
           </div>
@@ -1250,7 +1250,9 @@
         return `<div style="display:flex;flex-direction:column;align-items:${align};max-width:80%">
           <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px;${isMe?'text-align:right':''}">${name} · ${timeAgo(m.createdAt)}</span>
           <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${isMe?'12px 12px 2px 12px':'12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word">
-            ${m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:6px;display:block"></a>` : ''}
+            ${m.type==='file'&&m.imageUrl
+              ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
+              : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:6px;display:block"></a>` : ''}
             ${m.text ? m.text.replace(/\n/g,'<br>') : ''}
           </div>
         </div>`
@@ -1293,16 +1295,19 @@
 
   window.sendChatFile = async function(input) {
     if (!input.files[0] || !order.chatToken) return
-    const file = input.files[0]
+    const rawFile = input.files[0]
+    const isImage = rawFile.type.startsWith('image/')
+    const file = await compressImage(rawFile)
     const profile = getProfile()
     const storRef = ref(storage, `chats/${order.chatToken}/${Date.now()}_${file.name}`)
     const snap = await new Promise((res,rej) => {
       const task = uploadBytesResumable(storRef, file)
       task.on('state_changed', null, rej, () => res(task.snapshot))
     })
-    const imageUrl = await getDownloadURL(snap.ref)
+    const fileUrl = await getDownloadURL(snap.ref)
     await addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
-      text: '', imageUrl, type: 'image',
+      text: '', imageUrl: fileUrl, type: isImage ? 'image' : 'file',
+      fileName: rawFile.name,
       senderId: profile.id,
       senderName: profile.name,
       senderRole: profile.role,

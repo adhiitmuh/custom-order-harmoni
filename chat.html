@@ -217,7 +217,7 @@
             oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
           <label class="attach-btn" title="Kirim foto desain">
-            📎 <input type="file" id="fileInput" accept="image/*,.pdf" style="display:none" onchange="sendFile(this)">
+            📎 <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="sendFile(this)">
           </label>
           <button class="send-btn" onclick="sendMsg()" id="sendBtn">➤</button>
         </div>`}
@@ -338,7 +338,9 @@
         return `<div class="bubble-wrap ${isMe?'me':'other'}">
           <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}</span>
           <div class="bubble ${bubbleCls}">
-            ${m.imageUrl?`<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}"></a>`:''}
+            ${m.type==='file'&&m.imageUrl
+              ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
+              : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}"></a>` : ''}
             ${m.text?m.text.replace(/\n/g,'<br>'):''}
           </div>
         </div>`
@@ -390,22 +392,46 @@
     } finally { btn.disabled = false }
   }
 
+  async function compressImage(file) {
+    if (!file.type.startsWith('image/')) return file
+    return new Promise(resolve => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        let { width, height } = img
+        const MAX = 1920
+        if (width <= MAX && height <= MAX) { resolve(file); return }
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+        else { width = Math.round(width * MAX / height); height = MAX }
+        const canvas = document.createElement('canvas')
+        canvas.width = width; canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.85)
+      }
+      img.src = url
+    })
+  }
+
   window.sendFile = async function(input) {
     if (!input.files[0]) return
-    const file = input.files[0]
+    const rawFile = input.files[0]
     const btn = document.getElementById('sendBtn')
     btn.disabled = true
     try {
       const snap = await getDoc(doc(db,'public_order_info',token))
       const name = snap.exists() ? snap.data().customerName : 'Customer'
+      const isImage = rawFile.type.startsWith('image/')
+      const file = await compressImage(rawFile)
       const storRef = ref(storage, `chats/${token}/${Date.now()}_${file.name}`)
       const uploadSnap = await new Promise((res,rej) => {
         const task = uploadBytesResumable(storRef, file)
         task.on('state_changed',null,rej,()=>res(task.snapshot))
       })
-      const imageUrl = await getDownloadURL(uploadSnap.ref)
+      const fileUrl = await getDownloadURL(uploadSnap.ref)
       await addDoc(collection(db,'chat_messages',token,'messages'), {
-        text:'', imageUrl, type:'image',
+        text:'', imageUrl: fileUrl, type: isImage ? 'image' : 'file',
+        fileName: rawFile.name,
         senderId: token,
         senderName: name,
         senderRole: 'customer',
