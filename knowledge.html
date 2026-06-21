@@ -313,7 +313,8 @@
           <button onclick="removePriceRow(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;font-size:14px;color:rgba(3,69,67,.35)">✕</button>
           <div class="form-group" style="margin-bottom:8px">
             <label style="font-size:11px">Nama Layanan / Produk</label>
-            <input type="text" value="${item.name||''}" oninput="updatePriceRow(${i},'name',this.value)" placeholder="cth: Bordir Kecil (s/d 5cm)">
+            <input type="text" id="price-name-${i}" value="${item.name||''}" oninput="updatePriceRow(${i},'name',this.value);checkModalDupes()" placeholder="cth: Bordir Kecil (s/d 5cm)">
+            <div id="dupe-modal-${i}" style="display:none;font-size:10px;color:#d97706;font-weight:600;margin-top:3px">⚠ Nama ini sudah ada di baris lain</div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
             <div>
@@ -351,6 +352,17 @@
 
   window.updatePriceRow = (i, field, val) => { if (window._priceItems) window._priceItems[i][field] = val }
 
+  window.checkModalDupes = function() {
+    const items = window._priceItems || []
+    const names = items.map(it => (it.name||'').trim().toLowerCase())
+    items.forEach((_, i) => {
+      const el = document.getElementById(`dupe-modal-${i}`)
+      if (!el) return
+      const name = names[i]
+      el.style.display = (name && names.filter(n => n === name).length > 1) ? '' : 'none'
+    })
+  }
+
   window.removePriceRow = (i) => {
     window._priceItems.splice(i, 1)
     renderPriceRows(window._priceItems)
@@ -366,7 +378,6 @@
 
   window.savePriceList = async function() {
     const btn = document.getElementById('priceSaveBtn')
-    btn.disabled=true; btn.textContent='Menyimpan…'
     const items = (window._priceItems||[]).map(item => ({
       name: item.name||'',
       priceNormal: Number(item.priceNormal)||0,
@@ -376,6 +387,13 @@
       unit: item.unit||'',
       note: item.note||'',
     })).filter(item => item.name)
+    const names = items.map(it => it.name.trim().toLowerCase())
+    const dupes = names.filter((n, i) => names.indexOf(n) !== i)
+    if (dupes.length) {
+      alert(`Ada nama item duplikat: "${dupes[0]}". Harap perbaiki sebelum menyimpan.`)
+      return
+    }
+    btn.disabled=true; btn.textContent='Menyimpan…'
     try {
       await setDoc(doc(db,'price_list',editingPriceDiv), {
         division: editingPriceDiv, items, updatedAt: Timestamp.now()
@@ -464,6 +482,11 @@
         note: String(item.note||'').trim(),
       }))
       .filter(item => item.name)
+    const names = items.map(it => it.name.toLowerCase())
+    if (names.some((n, i) => names.indexOf(n) !== i)) {
+      showSavedToast('⚠ Ada nama duplikat — perbaiki sebelum data tersimpan', '#d97706')
+      return
+    }
     try {
       await setDoc(doc(db,'price_list',division), { division, items, updatedAt: Timestamp.now() })
       delete contentCache[division]
@@ -489,11 +512,11 @@
     scheduleInlineSave(division)
   }
 
-  function showSavedToast() {
+  function showSavedToast(msg = '✓ Harga tersimpan', color = '#059669') {
     if (_savedToast) _savedToast.remove()
     const el = document.createElement('div')
-    el.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#059669;color:white;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none'
-    el.textContent = '✓ Harga tersimpan'
+    el.style.cssText = `position:fixed;bottom:24px;right:24px;background:${color};color:white;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none`
+    el.textContent = msg
     document.body.appendChild(el)
     _savedToast = el
     setTimeout(() => { el.remove(); if (_savedToast === el) _savedToast = null }, 2500)

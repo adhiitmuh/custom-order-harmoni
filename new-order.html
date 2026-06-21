@@ -402,7 +402,7 @@
         <input type="text" placeholder="cth: Bordir Logo, Jersey Futsal S…" value="${item.name||''}"
           data-field="name" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'">
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'" onchange="matchItemToPrice(${id})">
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
           data-field="varian" data-row="${id}"
           style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
@@ -448,6 +448,62 @@
     _rowModalPrice[id] = Number(document.querySelector(`[data-field="modal"][data-row="${id}"]`)?.value) || 0
     window.recalcAutoModal()
     debouncedSaveDraft()
+  }
+
+  window.matchItemToPrice = function(id) {
+    if (!currentPriceList?.items?.length) return
+    const nameEl = document.querySelector(`[data-field="name"][data-row="${id}"]`)
+    const typed = nameEl?.value.trim().toLowerCase()
+    if (!typed) return
+    const match = currentPriceList.items.find(p => p.name.trim().toLowerCase() === typed)
+    if (match?.priceModal) {
+      const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
+      if (modalEl && !modalEl.value) {
+        modalEl.value = match.priceModal
+        _rowModalPrice[id] = match.priceModal
+        window.recalcAutoModal()
+        showMatchHint(id)
+      }
+    }
+    checkDuplicateNames()
+  }
+
+  function showMatchHint(id) {
+    const td = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.closest('td')
+    if (!td) return
+    let hint = document.getElementById(`match-hint-${id}`)
+    if (!hint) {
+      hint = document.createElement('div')
+      hint.id = `match-hint-${id}`
+      hint.style.cssText = 'font-size:10px;color:#059669;font-weight:600;margin-top:2px'
+      hint.textContent = '✓ Harga modal diisi otomatis dari katalog'
+      td.appendChild(hint)
+    }
+    hint.style.display = ''
+    clearTimeout(hint._t)
+    hint._t = setTimeout(() => hint.style.display = 'none', 3000)
+  }
+
+  function checkDuplicateNames() {
+    const rows = [...document.querySelectorAll('#itemRows tr')]
+    const names = rows.map(tr => tr.querySelector('[data-field="name"]')?.value.trim().toLowerCase()).filter(Boolean)
+    rows.forEach(tr => {
+      const name = tr.querySelector('[data-field="name"]')?.value.trim().toLowerCase()
+      const id = tr.id.replace('row-', '')
+      const isDupe = name && names.filter(n => n === name).length > 1
+      let warn = document.getElementById(`dupe-warn-${id}`)
+      if (isDupe) {
+        if (!warn) {
+          warn = document.createElement('div')
+          warn.id = `dupe-warn-${id}`
+          warn.style.cssText = 'font-size:10px;color:#d97706;font-weight:600;margin-top:2px'
+          warn.textContent = '⚠ Nama item duplikat'
+          tr.querySelector('td')?.appendChild(warn)
+        }
+      } else {
+        warn?.remove()
+      }
+    })
   }
 
   window.calcRow = function(id) {
