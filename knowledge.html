@@ -11,11 +11,11 @@
   <title>Product Knowledge — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .price-table { width:100%; border-collapse:collapse; font-size:13px; min-width:680px; }
-    .price-table th { text-align:left; padding:8px 10px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; }
-    .price-table td { padding:9px 10px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; }
-    .price-table td:first-child { min-width:190px; }
-    .price-table td:not(:first-child) { white-space:nowrap; }
+    .price-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .price-table th { text-align:left; padding:8px 6px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; }
+    .price-table th:first-child { padding-left:10px; }
+    .price-table td { padding:9px 6px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; white-space:nowrap; }
+    .price-table td:first-child { white-space:normal; width:99%; padding-left:10px; }
     .price-table tr:last-child td { border-bottom:none; }
     .price-table tr:hover td { background:rgba(3,69,67,.02); }
     .tier-normal { font-weight:700; color:#059669; }
@@ -410,24 +410,22 @@
       <td><input class="inp-inline tier-promo" type="number" value="${p.pricePromo||''}" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
       <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
       ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
-      <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5)"></td>
-      <td><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);font-size:12px"></td>
+      <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
       <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
     </tr>` : `<tr>
-      <td style="font-weight:600">${escAttr(p.name||'')}</td>
-      <td class="tier-normal">${p.priceNormal ? 'Rp '+Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
-      <td class="tier-promo">${p.pricePromo ? 'Rp '+Number(p.pricePromo).toLocaleString('id-ID') : '—'}</td>
-      <td class="tier-admin">${p.priceAdmin ? 'Rp '+Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
-      ${canEditModal ? `<td class="tier-modal">${p.priceModal ? 'Rp '+Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
+      <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
+      <td class="tier-normal">${p.priceNormal ? Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
+      <td class="tier-promo">${p.pricePromo ? Number(p.pricePromo).toLocaleString('id-ID') : '—'}</td>
+      <td class="tier-admin">${p.priceAdmin ? Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
+      ${canEditModal ? `<td class="tier-modal">${p.priceModal ? Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
       <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
-      <td style="color:rgba(3,69,67,.5);font-size:12px">${escAttr(p.note||'')}</td>
     </tr>`).join('')
 
     return `<div style="overflow-x:auto"><table class="price-table">
       <thead><tr>
-        <th>LAYANAN / PRODUK</th><th>HARGA NORMAL</th><th>HARGA PROMO</th><th>HARGA ADMIN</th>
-        ${canEditModal ? '<th>HARGA MODAL</th>' : ''}
-        <th>SATUAN</th><th>KETERANGAN</th>${canEdit ? '<th></th>' : ''}
+        <th>LAYANAN / PRODUK</th><th>NORMAL</th><th>PROMO</th><th>ADMIN</th>
+        ${canEditModal ? '<th>MODAL</th>' : ''}
+        <th>SATUAN</th>${canEdit ? '<th></th>' : ''}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
