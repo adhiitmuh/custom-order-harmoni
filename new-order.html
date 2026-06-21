@@ -143,10 +143,20 @@
         </div>
       </div>
 
+      <!-- Rincian Ukuran (jersey, konveksi, sablon) -->
+      <div class="card" id="sizeCard" style="display:none;margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:4px">Rincian Ukuran</h2>
+        <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:14px">Isi jumlah per ukuran. Kosongkan jika tidak ada.</p>
+        <div id="sizeGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div>
+        <div id="sizeTotalInfo" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(3,69,67,.05);border-radius:10px;font-size:13px;color:rgba(3,69,67,.7)">
+          Total: <strong id="sizeTotalVal" style="color:var(--green)">0 pcs</strong>
+        </div>
+      </div>
+
       <!-- Notes -->
       <div class="card" style="margin-bottom:16px">
         <h2 style="font-size:15px;font-weight:700;margin-bottom:10px">Catatan Tambahan</h2>
-        <textarea id="notes" placeholder="Ukuran, warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
+        <textarea id="notes" placeholder="Warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
       </div>
 
       <!-- Lokasi -->
@@ -202,6 +212,46 @@
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
+
+  const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon']
+  const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+
+  function renderSizeGrid() {
+    document.getElementById('sizeGrid').innerHTML = SIZES.map(s => `
+      <div style="text-align:center">
+        <label style="font-size:11px;font-weight:700;color:rgba(3,69,67,.5);display:block;margin-bottom:5px">${s}</label>
+        <input type="number" id="size_${s}" min="0" step="1" placeholder="0"
+          style="width:100%;text-align:center;border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:10px 4px;font-size:17px;font-weight:700;color:var(--green)"
+          oninput="window.updateSizeTotal()">
+      </div>`).join('')
+  }
+
+  window.updateSizeTotal = function() {
+    const total = SIZES.reduce((sum, s) => sum + (Number(document.getElementById('size_'+s)?.value)||0), 0)
+    document.getElementById('sizeTotalInfo').style.display = total > 0 ? '' : 'none'
+    document.getElementById('sizeTotalVal').textContent = total + ' pcs'
+  }
+
+  function getSizeBreakdown() {
+    if (!SIZE_DIVISIONS.includes(selectedDiv)) return null
+    const bd = {}
+    let hasAny = false
+    SIZES.forEach(s => {
+      const qty = Number(document.getElementById('size_'+s)?.value)||0
+      if (qty > 0) { bd[s] = qty; hasAny = true }
+    })
+    return hasAny ? bd : null
+  }
+
+  function restoreSizeBreakdown(bd) {
+    if (!bd) return
+    renderSizeGrid()
+    Object.entries(bd).forEach(([s, qty]) => {
+      const el = document.getElementById('size_'+s)
+      if (el) el.value = qty
+    })
+    window.updateSizeTotal()
+  }
   import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
   let selectedDiv = ''
@@ -261,6 +311,7 @@
     if (draft.lokasiId)        document.getElementById('lokasiId').value        = draft.lokasiId
     if (draft.paymentMethod)   document.getElementById('paymentMethod').value   = draft.paymentMethod
     if (draft.division)        selectDiv(draft.division, true)
+    if (draft.sizeBreakdown)   restoreSizeBreakdown(draft.sizeBreakdown)
     if (draft.items?.length)   draft.items.forEach(item => addItemRow(item))
     updateSisa()
     showDraftBanner()
@@ -508,6 +559,14 @@
     })
     loadPriceList(d)
     if (!skipPaymentLoad) loadPaymentMethods(d)
+    // Tampilkan size form untuk jersey, konveksi, sablon
+    const sizeCard = document.getElementById('sizeCard')
+    if (SIZE_DIVISIONS.includes(d)) {
+      sizeCard.style.display = ''
+      renderSizeGrid()
+    } else {
+      sizeCard.style.display = 'none'
+    }
     debouncedSaveDraft()
   }
 
@@ -644,6 +703,7 @@
           totalPrice: Number(document.getElementById('totalPrice').value)||0,
           depositPaid: Number(document.getElementById('depositPaid').value)||0,
           notes: document.getElementById('notes').value.trim(),
+          sizeBreakdown: getSizeBreakdown() || null,
           sumberOrder: document.getElementById('sumberOrder').value || 'staff',
           agentSessionId: '',
           branch: profile.branch || '',

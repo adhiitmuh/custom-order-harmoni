@@ -216,6 +216,20 @@
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
             </div>
+            ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
+              <hr class="sep">
+              <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:8px">Rincian Ukuran</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+                ${Object.entries(order.sizeBreakdown).map(([s,q]) => `
+                  <div style="text-align:center;padding:6px 12px;background:rgba(3,69,67,.06);border-radius:8px;min-width:52px">
+                    <div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.45)">${s}</div>
+                    <div style="font-size:16px;font-weight:800;color:var(--green)">${q}</div>
+                  </div>`).join('')}
+                <div style="text-align:center;padding:6px 12px;background:#034543;border-radius:8px;min-width:52px">
+                  <div style="font-size:10px;font-weight:700;color:rgba(255,251,213,.55)">TOTAL</div>
+                  <div style="font-size:16px;font-weight:800;color:#FFFBD5">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div>
+                </div>
+              </div>` : ''}
             ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
           </div>
 
@@ -611,13 +625,21 @@
             <div>
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
               <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
-              ${order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
+              ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
               <div><span style="font-size:10px;color:rgba(3,69,67,.4)">Target Selesai</span><div style="font-weight:600;font-size:12px">${fmtDate(order.dueDate)}</div></div>
             </div>
           </div>
+          ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
+            <div style="margin-bottom:16px">
+              <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:8px">RINCIAN UKURAN</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                ${Object.entries(order.sizeBreakdown).map(([s,q]) => `<div style="text-align:center;padding:5px 10px;border:1px solid rgba(3,69,67,.12);border-radius:6px;min-width:44px"><div style="font-size:9px;font-weight:700;color:rgba(3,69,67,.4)">${s}</div><div style="font-size:14px;font-weight:800;color:#034543">${q}</div></div>`).join('')}
+                <div style="text-align:center;padding:5px 10px;border:1.5px solid #034543;border-radius:6px;min-width:44px"><div style="font-size:9px;font-weight:700;color:#034543">TOTAL</div><div style="font-size:14px;font-weight:800;color:#034543">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div></div>
+              </div>
+            </div>` : ''}
           ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p></div>` : ''}
           <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
             <thead><tr style="border-bottom:1.5px solid rgba(3,69,67,.12)">
