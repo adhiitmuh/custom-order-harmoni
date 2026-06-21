@@ -61,6 +61,7 @@
       <div class="form-group"><label>Total Harga (Rp)</label><input type="number" id="editTotalPrice" min="0"></div>
       <div class="form-group"><label>DP Dibayar (Rp)</label><input type="number" id="editDeposit" min="0"></div>
     </div>
+    <div class="form-group"><label>Varian / Spesifikasi</label><input type="text" id="editVarian" placeholder="Contoh: Bordir 3D benang emas"></div>
     <div class="form-group" style="margin-bottom:20px"><label>Catatan</label><textarea id="editNotes" rows="3"></textarea></div>
     <div id="editSizeCard" style="display:none;margin-bottom:20px">
       <label style="font-size:12px;font-weight:700;color:rgba(3,69,67,.6);display:block;margin-bottom:8px">Rincian Ukuran</label>
@@ -235,6 +236,7 @@
                   <div style="font-size:16px;font-weight:800;color:#FFFBD5">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div>
                 </div>
               </div>` : ''}
+            ${order.varian ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Varian / Spesifikasi</p><p style="font-size:13px;font-weight:600">${order.varian}</p>` : ''}
             ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
           </div>
 
@@ -646,6 +648,7 @@
                 <div style="text-align:center;padding:5px 10px;border:1.5px solid #034543;border-radius:6px;min-width:44px"><div style="font-size:9px;font-weight:700;color:#034543">TOTAL</div><div style="font-size:14px;font-weight:800;color:#034543">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div></div>
               </div>
             </div>` : ''}
+          ${order.varian ? `<div style="background:var(--beige-soft);border-radius:10px;padding:10px 14px;margin-bottom:10px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:3px">VARIAN / SPESIFIKASI</p><p style="font-size:13px;font-weight:600">${order.varian}</p></div>` : ''}
           ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p></div>` : ''}
           <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
             <thead><tr style="border-bottom:1.5px solid rgba(3,69,67,.12)">
@@ -769,6 +772,7 @@
     document.getElementById('editDueDate').value = order.dueDate || ''
     document.getElementById('editTotalPrice').value = order.totalPrice || ''
     document.getElementById('editDeposit').value = order.depositPaid || ''
+    document.getElementById('editVarian').value = order.varian || ''
     document.getElementById('editNotes').value = order.notes || ''
 
     const sizeCard = document.getElementById('editSizeCard')
@@ -807,6 +811,7 @@
         dueDate: document.getElementById('editDueDate').value,
         totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
         depositPaid: Number(document.getElementById('editDeposit').value) || 0,
+        varian: document.getElementById('editVarian').value.trim() || null,
         notes: document.getElementById('editNotes').value.trim(),
         updatedAt: now,
         lastEditBy: profile.name,

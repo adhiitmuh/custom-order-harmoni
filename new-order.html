@@ -153,10 +153,18 @@
         </div>
       </div>
 
+      <!-- Varian -->
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:6px">Varian / Spesifikasi</h2>
+        <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:10px">Pilih dari daftar harga atau ketik bebas</p>
+        <div id="varianChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <textarea id="varian" placeholder="Contoh: Bordir 3D benang emas, background hitam…" rows="2" style="margin-bottom:0"></textarea>
+      </div>
+
       <!-- Notes -->
       <div class="card" style="margin-bottom:16px">
         <h2 style="font-size:15px;font-weight:700;margin-bottom:10px">Catatan Tambahan</h2>
-        <textarea id="notes" placeholder="Warna, spesifikasi khusus, instruksi tambahan…" rows="4"></textarea>
+        <textarea id="notes" placeholder="Warna, instruksi tambahan…" rows="4"></textarea>
       </div>
 
       <!-- Lokasi -->
@@ -276,6 +284,7 @@
         depositPaid: document.getElementById('depositPaid').value,
         paymentMethod: document.getElementById('paymentMethod').value,
         notes: document.getElementById('notes').value,
+        varian: document.getElementById('varian').value,
         lokasiId: document.getElementById('lokasiId').value,
         sumberOrder: document.getElementById('sumberOrder').value,
         approvalReason: document.getElementById('approvalReason')?.value || '',
@@ -306,6 +315,7 @@
     if (draft.totalPrice)      document.getElementById('totalPrice').value      = draft.totalPrice
     if (draft.depositPaid)     document.getElementById('depositPaid').value     = draft.depositPaid
     if (draft.notes)           document.getElementById('notes').value           = draft.notes
+    if (draft.varian)          document.getElementById('varian').value          = draft.varian
     if (draft.sumberOrder)     document.getElementById('sumberOrder').value     = draft.sumberOrder
     if (draft.approvalReason)  document.getElementById('approvalReason').value  = draft.approvalReason
     if (draft.lokasiId)        document.getElementById('lokasiId').value        = draft.lokasiId
@@ -550,6 +560,32 @@
     grid.appendChild(btn)
   })
 
+  async function loadVarianChips(division) {
+    const container = document.getElementById('varianChips')
+    container.innerHTML = ''
+    try {
+      const snap = await getDoc(fsDoc(db, 'price_list', division))
+      if (!snap.exists()) return
+      const items = snap.data().items || []
+      items.forEach(item => {
+        if (!item.name) return
+        const chip = document.createElement('button')
+        chip.type = 'button'
+        chip.style.cssText = 'padding:5px 10px;border-radius:999px;border:1.5px solid rgba(3,69,67,.2);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:600;display:inline-flex;align-items:center;gap:4px'
+        const price = item.priceNormal ? ` · Rp ${Number(item.priceNormal).toLocaleString('id-ID')}` : ''
+        chip.innerHTML = `${item.name}<span style="font-size:10px;color:rgba(3,69,67,.45);font-weight:400">${price}</span>`
+        chip.onclick = () => {
+          const el = document.getElementById('varian')
+          const cur = el.value.trim()
+          el.value = cur ? cur + ', ' + item.name : item.name
+          el.focus()
+          debouncedSaveDraft()
+        }
+        container.appendChild(chip)
+      })
+    } catch {}
+  }
+
   function selectDiv(d, skipPaymentLoad = false) {
     selectedDiv = d
     DIVISIONS.forEach(x => {
@@ -558,8 +594,8 @@
       b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
     })
     loadPriceList(d)
+    loadVarianChips(d)
     if (!skipPaymentLoad) loadPaymentMethods(d)
-    // Tampilkan size form untuk jersey, konveksi, sablon
     const sizeCard = document.getElementById('sizeCard')
     if (SIZE_DIVISIONS.includes(d)) {
       sizeCard.style.display = ''
@@ -724,6 +760,7 @@
           totalPrice: Number(document.getElementById('totalPrice').value)||0,
           depositPaid: Number(document.getElementById('depositPaid').value)||0,
           notes: document.getElementById('notes').value.trim(),
+          varian: document.getElementById('varian').value.trim() || null,
           sizeBreakdown: getSizeBreakdown() || null,
           sumberOrder: document.getElementById('sumberOrder').value || 'staff',
           agentSessionId: '',
