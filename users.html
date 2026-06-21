@@ -81,7 +81,7 @@
 <script type="module">
   import { auth, db } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp, query, orderBy, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
@@ -90,8 +90,8 @@
   let lokasiOptions = []
 
   async function loadLokasiOptions() {
-    const snap = await getDocs(query(collection(db, 'lokasi'), where('aktif', '!=', false), orderBy('aktif'), orderBy('tipe')))
-    lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('tipe')))
+    lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
     const sel = document.getElementById('newLokasiId')
     lokasiOptions.forEach(l => {
       const opt = document.createElement('option')
@@ -112,8 +112,12 @@
   })
 
   window.onRoleChange = function(role) {
-    document.getElementById('divisiWrap').style.display = role === 'production' ? '' : 'none'
+    document.getElementById('divisiWrap').style.display = (role === 'production' || role === 'cs') ? '' : 'none'
     document.getElementById('pinWrap').style.display = role === 'manager' ? '' : 'none'
+    const hint = document.querySelector('#divisiWrap .form-hint')
+    if (hint) hint.textContent = role === 'production'
+      ? 'Tim produksi hanya melihat order dari divisi yang dipilih'
+      : 'CS Pusat — kosongkan jika CS ini handle semua divisi (untuk cabang/titik)'
   }
 
   requireAuth((profile) => {
@@ -176,7 +180,7 @@
       // Save to Firestore
       const lokasiId = document.getElementById('newLokasiId').value
       const lokasiNama = lokasiId ? (lokasiOptions.find(l => l.id === lokasiId)?.nama || '') : ''
-      const divisions = role === 'production' ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
+      const divisions = (role === 'production' || role === 'cs') ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
       const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
       if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')

@@ -97,13 +97,15 @@ export function requireAuth(callback) {
 
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
 
-      // Fetch lokasiId dari operational db (harmoni-custom-order)
+      // Fetch lokasiId + divisions fallback dari operational db (harmoni-custom-order)
       try {
         const opSnap = await getDoc(doc(db, 'users', snap.id))
         if (opSnap.exists()) {
           const op = opSnap.data()
           if (op.lokasiId) fresh.lokasiId = op.lokasiId
           if (op.lokasiNama) fresh.lokasiNama = op.lokasiNama
+          // Pakai divisions dari db sebagai fallback kalau portal tidak ada divisions (untuk CS)
+          if (!fresh.divisions?.length && op.divisions?.length) fresh.divisions = op.divisions
         }
       } catch {}
 
@@ -320,6 +322,8 @@ function initNotifications(profile) {
   injectNotifPanel()
   const getLastRead = () => parseInt(localStorage.getItem(`notifReadAt_${profile.id}`) || '0')
 
+  // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
+  dataAuthReady.then(() => {
   const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
   onSnapshot(q, snap => {
     let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -370,4 +374,5 @@ function initNotifications(profile) {
       </div>`
     }).join('')
   }, () => {})
+  }) // dataAuthReady.then
 }

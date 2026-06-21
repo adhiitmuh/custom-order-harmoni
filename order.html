@@ -1312,7 +1312,7 @@
   window.sendInternalMsg = async function() {
     const input = document.getElementById('internalChatInput')
     const content = input?.value.trim()
-    if (!content) return
+    if (!content || !order) return
     const profile = getProfile()
     input.value = ''
     input.style.height = 'auto'
@@ -1335,7 +1335,7 @@
       fromRole:    profile.role,
       preview:     content.substring(0, 80),
       createdAt:   Timestamp.now(),
-    }).catch(() => {})
+    }).catch(err => console.error('Notification write failed:', err))
   }
 
   window.copyChatLink = function(token) {
