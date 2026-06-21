@@ -1323,6 +1323,19 @@
       senderRole: profile.role,
       createdAt:  Timestamp.now(),
     })
+    // Tulis notifikasi untuk staff lain
+    addDoc(collection(db, 'notifications'), {
+      type:        'internal_chat',
+      orderId,
+      orderNumber: order.orderNumber || '',
+      division:    order.division || '',
+      lokasiId:    order.lokasiId || null,
+      fromUid:     profile.id,
+      fromName:    profile.name,
+      fromRole:    profile.role,
+      preview:     content.substring(0, 80),
+      createdAt:   Timestamp.now(),
+    }).catch(() => {})
   }
 
   window.copyChatLink = function(token) {

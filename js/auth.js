@@ -1,7 +1,7 @@
 import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-import { DIVISION_META, DIVISIONS } from './utils.js'
+import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
@@ -18,6 +18,7 @@ export const dataAuthReady = new Promise(resolve => {
 
 let _user = null
 let _profile = null
+let _notifInitialized = false
 
 export const getUser = () => _user
 export const getProfile = () => _profile
@@ -95,6 +96,17 @@ export function requireAuth(callback) {
       }
 
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
+
+      // Fetch lokasiId dari operational db (harmoni-custom-order)
+      try {
+        const opSnap = await getDoc(doc(db, 'users', snap.id))
+        if (opSnap.exists()) {
+          const op = opSnap.data()
+          if (op.lokasiId) fresh.lokasiId = op.lokasiId
+          if (op.lokasiNama) fresh.lokasiNama = op.lokasiNama
+        }
+      } catch {}
+
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
       // Sync role to harmoni-custom-order so Firestore Rules can check it.
@@ -110,6 +122,11 @@ export function requireAuth(callback) {
 
       _profile = fresh
       renderSidebar(fresh)
+
+      if (!_notifInitialized) {
+        _notifInitialized = true
+        initNotifications(fresh)
+      }
 
       // Only fire callback if optimistic render didn't already run it
       if (!_callbackFired) {
@@ -234,6 +251,7 @@ export function renderSidebar(profile) {
         <div class="user-name">${profile.name}</div>
         <div class="user-role">${(profile.role||'').toUpperCase()}${profile.branch ? ' · ' + profile.branch : ''}</div>
       </div>
+      <button id="notifBell" onclick="window.toggleNotifPanel()" title="Notifikasi" style="position:relative;background:none;border:none;cursor:pointer;color:#FFFBD5;font-size:15px;padding:4px;line-height:1;opacity:.6;flex-shrink:0">🔔<span id="notifBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ef4444;color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:0 3px;min-width:13px;text-align:center;line-height:1.6">0</span></button>
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
     </div>`
 
@@ -252,4 +270,104 @@ window.sidebarToggleDivisi = function() {
   links.style.display = open ? '' : 'none'
   if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)'
   localStorage.setItem('sidebar_divisi_open', open)
+}
+
+function injectNotifPanel() {
+  if (document.getElementById('notifPanel')) return
+  const panel = document.createElement('div')
+  panel.id = 'notifPanel'
+  panel.style.cssText = 'display:none;position:fixed;bottom:64px;left:10px;width:272px;background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:2000;overflow:hidden;border:1px solid rgba(3,69,67,.1)'
+  panel.innerHTML = `
+    <div style="padding:12px 14px 10px;border-bottom:1px solid rgba(3,69,67,.07);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:13px;font-weight:700;color:#034543">🔔 Notifikasi</span>
+      <button onclick="window.markNotifsRead()" style="font-size:11px;color:rgba(3,69,67,.4);background:none;border:none;cursor:pointer;font-family:inherit">Semua dibaca</button>
+    </div>
+    <div id="notifList" style="overflow-y:auto;max-height:360px">
+      <div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>
+    </div>`
+  document.body.appendChild(panel)
+  document.addEventListener('click', e => {
+    if (!panel.contains(e.target) && !e.target.closest('#notifBell')) {
+      panel.style.display = 'none'
+    }
+  }, true)
+}
+
+window.toggleNotifPanel = function() {
+  const panel = document.getElementById('notifPanel')
+  if (!panel) return
+  const willOpen = panel.style.display === 'none'
+  panel.style.display = willOpen ? '' : 'none'
+  if (willOpen) window.markNotifsRead()
+}
+
+window.markNotifsRead = function() {
+  if (!_profile) return
+  localStorage.setItem(`notifReadAt_${_profile.id}`, Date.now().toString())
+  const badge = document.getElementById('notifBadge')
+  if (badge) badge.style.display = 'none'
+  document.querySelectorAll('#notifList .notif-item').forEach(el => {
+    el.style.background = 'transparent'
+  })
+}
+
+window.goToOrderFromNotif = function(orderId) {
+  document.getElementById('notifPanel').style.display = 'none'
+  window.location.href = `order.html?id=${orderId}`
+}
+
+function initNotifications(profile) {
+  injectNotifPanel()
+  const getLastRead = () => parseInt(localStorage.getItem(`notifReadAt_${profile.id}`) || '0')
+
+  const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
+  onSnapshot(q, snap => {
+    let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    // Filter sesuai role + lokasi + divisi
+    if (profile.role !== 'owner') {
+      notifs = notifs.filter(n => {
+        if (n.fromUid === profile.id) return false
+        if (profile.divisions?.length) return profile.divisions.includes(n.division)
+        return !n.lokasiId || n.lokasiId === profile.lokasiId
+      })
+    } else {
+      notifs = notifs.filter(n => n.fromUid !== profile.id)
+    }
+
+    const lastReadAt = getLastRead()
+    const unread = notifs.filter(n => {
+      const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+      return ts > lastReadAt
+    }).length
+
+    const badge = document.getElementById('notifBadge')
+    if (badge) {
+      badge.textContent = unread > 9 ? '9+' : String(unread)
+      badge.style.display = unread > 0 ? '' : 'none'
+    }
+
+    const list = document.getElementById('notifList')
+    if (!list) return
+
+    if (!notifs.length) {
+      list.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>'
+      return
+    }
+
+    list.innerHTML = notifs.slice(0, 20).map(n => {
+      const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+      const isUnread = ts > lastReadAt
+      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId}')"
+        style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
+        onmouseover="this.style.background='rgba(3,69,67,.08)'"
+        onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+          <span style="font-size:11px;font-weight:700;color:#034543">${n.orderNumber || '—'}</span>
+          <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
+        </div>
+        <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
+      </div>`
+    }).join('')
+  }, () => {})
 }
