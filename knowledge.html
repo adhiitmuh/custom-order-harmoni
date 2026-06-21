@@ -411,6 +411,7 @@
       <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
       ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
       <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
+      <td style="white-space:normal;min-width:120px"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
       <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
     </tr>` : `<tr>
       <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
@@ -419,13 +420,14 @@
       <td class="tier-admin">${p.priceAdmin ? Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
       ${canEditModal ? `<td class="tier-modal">${p.priceModal ? Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
       <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
+      <td style="color:rgba(3,69,67,.4);font-size:12px;white-space:normal">${escAttr(p.note||'—')}</td>
     </tr>`).join('')
 
     return `<div style="overflow-x:auto"><table class="price-table">
       <thead><tr>
         <th>LAYANAN / PRODUK</th><th>NORMAL</th><th>PROMO</th><th>ADMIN</th>
         ${canEditModal ? '<th>MODAL</th>' : ''}
-        <th>SATUAN</th>${canEdit ? '<th></th>' : ''}
+        <th>SATUAN</th><th>KETERANGAN</th>${canEdit ? '<th></th>' : ''}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
