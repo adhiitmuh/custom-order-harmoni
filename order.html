@@ -101,10 +101,17 @@
 
   requireAuth((profile) => {
     loadPaymentInfo()
-    loadOrder(profile)
+    // Timeout fallback — kalau 10 detik masih loading, minta refresh
+    const loadTimeout = setTimeout(() => {
+      const el = document.getElementById('pageContent')
+      if (el && el.querySelector('.loading')) {
+        el.innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Koneksi lambat atau perlu refresh.<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Refresh halaman</a></p></div>`
+      }
+    }, 10000)
+    loadOrder(profile, loadTimeout)
   })
 
-  async function loadOrder(profile) {
+  async function loadOrder(profile, loadTimeout) {
     try {
     await dataAuthReady
     const snap = await getDoc(doc(db,'orders',orderId))
@@ -126,11 +133,13 @@
     const updSnap = await getDocs(query(collection(db,'orders',orderId,'progress_updates'), orderBy('createdAt','desc')))
     order.progressUpdates = updSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
+    clearTimeout(loadTimeout)
     renderPage(profile)
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
     setTimeout(() => { initChat(); initInternalChat() }, 200)
     } catch(err) {
+      clearTimeout(loadTimeout)
       document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
     }
   }
@@ -318,8 +327,8 @@
                       onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')cancelItemModal(${i})">
                   </td>` : canSubmitModal ? `
                   <td style="padding:9px 0;text-align:right;font-size:12px">
-                    ${order.pendingOrderItems?.[${i}]?.priceModal
-                      ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[${i}].priceModal)}</span>`
+                    ${order.pendingOrderItems?.[i]?.priceModal
+                      ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[i].priceModal)}</span>`
                       : `<span style="color:rgba(3,69,67,.2)">—</span>`}
                   </td>` : ''}
                   <td style="padding:9px 0;text-align:right;font-weight:600">${fmtCurrency(it.subtotal)}</td>

@@ -9,12 +9,15 @@ if ('serviceWorker' in navigator) {
 
 // Pastikan dataAuth (harmoni-custom-order) selalu punya sesi agar Firestore rules isAuth() lolos
 // Juga expose promise supaya halaman bisa tunggu sebelum query Firestore
-export const dataAuthReady = new Promise(resolve => {
-  onAuthStateChanged(dataAuth, (u) => {
-    if (u) { resolve(u); return }
-    signInAnonymously(dataAuth).then(cred => resolve(cred.user)).catch(() => resolve(null))
-  })
-})
+export const dataAuthReady = Promise.race([
+  new Promise(resolve => {
+    onAuthStateChanged(dataAuth, (u) => {
+      if (u) { resolve(u); return }
+      signInAnonymously(dataAuth).then(cred => resolve(cred.user)).catch(() => resolve(null))
+    })
+  }),
+  new Promise(resolve => setTimeout(() => resolve(null), 5000))
+])
 
 let _user = null
 let _profile = null
