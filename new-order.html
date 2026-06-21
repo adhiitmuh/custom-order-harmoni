@@ -153,17 +153,6 @@
         </div>
       </div>
 
-      <!-- Varian -->
-      <div class="card" style="margin-bottom:16px">
-        <h2 style="font-size:15px;font-weight:700;margin-bottom:6px">Varian / Spesifikasi</h2>
-        <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:10px">Pilih dari daftar harga atau ketik bebas</p>
-        <div id="varianChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-        <textarea id="varian" placeholder="Contoh: Bordir 3D benang emas, background hitam…" rows="2" style="margin-bottom:10px"></textarea>
-        <div id="qtyManualWrap" style="display:none">
-          <label style="font-size:12px;font-weight:700;color:rgba(3,69,67,.6)">Jumlah (pcs)</label>
-          <input type="number" id="qtyManual" min="1" step="1" placeholder="0" oninput="window.recalcAutoModal()" style="max-width:140px;margin-top:4px">
-        </div>
-      </div>
 
       <!-- Notes -->
       <div class="card" style="margin-bottom:16px">
@@ -228,17 +217,23 @@
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon']
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
 
-  let _chipModalPerPcs = 0
-  let _autoHargaModal  = 0
+  let _autoHargaModal = 0
+  const _rowModalPrice = {}
 
   window.recalcAutoModal = function() {
-    let qty = 0
     if (SIZE_DIVISIONS.includes(selectedDiv)) {
-      qty = SIZES.reduce((s, sz) => s + (Number(document.getElementById('size_'+sz)?.value)||0), 0)
+      const qty = SIZES.reduce((s, sz) => s + (Number(document.getElementById('size_'+sz)?.value)||0), 0)
+      const rows = [...document.querySelectorAll('#itemRows tr')]
+      const firstId = rows[0]?.id.replace('row-','')
+      const modal = firstId ? (_rowModalPrice[firstId] || 0) : 0
+      _autoHargaModal = modal * qty
     } else {
-      qty = Number(document.getElementById('qtyManual')?.value) || 0
+      _autoHargaModal = [...document.querySelectorAll('#itemRows tr')].reduce((sum, tr) => {
+        const rowId = tr.id.replace('row-','')
+        const qty = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
+        return sum + qty * (_rowModalPrice[rowId] || 0)
+      }, 0)
     }
-    _autoHargaModal = _chipModalPerPcs > 0 && qty > 0 ? _chipModalPerPcs * qty : 0
   }
 
   function renderSizeGrid() {
@@ -302,7 +297,6 @@
         depositPaid: document.getElementById('depositPaid').value,
         paymentMethod: document.getElementById('paymentMethod').value,
         notes: document.getElementById('notes').value,
-        varian: document.getElementById('varian').value,
         lokasiId: document.getElementById('lokasiId').value,
         sumberOrder: document.getElementById('sumberOrder').value,
         approvalReason: document.getElementById('approvalReason')?.value || '',
@@ -333,7 +327,6 @@
     if (draft.totalPrice)      document.getElementById('totalPrice').value      = draft.totalPrice
     if (draft.depositPaid)     document.getElementById('depositPaid').value     = draft.depositPaid
     if (draft.notes)           document.getElementById('notes').value           = draft.notes
-    if (draft.varian)          document.getElementById('varian').value          = draft.varian
     if (draft.sumberOrder)     document.getElementById('sumberOrder').value     = draft.sumberOrder
     if (draft.approvalReason)  document.getElementById('approvalReason').value  = draft.approvalReason
     if (draft.lokasiId)        document.getElementById('lokasiId').value        = draft.lokasiId
@@ -397,6 +390,7 @@
 
   window.addItemRow = function(item = {}) {
     const id = ++itemRowCount
+    _rowModalPrice[id] = item.priceModal || 0
     const tbody = document.getElementById('itemRows')
     const tr = document.createElement('tr')
     tr.id = `row-${id}`
@@ -407,6 +401,10 @@
           data-field="name" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'">
+        <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
+          data-field="varian" data-row="${id}"
+          style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
+          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'">
       </td>
       <td style="padding:6px 4px">
         <input type="number" placeholder="0" min="1" value="${item.qty||''}"
@@ -432,6 +430,7 @@
       </td>`
     tbody.appendChild(tr)
     recalcTotal()
+    window.recalcAutoModal()
     debouncedSaveDraft()
   }
 
@@ -442,11 +441,14 @@
     const el    = document.getElementById(`sub-${id}`)
     if (el) el.textContent = sub > 0 ? `Rp ${sub.toLocaleString('id-ID')}` : '—'
     recalcTotal()
+    window.recalcAutoModal()
   }
 
   window.removeRow = function(id) {
     document.getElementById(`row-${id}`)?.remove()
+    delete _rowModalPrice[id]
     recalcTotal()
+    window.recalcAutoModal()
     debouncedSaveDraft()
   }
 
@@ -476,9 +478,10 @@
   function getItemRows() {
     return [...document.querySelectorAll('#itemRows tr')].map(tr => {
       const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
+      const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
       const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
-      return { name, qty, pricePerUnit: price, subtotal: qty * price }
+      return { name, varian, qty, pricePerUnit: price, subtotal: qty * price }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
   }
   let currentPriceList = null
@@ -513,7 +516,7 @@
   window.addFromCatalog = function(index) {
     const p = currentPriceList?.items?.[index]
     if (!p) return
-    addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1 })
+    addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
   }
 
   window.checkPriceTierLive = function() {
@@ -578,34 +581,6 @@
     grid.appendChild(btn)
   })
 
-  async function loadVarianChips(division) {
-    const container = document.getElementById('varianChips')
-    container.innerHTML = ''
-    try {
-      const snap = await getDoc(fsDoc(db, 'price_list', division))
-      if (!snap.exists()) return
-      const items = snap.data().items || []
-      items.forEach(item => {
-        if (!item.name) return
-        const chip = document.createElement('button')
-        chip.type = 'button'
-        chip.style.cssText = 'padding:5px 10px;border-radius:999px;border:1.5px solid rgba(3,69,67,.2);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:600;display:inline-flex;align-items:center;gap:4px'
-        const price = item.priceNormal ? ` · Rp ${Number(item.priceNormal).toLocaleString('id-ID')}` : ''
-        chip.innerHTML = `${item.name}<span style="font-size:10px;color:rgba(3,69,67,.45);font-weight:400">${price}</span>`
-        chip.onclick = () => {
-          const el = document.getElementById('varian')
-          const cur = el.value.trim()
-          el.value = cur ? cur + ', ' + item.name : item.name
-          el.focus()
-          _chipModalPerPcs = item.priceModal || 0
-          window.recalcAutoModal()
-          debouncedSaveDraft()
-        }
-        container.appendChild(chip)
-      })
-    } catch {}
-  }
-
   function selectDiv(d, skipPaymentLoad = false) {
     selectedDiv = d
     DIVISIONS.forEach(x => {
@@ -613,15 +588,8 @@
       b.style.borderColor = x===d ? '#034543' : 'rgba(3,69,67,.12)'
       b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
     })
-    _chipModalPerPcs = 0
-    _autoHargaModal  = 0
-    const qtyWrap = document.getElementById('qtyManualWrap')
-    if (qtyWrap) {
-      qtyWrap.style.display = SIZE_DIVISIONS.includes(d) ? 'none' : ''
-      if (!SIZE_DIVISIONS.includes(d)) document.getElementById('qtyManual').value = ''
-    }
+    _autoHargaModal = 0
     loadPriceList(d)
-    loadVarianChips(d)
     if (!skipPaymentLoad) loadPaymentMethods(d)
     const sizeCard = document.getElementById('sizeCard')
     if (SIZE_DIVISIONS.includes(d)) {
@@ -787,7 +755,7 @@
           totalPrice: Number(document.getElementById('totalPrice').value)||0,
           depositPaid: Number(document.getElementById('depositPaid').value)||0,
           notes: document.getElementById('notes').value.trim(),
-          varian: document.getElementById('varian').value.trim() || null,
+          varian: getItemRows().map(i => i.varian).filter(Boolean).join(', ') || null,
           sizeBreakdown: getSizeBreakdown() || null,
           hargaModal: _autoHargaModal > 0 ? _autoHargaModal : null,
           sumberOrder: document.getElementById('sumberOrder').value || 'staff',
