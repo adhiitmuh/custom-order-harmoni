@@ -64,38 +64,41 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, query, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
 
   let allOrders = []
-
-  // Populate division filter
-  const divSel = document.getElementById('divFilter')
-  DIVISIONS.forEach(d => {
-    const opt = document.createElement('option')
-    opt.value = d; opt.textContent = DIVISION_META[d].label
-    divSel.appendChild(opt)
-  })
-
+  let _activeDivsMeta = null
   let lockedDivision = null
   let lockedDivisions = null
   let lockedBranch = null
 
-  requireAuth((profile) => {
+  requireAuth(async (profile) => {
+    // Populate division filter with dynamic divisions
+    const activeDivs = await getActiveDivisions()
+    const divSel = document.getElementById('divFilter')
+    // Clear any previously added options (keep first "Semua" option)
+    while (divSel.options.length > 1) divSel.remove(1)
+    activeDivs.forEach(d => {
+      const opt = document.createElement('option')
+      opt.value = d.key; opt.textContent = d.label
+      divSel.appendChild(opt)
+    })
+    _activeDivsMeta = Object.fromEntries(activeDivs.map(d => [d.key, d]))
     if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
 
     if (profile.role === 'production') {
       const userDivs = profile.divisions?.length ? profile.divisions : (profile.division ? [profile.division] : [])
       if (userDivs.length === 1) {
         lockedDivision = userDivs[0]
-        const meta = DIVISION_META[lockedDivision] || {}
+        const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
         document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
         document.getElementById('divLockBadge').style.display = 'inline-flex'
         document.getElementById('divFilter').style.display = 'none'
       } else if (userDivs.length > 1) {
         lockedDivisions = userDivs
-        document.getElementById('divLockBadge').innerHTML = userDivs.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')
+        document.getElementById('divLockBadge').innerHTML = userDivs.map(d=>{const m=activeDivs.find(x=>x.key===d)||DIVISION_META[d]||{};return`${m.icon||''} ${m.label||d}`}).join(' · ')
         document.getElementById('divLockBadge').style.display = 'inline-flex'
         document.getElementById('divFilter').style.display = 'none'
       }
@@ -205,7 +208,7 @@
     }
 
     el.innerHTML = filtered.map(o => {
-      const meta = DIVISION_META[o.division] || {}
+      const meta = (_activeDivsMeta?.[o.division]) || DIVISION_META[o.division] || {}
       const dLeft = daysDiff(o.dueDate)
       const isLate = dLeft < 0 && !['done','delivered','cancelled'].includes(o.status)
       const isUrgent = dLeft >= 0 && dLeft <= 1 && !['done','delivered','cancelled'].includes(o.status)

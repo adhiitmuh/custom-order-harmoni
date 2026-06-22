@@ -1,6 +1,6 @@
 import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
 if ('serviceWorker' in navigator) {
@@ -19,6 +19,40 @@ export const dataAuthReady = new Promise(resolve => {
 let _user = null
 let _profile = null
 let _notifInitialized = false
+let _divisions = null
+let _divisionsPromise = null
+
+function _staticDivisions() {
+  return DIVISIONS.map((key, i) => ({ key, ...DIVISION_META[key], aktif: true, orderIndex: i }))
+}
+
+export function getActiveDivisions() {
+  if (_divisions !== null) return Promise.resolve(_divisions)
+  if (_divisionsPromise) return _divisionsPromise
+  _divisionsPromise = dataAuthReady.then(async () => {
+    try {
+      const snap = await getDocs(collection(db, 'divisions'))
+      if (snap.empty) return _staticDivisions()
+      const divs = snap.docs
+        .map(d => ({ key: d.id, ...d.data() }))
+        .filter(d => d.aktif !== false)
+        .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+      return divs.length ? divs : _staticDivisions()
+    } catch {
+      return _staticDivisions()
+    }
+  }).then(divs => {
+    _divisions = divs
+    _divisionsPromise = null
+    return divs
+  })
+  return _divisionsPromise
+}
+
+export function invalidateDivisionsCache() {
+  _divisions = null
+  _divisionsPromise = null
+}
 
 export const getUser = () => _user
 export const getProfile = () => _profile
@@ -124,6 +158,8 @@ export function requireAuth(callback) {
 
       _profile = fresh
       renderSidebar(fresh)
+      // Pre-fetch divisions in background; re-render sidebar when done so dynamic divs appear
+      getActiveDivisions().then(() => renderSidebar(fresh)).catch(() => {})
 
       if (!_notifInitialized) {
         _notifInitialized = true
@@ -159,9 +195,10 @@ export function renderSidebar(profile) {
     ? true
     : localStorage.getItem('sidebar_divisi_open') !== 'false'
 
-  const divLinks = DIVISIONS.map(d => `
-    <a href="knowledge.html?div=${d}" class="sidebar-link ${onKnowledge && activeDiv === d ? 'active' : ''}">
-      <span class="icon">${DIVISION_META[d].icon}</span>${DIVISION_META[d].label}
+  const activeDivs = _divisions || _staticDivisions()
+  const divLinks = activeDivs.map(d => `
+    <a href="knowledge.html?div=${d.key}" class="sidebar-link ${onKnowledge && activeDiv === d.key ? 'active' : ''}">
+      <span class="icon">${d.icon}</span>${d.label}
     </a>`).join('')
 
   el.innerHTML = `
@@ -240,6 +277,9 @@ export function renderSidebar(profile) {
       </a>
       <a href="lokasi.html" class="sidebar-link ${page==='lokasi.html'?'active':''}">
         <span class="icon">🏪</span>Lokasi Harmoni
+      </a>
+      <a href="divisi.html" class="sidebar-link ${page==='divisi.html'?'active':''}">
+        <span class="icon">🏷️</span>Kelola Divisi
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
         <span class="icon">💳</span>Metode Pembayaran

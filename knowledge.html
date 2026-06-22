@@ -89,7 +89,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
 
@@ -103,12 +103,12 @@
   let _inlineSaveTimers = {}
   let _savedToast = null
 
-  requireAuth((profile) => {
-    renderTabs(profile)
+  requireAuth(async (profile) => {
+    await renderTabs(profile)
     loadContent(profile)
   })
 
-  function renderTabs(profile) {
+  async function renderTabs(profile) {
     const el = document.getElementById('divTabs')
     el.innerHTML = ''
     const allBtn = document.createElement('button')
@@ -116,11 +116,12 @@
     allBtn.textContent = '📖 Semua'
     allBtn.onclick = () => { activeDiv = ''; history.pushState(null,'','knowledge.html'); renderTabs(profile); loadContent(profile) }
     el.appendChild(allBtn)
-    DIVISIONS.forEach(d => {
+    const divs = await getActiveDivisions()
+    divs.forEach(d => {
       const btn = document.createElement('button')
-      btn.className = `btn btn-sm ${activeDiv === d ? 'btn-primary' : 'btn-ghost'}`
-      btn.innerHTML = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-      btn.onclick = () => { activeDiv = d; history.pushState(null,'',`knowledge.html?div=${d}`); renderTabs(profile); loadContent(profile) }
+      btn.className = `btn btn-sm ${activeDiv === d.key ? 'btn-primary' : 'btn-ghost'}`
+      btn.innerHTML = `${d.icon} ${d.label}`
+      btn.onclick = () => { activeDiv = d.key; history.pushState(null,'',`knowledge.html?div=${d.key}`); renderTabs(profile); loadContent(profile) }
       el.appendChild(btn)
     })
   }
@@ -128,7 +129,8 @@
   async function loadContent(profile) {
     const el = document.getElementById('knowledgeContent')
     const cacheKey = activeDiv || '__all__'
-    const divsToShow = activeDiv ? [activeDiv] : DIVISIONS
+    const activeDivs = await getActiveDivisions()
+    const divsToShow = activeDiv ? [activeDiv] : activeDivs.map(d => d.key)
     // Show cached content immediately — fetch fresh in background
     if (contentCache[cacheKey]) {
       el.innerHTML = contentCache[cacheKey]
@@ -159,7 +161,8 @@
         }
       })
 
-      document.getElementById('pageTitle').textContent = activeDiv ? DIVISION_META[activeDiv]?.label : 'Product Knowledge'
+      const activeDivMeta = activeDivs.find(d => d.key === activeDiv)
+      document.getElementById('pageTitle').textContent = activeDiv ? (activeDivMeta?.label || activeDiv) : 'Product Knowledge'
 
       // Seed prompt if empty
       if (allSections.length === 0 && profile.role === 'owner') {
@@ -179,7 +182,7 @@
 
       const rendered = divsToShow.map(d => {
         const divSections = allSections.filter(s => s.division === d)
-        const meta = DIVISION_META[d]
+        const meta = activeDivs.find(x => x.key === d) || DIVISION_META[d] || { icon: '📦', label: d }
         const prices = priceData[d]?.items || []
         return `
           <div style="margin-bottom:28px" id="div-${d}">
@@ -292,7 +295,8 @@
     editingPriceDiv = division
     const snap = await getDoc(doc(db,'price_list',division))
     const items = snap.exists() ? snap.data().items || [] : []
-    document.getElementById('priceModalTitle').textContent = `Edit Daftar Harga — ${DIVISION_META[division]?.label}`
+    const divMeta = (await getActiveDivisions()).find(d => d.key === division) || DIVISION_META[division]
+    document.getElementById('priceModalTitle').textContent = `Edit Daftar Harga — ${divMeta?.label || division}`
     renderPriceRows(items)
     document.getElementById('priceModal').style.display = 'flex'
   }
