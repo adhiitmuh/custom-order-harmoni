@@ -599,7 +599,10 @@
           <div style="display:flex;gap:8px;align-items:center">
             ${order.chatToken ? `
             <button onclick="copyChatLink('${order.chatToken}')" class="btn btn-ghost btn-sm" id="copyLinkBtn">
-              🔗 Copy Link Customer
+              🔗 Copy Link
+            </button>
+            <button onclick="shareChatLinkWA('${order.chatToken}')" class="btn btn-sm" style="background:#25D366;color:white;border:none;font-weight:700">
+              📱 Kirim ke Customer
             </button>` : `
             <button onclick="generateToken()" class="btn btn-ghost btn-sm">🔗 Buat Link Chat</button>`}
           </div>
@@ -1353,10 +1356,13 @@
   }
 
   function showWAToast(status) {
+    const chatUrl = order.chatToken
+      ? `\n\n📱 Pantau progress & diskusi desain:\n${location.origin}${location.pathname.replace('order.html','chat.html')}?t=${order.chatToken}`
+      : ''
     const msgs = {
-      'in-progress': `Pesanan *${order.orderNumber}* sudah mulai dikerjakan ✂️\nEstimasi selesai: ${fmtDate(order.dueDate)}\n\nTerima kasih atas kepercayaan Anda kepada *Harmoni* 🙏`,
-      'quality-check': `Pesanan *${order.orderNumber}* selesai diproduksi dan sedang quality check 🔍\nKami pastikan sempurna sebelum diserahkan.`,
-      'done': `Pesanan *${order.orderNumber}* sudah selesai! ✅\n\n${(order.totalPrice||0)-(order.depositPaid||0)>0?`Sisa pembayaran: *${fmtCurrency((order.totalPrice||0)-(order.depositPaid||0))}*\n\n`:''}Silakan hubungi kami untuk pengambilan. Terima kasih 🙏`,
+      'in-progress': `Pesanan *${order.orderNumber}* sudah mulai dikerjakan ✂️\nEstimasi selesai: ${fmtDate(order.dueDate)}\n\nTerima kasih atas kepercayaan Anda kepada *Harmoni* 🙏${chatUrl}`,
+      'quality-check': `Pesanan *${order.orderNumber}* selesai diproduksi dan sedang quality check 🔍\nKami pastikan sempurna sebelum diserahkan.${chatUrl}`,
+      'done': `Pesanan *${order.orderNumber}* sudah selesai! ✅\n\n${(order.totalPrice||0)-(order.depositPaid||0)>0?`Sisa pembayaran: *${fmtCurrency((order.totalPrice||0)-(order.depositPaid||0))}*\n\n`:''}Silakan hubungi kami untuk pengambilan. Terima kasih 🙏${chatUrl}`,
       'delivered': `Pesanan *${order.orderNumber}* sudah dikirim/diserahkan 📦\n\nTerima kasih telah berbelanja di *Harmoni*! Semoga puas dengan hasilnya 😊`,
       'cancelled': `Pesanan *${order.orderNumber}* telah dibatalkan.\nMohon maaf atas ketidaknyamanannya. Hubungi kami untuk info lebih lanjut 🙏`,
     }
@@ -1623,9 +1629,19 @@
     const url = `${location.origin}${location.pathname.replace('order.html','chat.html')}?t=${token}`
     navigator.clipboard.writeText(url).then(() => {
       const btn = document.getElementById('copyLinkBtn')
-      btn.textContent = '✓ Link Tersalin!'
-      setTimeout(() => btn.textContent='🔗 Copy Link Customer', 2000)
+      btn.textContent = '✓ Tersalin!'
+      setTimeout(() => btn.textContent='🔗 Copy Link', 2000)
     })
+  }
+
+  window.shareChatLinkWA = function(token) {
+    const chatUrl = `${location.origin}${location.pathname.replace('order.html','chat.html')}?t=${token}`
+    const msg = `Halo *${order.customerName}*,\n\nBerikut link untuk memantau progress dan berdiskusi desain pesanan Anda (*${order.orderNumber}*):\n\n${chatUrl}\n\nMelalui link ini Anda bisa:\n✅ Lihat status pengerjaan\n✅ Diskusi & kirim referensi desain\n✅ Chat langsung dengan tim Harmoni\n\n_Harmoni · Makassar_`
+    const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
+    const url = contact.startsWith('62')
+      ? `https://wa.me/${contact}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`
+    window.open(url, '_blank')
   }
 
   window.generateToken = async function() {
