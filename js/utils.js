@@ -96,14 +96,36 @@ export function generateChatToken() {
 
 export function hasContactInfo(text) {
   const t = text
-  if (/\b0\d{8,12}\b/.test(t)) return true           // 08xx phone
-  if (/\+62\d{7,12}/.test(t)) return true             // +62 phone
-  if (/\b62\d{8,12}\b/.test(t)) return true           // 62xx phone
-  if (/\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/.test(t)) return true // 10+ digit number
-  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(t)) return true // email
-  if (/wa\.me|t\.me|line\.me|wa\.link|bit\.ly|tinyurl|fb\.me/.test(t.toLowerCase())) return true // links
-  if (/@[a-zA-Z0-9_.]{3,}/.test(t)) return true      // @username
+  if (/\b0\d{8,12}\b/.test(t)) return true
+  if (/\+62\d{7,12}/.test(t)) return true
+  if (/\b62\d{8,12}\b/.test(t)) return true
+  if (/\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/.test(t)) return true
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(t)) return true
+  if (/wa\.me|t\.me|line\.me|wa\.link|bit\.ly|tinyurl|fb\.me/.test(t.toLowerCase())) return true
+  if (/@[a-zA-Z0-9_.]{3,}/.test(t)) return true
   return false
+}
+
+// Deteksi pola mencurigakan yang tidak secara eksplisit berisi kontak
+// tapi mengindikasikan upaya redirect customer ke luar platform
+export function detectSuspiciousMsg(text) {
+  const t = text.toLowerCase()
+  const patterns = [
+    { re: /\b(wa|whatsapp)\s*(saya|aku|gue|gw|ku|sy)\b/, reason: 'Menyebut WA pribadi' },
+    { re: /\b(ig|instagram|telegram|tiktok|line)\s*(saya|aku|gue|gw|ku|sy)\b/, reason: 'Menyebut medsos pribadi' },
+    { re: /\bhubungi\s*(saya|aku|gue|gw|langsung)\b/, reason: 'Minta dihubungi langsung' },
+    { re: /\b(kontak|contact)\s*(saya|aku|pribadi|langsung)\b/, reason: 'Menawarkan kontak pribadi' },
+    { re: /\bdi\s*luar\s*(sini|sana|platform|aplikasi|app|sistem|chat)\b/, reason: 'Ajak komunikasi di luar platform' },
+    { re: /\b(lanjut|pindah|chat|diskusi|ngobrol)\s*(di\s*)?(luar|via\s*(wa|whatsapp|instagram|telegram|ig))\b/, reason: 'Ajak chat di luar platform' },
+    { re: /\b(harga\s*khusus|diskon\s*pribadi|deal\s*sendiri|harga\s*beda)\b/, reason: 'Menawarkan harga di luar sistem' },
+    { re: /\b(jualan|toko|olshop)\s*(sendiri|ku|aku|saya|gue)\b/, reason: 'Promosi bisnis pribadi' },
+    { re: /\bnomor\s*(hp|handphone|telepon|wa|saya|ku|gue)\b/, reason: 'Menyebut nomor pribadi' },
+    { re: /\b(cari|add|follow|dm)\s*(saya|aku|gue|gw)\b/, reason: 'Minta di-follow / add akun pribadi' },
+  ]
+  for (const p of patterns) {
+    if (p.re.test(t)) return { flagged: true, reason: p.reason }
+  }
+  return { flagged: false, reason: '' }
 }
 
 export const ROLE_LABEL = {

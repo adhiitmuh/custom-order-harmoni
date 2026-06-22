@@ -82,7 +82,7 @@
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
-  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
+  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -1505,12 +1505,30 @@
     const input = document.getElementById('chatInput')
     const text = input.value.trim()
     if (!text || !order.chatToken) return
+
+    const profile = getProfile()
+
     if (hasContactInfo(text)) {
+      addDoc(collection(db,'chat_flags'), {
+        chatToken: order.chatToken,
+        orderId,
+        orderNumber: order.orderNumber || '',
+        staffId: profile.id,
+        staffName: profile.name,
+        staffRole: profile.role,
+        messageText: text,
+        flagReason: 'Percobaan kirim info kontak (diblokir sistem)',
+        flagType: 'blocked',
+        reviewed: false,
+        createdAt: Timestamp.now(),
+      }).catch(() => {})
       alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan.\n\nHapus nomor HP, email, atau link kontak dari pesan Anda.')
       return
     }
-    const profile = getProfile()
+
     input.value = ''
+    const { flagged, reason } = detectSuspiciousMsg(text)
+
     await addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
       text, imageUrl: null, type: 'text',
       senderId: profile.id,
@@ -1519,6 +1537,22 @@
       senderBranch: profile.branch || '',
       createdAt: Timestamp.now(),
     })
+
+    if (flagged) {
+      addDoc(collection(db,'chat_flags'), {
+        chatToken: order.chatToken,
+        orderId,
+        orderNumber: order.orderNumber || '',
+        staffId: profile.id,
+        staffName: profile.name,
+        staffRole: profile.role,
+        messageText: text,
+        flagReason: reason,
+        flagType: 'suspicious',
+        reviewed: false,
+        createdAt: Timestamp.now(),
+      }).catch(() => {})
+    }
   }
 
   window.sendChatFile = async function(input) {

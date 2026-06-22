@@ -93,6 +93,9 @@ export default {
       if (request.method === 'PATCH' && url.pathname === '/update-status') {
         return handleUpdateStatus(request, env, token)
       }
+      if (request.method === 'POST' && url.pathname === '/start-consultation') {
+        return handleStartConsultation(request, env, token)
+      }
       // Manual trigger untuk test deadline check tanpa tunggu cron
       if (request.method === 'POST' && url.pathname === '/trigger-deadline-check') {
         await runDeadlineCheck(env, token)
@@ -638,6 +641,44 @@ async function handleCreateOrderFromChat(request, env) {
   await sendFonnteNotif(env, orderNumber, customerName, division, Number(totalPrice), dueDate, notes, 'inbox')
 
   return json({ success: true, orderId, orderNumber, chatToken, chatUrl })
+}
+
+// Buat sesi konsultasi pra-order — dipanggil WA Bot Agent via n8n
+async function handleStartConsultation(request, env, token) {
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Request body tidak valid (harus JSON)' }, 400)
+
+  const { customerName, division = '', agentSessionId = '', waNumber = '' } = body
+  if (!customerName?.trim()) return json({ error: 'customerName wajib diisi' }, 400)
+
+  const projectId  = env.FIREBASE_PROJECT_ID
+  const chatToken  = generateChatToken()
+  const now        = new Date().toISOString()
+
+  await firestoreSet(projectId, token, `consultations/${chatToken}`, {
+    token:          { stringValue: chatToken },
+    customerName:   { stringValue: customerName.trim() },
+    division:       { stringValue: division },
+    agentSessionId: { stringValue: agentSessionId },
+    status:         { stringValue: 'open' },
+    lastMessage:    { stringValue: '' },
+    lastMessageAt:  { timestampValue: now },
+    unreadCount:    { integerValue: '0' },
+    hasFlag:        { booleanValue: false },
+    createdAt:      { timestampValue: now },
+    updatedAt:      { timestampValue: now },
+  })
+
+  // Simpan WA number terproteksi (CS tidak bisa baca)
+  if (waNumber) {
+    await firestoreSet(projectId, token, `chat_wa_numbers/${waNumber}`, {
+      token:     { stringValue: chatToken },
+      createdAt: { timestampValue: now },
+    }).catch(() => {})
+  }
+
+  const chatUrl = `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${chatToken}`
+  return json({ success: true, chatToken, chatUrl })
 }
 
 function detectRedFlag(content) {

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Chat — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .ftab { font-size:12px; font-weight:600; padding:6px 14px; border-radius:999px; cursor:pointer; border:1.5px solid rgba(3,69,67,.15); color:rgba(3,69,67,.5); background:none; font-family:inherit; transition:all .1s; }
+    .ftab.active { background:var(--green); color:var(--beige); border-color:var(--green); }
+    .ftab:hover:not(.active) { background:rgba(3,69,67,.06); }
+
+    .flag-card { background:var(--white); border-radius:12px; padding:16px; margin-bottom:10px; border:1.5px solid rgba(3,69,67,.08); transition:opacity .15s; }
+    .flag-card.reviewed { opacity:.45; }
+    .flag-blocked  { border-left:4px solid #ef4444; }
+    .flag-suspicious { border-left:4px solid #f59e0b; }
+
+    .flag-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; }
+    .badge-blocked    { background:#fee2e2; color:#b91c1c; }
+    .badge-suspicious { background:#fef3c7; color:#92400e; }
+    .badge-reviewed   { background:#f1f5f9; color:#475569; }
+
+    .flag-msg { font-size:13px; font-style:italic; color:rgba(3,69,67,.7); background:rgba(3,69,67,.04); border-radius:8px; padding:10px 14px; margin:8px 0; border-left:3px solid rgba(3,69,67,.15); white-space:pre-wrap; word-break:break-word; }
+
+    .stat-box { background:var(--white); border-radius:12px; padding:16px 20px; border:1.5px solid rgba(3,69,67,.08); text-align:center; }
+    .stat-num  { font-size:28px; font-weight:800; letter-spacing:-.04em; }
+    .stat-lbl  { font-size:11px; color:rgba(3,69,67,.45); margin-top:2px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+
+    <div style="margin-bottom:20px">
+      <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black);margin-top:8px">🚩 Audit Chat</h1>
+      <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Pantau pesan mencurigakan dari staff. <b>Diblokir</b> = sistem cegah otomatis. <b>Mencurigakan</b> = terkirim tapi perlu ditinjau.</p>
+    </div>
+
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px" id="statsRow">
+      <div class="stat-box"><div class="stat-num" id="statTotal">—</div><div class="stat-lbl">Total Flag</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:#b91c1c" id="statBlocked">—</div><div class="stat-lbl">Diblokir</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:#d97706" id="statPending">—</div><div class="stat-lbl">Belum Ditinjau</div></div>
+    </div>
+
+    <!-- Filter -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <button class="ftab active" data-f="unreviewed" onclick="setFilter('unreviewed')">⏳ Belum Ditinjau</button>
+      <button class="ftab" data-f="blocked" onclick="setFilter('blocked')">🔴 Diblokir</button>
+      <button class="ftab" data-f="suspicious" onclick="setFilter('suspicious')">🟡 Mencurigakan</button>
+      <button class="ftab" data-f="all" onclick="setFilter('all')">Semua</button>
+    </div>
+
+    <!-- Search -->
+    <div style="margin-bottom:14px">
+      <input type="text" id="searchInput" placeholder="Cari nama staff…" oninput="renderFlags()"
+        style="width:100%;max-width:320px;font-size:13px;padding:8px 14px;border:1.5px solid rgba(3,69,67,.15);border-radius:999px;outline:none">
+    </div>
+
+    <div id="flagList"><div class="loading">Memuat…</div></div>
+
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth } from './js/auth.js'
+  import { collection, query, orderBy, onSnapshot, updateDoc, doc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { timeAgo } from './js/utils.js'
+
+  let allFlags = []
+  let currentFilter = 'unreviewed'
+
+  requireAuth((profile) => {
+    if (profile.role !== 'owner') { window.location.href = 'orders.html'; return }
+
+    onSnapshot(
+      query(collection(db, 'chat_flags'), orderBy('createdAt', 'desc')),
+      snap => {
+        allFlags = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        updateStats()
+        renderFlags()
+      },
+      err => {
+        document.getElementById('flagList').innerHTML =
+          `<div class="alert alert-error">Gagal memuat: ${err.message}</div>`
+      }
+    )
+  })
+
+  function updateStats() {
+    document.getElementById('statTotal').textContent = allFlags.length
+    document.getElementById('statBlocked').textContent = allFlags.filter(f => f.flagType === 'blocked').length
+    document.getElementById('statPending').textContent = allFlags.filter(f => !f.reviewed).length
+  }
+
+  window.setFilter = function(f) {
+    currentFilter = f
+    document.querySelectorAll('.ftab').forEach(el => el.classList.toggle('active', el.dataset.f === f))
+    renderFlags()
+  }
+
+  function renderFlags() {
+    const search = (document.getElementById('searchInput')?.value || '').toLowerCase()
+    let list = currentFilter === 'all' ? allFlags
+      : currentFilter === 'unreviewed' ? allFlags.filter(f => !f.reviewed)
+      : allFlags.filter(f => f.flagType === currentFilter)
+
+    if (search) list = list.filter(f => (f.staffName||'').toLowerCase().includes(search))
+
+    const el = document.getElementById('flagList')
+    if (!list.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">✅</div><p>${currentFilter === 'unreviewed' ? 'Tidak ada flag yang perlu ditinjau' : 'Tidak ada data'}</p></div>`
+      return
+    }
+
+    el.innerHTML = list.map(f => `
+      <div class="flag-card flag-${f.flagType} ${f.reviewed ? 'reviewed' : ''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="flag-badge ${f.flagType === 'blocked' ? 'badge-blocked' : 'badge-suspicious'}">
+              ${f.flagType === 'blocked' ? '🔴 DIBLOKIR' : '🟡 MENCURIGAKAN'}
+            </span>
+            ${f.reviewed ? `<span class="flag-badge badge-reviewed">✓ Sudah Ditinjau</span>` : ''}
+            <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(f.createdAt)}</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${f.orderId ? `<a href="order.html?id=${f.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${esc(f.orderNumber || 'Order')}</a>` : `<span style="font-size:11px;color:rgba(3,69,67,.4)">Konsultasi</span>`}
+            ${!f.reviewed ? `<button onclick="markReviewed('${f.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tandai Ditinjau</button>` : ''}
+          </div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:700;color:var(--black)">${esc(f.staffName || '—')}</span>
+          <span style="font-size:11px;background:rgba(3,69,67,.07);color:rgba(3,69,67,.6);padding:2px 8px;border-radius:4px;font-weight:600">${esc(f.staffRole || '')}</span>
+          ${f.staffRole === 'cs' ? `<span style="font-size:11px;color:#b91c1c;font-weight:600">⚠ CS</span>` : ''}
+        </div>
+
+        <div class="flag-msg">"${esc(f.messageText || '')}"</div>
+
+        <div style="font-size:12px;color:rgba(3,69,67,.55)">
+          <b>Alasan flag:</b> ${esc(f.flagReason || '—')}
+        </div>
+      </div>`).join('')
+  }
+
+  window.markReviewed = async function(id) {
+    try {
+      await updateDoc(doc(db, 'chat_flags', id), {
+        reviewed: true,
+        reviewedAt: Timestamp.now(),
+      })
+    } catch(e) { alert('Gagal: ' + e.message) }
+  }
+
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  }
+</script>
+</body>
+</html>

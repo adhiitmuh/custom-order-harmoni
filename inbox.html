@@ -221,19 +221,19 @@
 import { db, auth } from './js/config.js'
 import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
 import {
-  collection, doc, query, orderBy, onSnapshot, updateDoc, Timestamp
+  collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-import { timeAgo, DIVISION_META, DIVISIONS } from './js/utils.js'
+import { timeAgo, DIVISION_META, DIVISIONS, hasContactInfo, detectSuspiciousMsg } from './js/utils.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Set ke URL Cloudflare Worker Anda (contoh: 'https://harmoni-order-api.username.workers.dev')
 const WORKER_URL = ''
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let allThreads     = []
-let currentFilter  = 'open'
-let activeThreadId = null
-let unsubMsgs      = null
+let allThreads      = []  // chat_threads (WA bot) + consultations merged
+let currentFilter   = 'open'
+let activeThreadId  = null
+let unsubMsgs       = null
+let _profile        = null
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 requireAuth(async (profile) => {
@@ -241,27 +241,59 @@ requireAuth(async (profile) => {
     window.location.href = 'dashboard.html'; return
   }
 
+  _profile = profile
   await dataAuthReady
 
   const userLokasiId = profile.lokasiId || null
   const isOwner = profile.role === 'owner'
 
+  // Listener 1: WA bot threads
+  let waThreads = []
   onSnapshot(
     query(collection(db, 'chat_threads'), orderBy('lastMessageAt', 'desc')),
     snap => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      // Owner lihat semua; CS/manager lihat thread lokasi mereka + thread belum di-assign
-      allThreads = isOwner ? all : all.filter(t => !t.lokasiId || t.lokasiId === userLokasiId)
-      const openCount = allThreads.filter(t => t.status === 'open').length
-      document.getElementById('inboxCount').textContent =
-        `${openCount} aktif · ${allThreads.length} total`
-      renderList()
+      const all = snap.docs.map(d => ({ id: d.id, _type: 'thread', ...d.data() }))
+      waThreads = isOwner ? all : all.filter(t => !t.lokasiId || t.lokasiId === userLokasiId)
+      mergeAndRender(waThreads, consultations)
     },
-    err => {
-      document.getElementById('threadListEl').innerHTML =
-        `<div class="empty" style="margin:16px"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
-    }
+    () => {}
   )
+
+  // Listener 2: consultations (pra-order)
+  let consultations = []
+  onSnapshot(
+    query(collection(db, 'consultations'), orderBy('createdAt', 'desc')),
+    snap => {
+      consultations = snap.docs.map(d => ({
+        id: d.id,
+        _type: 'consultation',
+        token: d.id,
+        status: d.data().status === 'converted' ? 'closed' : 'open',
+        customerName: d.data().customerName,
+        lastMessage: d.data().lastMessage || '',
+        lastMessageAt: d.data().updatedAt || d.data().createdAt,
+        unreadCount: d.data().unreadCount || 0,
+        hasFlag: d.data().hasFlag || false,
+        division: d.data().division || '',
+        ...d.data(),
+      }))
+      mergeAndRender(waThreads, consultations)
+    },
+    () => {}
+  )
+
+  function mergeAndRender(threads, consults) {
+    // Merge + sort by lastMessageAt desc
+    allThreads = [...threads, ...consults].sort((a, b) => {
+      const ta = a.lastMessageAt?.toMillis?.() || a.lastMessageAt?.seconds * 1000 || 0
+      const tb = b.lastMessageAt?.toMillis?.() || b.lastMessageAt?.seconds * 1000 || 0
+      return tb - ta
+    })
+    const openCount = allThreads.filter(t => t.status === 'open').length
+    document.getElementById('inboxCount').textContent =
+      `${openCount} aktif · ${allThreads.length} total`
+    renderList()
+  }
 })
 
 // ─── Filter ───────────────────────────────────────────────────────────────────
@@ -319,14 +351,16 @@ window.openThread = function(threadId) {
   const thread = allThreads.find(t => t.id === threadId)
   if (!thread) return
 
+  const isConsultation = thread._type === 'consultation'
+
   // Clear unread
   if (thread.unreadCount > 0) {
-    updateDoc(doc(db, 'chat_threads', threadId), { unreadCount: 0 }).catch(() => {})
+    const col = isConsultation ? 'consultations' : 'chat_threads'
+    updateDoc(doc(db, col, threadId), { unreadCount: 0 }).catch(() => {})
     const idx = allThreads.findIndex(t => t.id === threadId)
     if (idx >= 0) allThreads[idx] = { ...allThreads[idx], unreadCount: 0 }
   }
 
-  // Unsubscribe old messages listener
   if (unsubMsgs) { unsubMsgs(); unsubMsgs = null }
 
   const stCls   = { open: 'th-open', closed: 'th-closed', escalated: 'th-escalated' }[thread.status] || 'th-open'
@@ -335,35 +369,35 @@ window.openThread = function(threadId) {
 
   const panel = document.getElementById('chatPanelEl')
   panel.innerHTML = `
-    <!-- Header -->
     <div class="chat-head">
       <div style="display:flex;align-items:center;gap:10px">
         <div class="chat-avatar">${(thread.customerName || '?')[0].toUpperCase()}</div>
         <div>
-          <div style="font-size:15px;font-weight:700;color:var(--black)">${esc(thread.customerName || 'Customer')}</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:15px;font-weight:700;color:var(--black)">${esc(thread.customerName || 'Customer')}</span>
+            ${isConsultation ? `<span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 7px;border-radius:4px;font-weight:700">KONSULTASI</span>` : ''}
+          </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
-            <span style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.45)">${esc(thread.token || '')}</span>
+            <span style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.45)">${esc(thread.token || threadId)}</span>
             <span class="badge ${stCls}" style="font-size:9px;padding:2px 6px">${stLabel}</span>
+            ${thread.division ? `<span style="font-size:10px;color:rgba(3,69,67,.4)">${esc(thread.division)}</span>` : ''}
           </div>
         </div>
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap">
-        ${thread.orderId
+        ${!isConsultation && thread.orderId
           ? `<a href="order.html?id=${thread.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${thread.orderNumber || 'Lihat Order'}</a>`
           : (!isClosed ? `<button onclick="openOrderModal()" class="btn btn-primary btn-sm" style="font-size:11px">+ Buat Order</button>` : '')}
         ${!isClosed ? `<button onclick="setStatus('closed')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tutup</button>` : ''}
-        ${thread.status === 'open' ? `<button onclick="setStatus('escalated')" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1.5px solid #fde68a;font-size:11px">⚠ Eskalasi</button>` : ''}
-        ${!isClosed && thread.status !== 'open' ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka</button>` : ''}
+        ${!isConsultation && thread.status === 'open' ? `<button onclick="setStatus('escalated')" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1.5px solid #fde68a;font-size:11px">⚠ Eskalasi</button>` : ''}
         ${isClosed ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka Lagi</button>` : ''}
       </div>
     </div>
 
-    <!-- Messages -->
     <div class="chat-messages" id="msgAreaEl">
       <div class="loading">Memuat pesan…</div>
     </div>
 
-    <!-- Input or closed bar -->
     ${!isClosed ? `
     <div class="chat-input">
       <textarea class="reply-ta" id="replyTa" placeholder="Ketik balasan… (Enter kirim, Shift+Enter baris baru)"
@@ -377,14 +411,38 @@ window.openThread = function(threadId) {
     </div>`}
   `
 
-  // Subscribe to messages
-  unsubMsgs = onSnapshot(
-    query(collection(db, 'chat_threads', threadId, 'messages'), orderBy('createdAt', 'asc')),
-    snap => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      renderMessages(msgs)
-    }
-  )
+  if (isConsultation) {
+    // Consultations: messages in chat_messages/{token}/messages (same as order chat)
+    unsubMsgs = onSnapshot(
+      query(collection(db, 'chat_messages', threadId, 'messages'), orderBy('createdAt', 'asc')),
+      snap => {
+        const msgs = snap.docs.map(d => {
+          const m = d.data()
+          // Normalise to inbox schema
+          return {
+            id: d.id,
+            content: m.text || '',
+            imageUrl: m.imageUrl || null,
+            fileName: m.fileName || '',
+            senderType: m.senderRole === 'customer' ? 'customer' : 'admin',
+            senderName: m.senderName || '',
+            createdAt: m.createdAt,
+            flagged: m.flagged || false,
+            flagReason: m.flagReason || '',
+          }
+        })
+        renderMessages(msgs)
+      }
+    )
+  } else {
+    unsubMsgs = onSnapshot(
+      query(collection(db, 'chat_threads', threadId, 'messages'), orderBy('createdAt', 'asc')),
+      snap => {
+        const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        renderMessages(msgs)
+      }
+    )
+  }
 }
 
 // ─── Render messages ──────────────────────────────────────────────────────────
@@ -434,8 +492,23 @@ window.sendReply = async function() {
   const msg = ta?.value.trim()
   if (!msg || !activeThreadId) return
 
-  if (!WORKER_URL) {
-    alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dengan URL Cloudflare Worker Anda.')
+  const thread = allThreads.find(t => t.id === activeThreadId)
+  if (!thread) return
+  const isConsultation = thread._type === 'consultation'
+  const profile = getProfile()
+
+  // Block contact info (both thread types)
+  if (hasContactInfo(msg)) {
+    addDoc(collection(db, 'chat_flags'), {
+      chatToken: thread.token || activeThreadId,
+      orderId: thread.orderId || null,
+      orderNumber: thread.orderNumber || '',
+      staffId: profile?.id || '', staffName: profile?.name || '', staffRole: profile?.role || '',
+      messageText: msg,
+      flagReason: 'Percobaan kirim info kontak (diblokir sistem)',
+      flagType: 'blocked', reviewed: false, createdAt: Timestamp.now(),
+    }).catch(() => {})
+    alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan kepada customer. Pesan tidak dikirim.')
     return
   }
 
@@ -443,16 +516,44 @@ window.sendReply = async function() {
   ta.disabled  = true
 
   try {
-    const profile  = getProfile()
-    const idToken  = await auth.currentUser.getIdToken()
-    const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThreadId, message: msg, adminId: profile.id, adminName: profile.name }),
-    })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${resp.status}`)
+    if (isConsultation) {
+      // Consultation: write directly to Firestore (no Worker needed)
+      const { flagged, reason } = detectSuspiciousMsg(msg)
+      const token = thread.token || activeThreadId
+      await addDoc(collection(db, 'chat_messages', token, 'messages'), {
+        text: msg, imageUrl: null, type: 'text',
+        senderId: profile?.id || '', senderName: profile?.name || '',
+        senderRole: profile?.role || 'admin', senderBranch: profile?.branch || '',
+        createdAt: Timestamp.now(),
+      })
+      updateDoc(doc(db, 'consultations', activeThreadId), {
+        lastMessage: msg, lastMessageAt: Timestamp.now(),
+      }).catch(() => {})
+      if (flagged) {
+        addDoc(collection(db, 'chat_flags'), {
+          chatToken: token, orderId: null, orderNumber: '',
+          staffId: profile?.id || '', staffName: profile?.name || '', staffRole: profile?.role || '',
+          messageText: msg, flagReason: reason,
+          flagType: 'suspicious', reviewed: false, createdAt: Timestamp.now(),
+        }).catch(() => {})
+      }
+    } else {
+      // WA bot thread: send via Worker (delivers to customer's WA)
+      if (!WORKER_URL) {
+        alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dengan URL Cloudflare Worker Anda.')
+        btn.disabled = false; ta.disabled = false
+        return
+      }
+      const idToken = await auth.currentUser.getIdToken()
+      const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: activeThreadId, message: msg, adminId: profile?.id, adminName: profile?.name }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${resp.status}`)
+      }
     }
     ta.value = ''
     ta.style.height = 'auto'
@@ -468,9 +569,11 @@ window.sendReply = async function() {
 // ─── Set thread status ────────────────────────────────────────────────────────
 window.setStatus = async function(status) {
   if (!activeThreadId) return
+  const thread = allThreads.find(t => t.id === activeThreadId)
+  if (!thread) return
+  const col = thread._type === 'consultation' ? 'consultations' : 'chat_threads'
   try {
-    await updateDoc(doc(db, 'chat_threads', activeThreadId), { status, updatedAt: Timestamp.now() })
-    // Update local cache so openThread sees the new status immediately
+    await updateDoc(doc(db, col, activeThreadId), { status, updatedAt: Timestamp.now() })
     const idx = allThreads.findIndex(t => t.id === activeThreadId)
     if (idx >= 0) allThreads[idx] = { ...allThreads[idx], status }
     openThread(activeThreadId)

@@ -94,5 +94,19 @@ service cloud.firestore {
       allow create: if isAuth();
       allow delete: if isOwner();
     }
+
+    // Konsultasi pra-order (sebelum ada order) — dibuat oleh WA Bot via service account
+    match /consultations/{token} {
+      allow read: if true;   // public — customer akses via token
+      allow write: if false; // hanya backend (service account bypass rules)
+    }
+
+    // Flag pesan mencurigakan — staff menulis, owner yang baca & tinjau
+    match /chat_flags/{id} {
+      allow read: if isOwner();
+      allow create: if isAuth();
+      allow update: if isOwner();
+      allow delete: if isOwner();
+    }
   }
 }
