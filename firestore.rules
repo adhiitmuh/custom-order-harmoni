@@ -108,5 +108,10 @@ service cloud.firestore {
       allow update: if isOwner();
       allow delete: if isOwner();
     }
+
+    // Bot session state per WA number — hanya Worker (service account bypass rules)
+    match /chat_sessions/{waNumber} {
+      allow read, write: if false;
+    }
   }
 }
