@@ -7,12 +7,13 @@ export const DIVISION_META = {
   konveksi:     { label: 'Konveksi',           code: 'KNV', icon: '👕',  description: 'Produksi massal seragam, kaos, dan pakaian kerja' },
   'medali-pin': { label: 'Medali & Pin Logam', code: 'MPL', icon: '🏅',  description: 'Medali dan pin logam custom untuk penghargaan, komunitas, dan souvenir' },
   'papan-nama': { label: 'Papan Nama US & KL', code: 'PPN', icon: '🏷️', description: 'Papan nama custom untuk seragam US dan KL' },
-  'pin-fiber':  { label: 'Pin Fiber',          code: 'PFB', icon: '📌',  description: 'Pin fiber / akrilik custom berbagai bentuk dan warna' },
+  'pin-fiber':  { label: 'Medali & Pin Fiber',  code: 'PFB', icon: '📌',  description: 'Pin fiber / akrilik dan medali custom berbagai bentuk dan warna' },
   'sewa-kostum':{ label: 'Sewa Kostum',        code: 'SKT', icon: '🎭',  description: 'Sewa kostum untuk acara, pesta, karnaval, dan pertunjukan' },
   tailor:       { label: 'Tailor',             code: 'TLR', icon: '✂️',  description: 'Jahit custom individual sesuai ukuran dan model' },
 }
 
-export const DIVISIONS = ['bordir','butik','jersey','jilbab','sablon','konveksi','medali-pin','papan-nama','pin-fiber','sewa-kostum','tailor']
+// Urutan sesuai abjad label
+export const DIVISIONS = ['bordir','butik','jersey','jilbab','sablon','konveksi','pin-fiber','medali-pin','papan-nama','sewa-kostum','tailor']
 
 export const STATUS_LABEL = {
   'draft':            'Draft — Belum Bayar',

@@ -27,7 +27,7 @@ const DIVISION_CODES = {
 const DIVISION_LABELS = {
   bordir:'Bordir', butik:'Butik', jersey:'Jersey', jilbab:'Jilbab',
   sablon:'Kaos & Sablon', konveksi:'Konveksi', 'medali-pin':'Medali & Pin Logam',
-  'papan-nama':'Papan Nama', 'pin-fiber':'Pin Fiber', 'sewa-kostum':'Sewa Kostum', tailor:'Tailor',
+  'papan-nama':'Papan Nama', 'pin-fiber':'Medali & Pin Fiber', 'sewa-kostum':'Sewa Kostum', tailor:'Tailor',
 }
 
 const PRODUKSI_UNIT = {
