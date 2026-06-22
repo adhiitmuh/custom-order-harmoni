@@ -210,7 +210,7 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, doc, setDoc, runTransaction, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -277,6 +277,7 @@
   }
   import { getDoc, doc as fsDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
+  let _activeDivisions = null
   let selectedDiv = ''
   let itemRowCount = 0
 
@@ -641,25 +642,28 @@
     }
   }
 
-  // Build division grid
-  const grid = document.getElementById('divGrid')
-  DIVISIONS.forEach(d => {
-    const meta = DIVISION_META[d]
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.id = `div-${d}`
-    btn.style.cssText = 'padding:12px;border-radius:12px;border:2px solid rgba(3,69,67,.12);text-align:left;background:var(--white);cursor:pointer;transition:all .12s'
-    btn.innerHTML = `<span style="font-size:22px;display:block;margin-bottom:4px">${meta.icon}</span><span style="font-size:12px;font-weight:600;color:var(--black)">${meta.label}</span>`
-    btn.addEventListener('click', () => selectDiv(d))
-    grid.appendChild(btn)
-  })
+  function buildDivGrid(divs) {
+    const grid = document.getElementById('divGrid')
+    grid.innerHTML = ''
+    divs.forEach(d => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.id = `div-${d.key}`
+      btn.style.cssText = 'padding:12px;border-radius:12px;border:2px solid rgba(3,69,67,.12);text-align:left;background:var(--white);cursor:pointer;transition:all .12s'
+      btn.innerHTML = `<span style="font-size:22px;display:block;margin-bottom:4px">${d.icon}</span><span style="font-size:12px;font-weight:600;color:var(--black)">${d.label}</span>`
+      btn.addEventListener('click', () => selectDiv(d.key))
+      grid.appendChild(btn)
+    })
+  }
 
   function selectDiv(d, skipPaymentLoad = false) {
     selectedDiv = d
-    DIVISIONS.forEach(x => {
-      const b = document.getElementById(`div-${x}`)
-      b.style.borderColor = x===d ? '#034543' : 'rgba(3,69,67,.12)'
-      b.style.background = x===d ? '#FFF8C2' : 'var(--white)'
+    const divs = _activeDivisions || DIVISIONS.map(key => ({ key, ...DIVISION_META[key] }))
+    divs.forEach(x => {
+      const b = document.getElementById(`div-${x.key}`)
+      if (!b) return
+      b.style.borderColor = x.key===d ? '#034543' : 'rgba(3,69,67,.12)'
+      b.style.background = x.key===d ? '#FFF8C2' : 'var(--white)'
     })
     _autoHargaModal = 0
     loadPriceList(d)
@@ -711,6 +715,8 @@
       document.getElementById('modalColHeader').style.display = ''
       document.getElementById('modalTotalFooterCell').style.display = ''
     }
+    _activeDivisions = await getActiveDivisions()
+    buildDivGrid(_activeDivisions)
     const draft = getDraft()
     await Promise.all([
       loadLokasi(profile),
@@ -720,8 +726,8 @@
   })
 
   async function generateOrderNumber(division) {
-    const CODES = { bordir:'BRD',butik:'BTK',jersey:'JRS',jilbab:'JLB',sablon:'SBL',konveksi:'KNV','medali-pin':'MPL','papan-nama':'PPN','pin-fiber':'PFB','sewa-kostum':'SKT',tailor:'TLR' }
-    const code = CODES[division]||'ORD'
+    const divMeta = (_activeDivisions || []).find(d => d.key === division) || DIVISION_META[division]
+    const code = divMeta?.code || 'ORD'
     const year = new Date().getFullYear()
     const counterRef = fsDoc(db, 'order_counters', division)
     const count = await runTransaction(db, async tx => {
@@ -841,7 +847,7 @@
           lokasiId: selectedLokasi?.id || '',
           lokasiNama: selectedLokasi?.nama || '',
           lokasiTipe: selectedLokasi?.tipe || '',
-          produksiUnit: PRODUKSI_UNIT[selectedDiv] || '',
+          produksiUnit: (_activeDivisions||[]).find(d=>d.key===selectedDiv)?.produksiUnit || PRODUKSI_UNIT[selectedDiv] || '',
           createdBy: profile.id,
           createdByName: profile.name,
           createdAt: now,

@@ -54,6 +54,11 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    match /divisions/{id} {
+      allow read: if isAuth();
+      allow write: if isOwner();
+    }
+
     // Chat messages — public read/write (token = password)
     match /chat_messages/{chatToken}/messages/{msgId} {
       allow read: if true;

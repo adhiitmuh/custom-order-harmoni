@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Divisi — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .div-row { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; background:var(--white); margin-bottom:8px; border:1.5px solid rgba(3,69,67,.07); transition:opacity .15s; }
+    .div-row.inactive { opacity:.45; }
+    .div-icon { font-size:26px; width:36px; text-align:center; flex-shrink:0; }
+    .div-info { flex:1; min-width:0; }
+    .div-label { font-size:14px; font-weight:700; color:var(--black); }
+    .div-meta  { font-size:11px; color:rgba(3,69,67,.45); margin-top:2px; }
+    .div-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; }
+    .order-btn { background:none; border:1px solid rgba(3,69,67,.15); border-radius:6px; padding:3px 7px; cursor:pointer; font-size:12px; color:rgba(3,69,67,.5); }
+    .order-btn:hover { background:rgba(3,69,67,.05); }
+    .order-btn:disabled { opacity:.25; cursor:default; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:20px">
+      <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black);margin-top:8px">Kelola Divisi</h1>
+      <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Tambah, edit, atau nonaktifkan divisi. Urutan di sini menentukan tampilan di seluruh aplikasi.</p>
+    </div>
+
+    <div id="pageContent"><div class="loading">Memuat…</div></div>
+
+    <div id="addWrap" style="display:none;margin-top:12px">
+      <button onclick="openModal()" class="btn btn-primary" style="width:100%;justify-content:center">＋ Tambah Divisi Baru</button>
+    </div>
+  </main>
+</div>
+
+<!-- Edit / Add modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
+    <h3 id="modalHeading" style="font-size:15px;font-weight:700;margin-bottom:18px">Edit Divisi</h3>
+
+    <div class="grid-2" style="gap:12px;margin-bottom:12px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Icon (emoji) <span class="req">*</span></label>
+        <input type="text" id="fIcon" placeholder="⚽" maxlength="4" style="font-size:22px;text-align:center">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Kode (3 huruf) <span class="req">*</span></label>
+        <input type="text" id="fCode" placeholder="JRS" maxlength="5" style="text-transform:uppercase;font-weight:700">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Nama Divisi <span class="req">*</span></label>
+      <input type="text" id="fLabel" placeholder="Jersey">
+    </div>
+    <div class="form-group">
+      <label>Deskripsi Singkat</label>
+      <input type="text" id="fDesc" placeholder="Jersey olahraga, printing jersey, batik, dan lanyard custom">
+    </div>
+    <div class="form-group">
+      <label>Unit Produksi</label>
+      <input type="text" id="fUnit" placeholder="Gaara Apparel">
+      <p class="form-hint">Unit yang mengerjakan produksi untuk divisi ini</p>
+    </div>
+    <div class="form-group" id="keyWrap">
+      <label>Key (ID unik, huruf kecil-tanda hubung) <span class="req">*</span></label>
+      <input type="text" id="fKey" placeholder="jersey" pattern="[a-z0-9-]+" style="font-family:monospace">
+      <p class="form-hint">Tidak bisa diubah setelah disimpan. Contoh: jersey, medali-pin</p>
+    </div>
+
+    <div id="modalError" class="alert alert-error" style="display:none;margin-bottom:12px"></div>
+
+    <div style="display:flex;gap:8px">
+      <button onclick="closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="saveDiv()" class="btn btn-primary" style="flex:1;justify-content:center" id="modalSaveBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, getActiveDivisions, invalidateDivisionsCache } from './js/auth.js'
+  import { collection, doc, getDoc, getDocs, setDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS, PRODUKSI_UNIT } from './js/utils.js'
+
+  let allDivs = []
+  let editingKey = null
+
+  requireAuth(async (profile) => {
+    if (profile.role !== 'owner') {
+      window.location.href = 'orders.html'
+      return
+    }
+    await load()
+  })
+
+  async function load() {
+    const el = document.getElementById('pageContent')
+    try {
+      const snap = await getDocs(collection(db, 'divisions'))
+      if (snap.empty) {
+        await seedDefaults()
+        return load()
+      }
+      allDivs = snap.docs
+        .map(d => ({ key: d.id, ...d.data() }))
+        .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+      render()
+    } catch(e) {
+      el.innerHTML = `<div class="alert alert-error">Gagal memuat: ${e.message}</div>`
+    }
+  }
+
+  async function seedDefaults() {
+    const batch = []
+    DIVISIONS.forEach((key, i) => {
+      const meta = DIVISION_META[key]
+      batch.push(setDoc(doc(db, 'divisions', key), {
+        label: meta.label,
+        code: meta.code,
+        icon: meta.icon,
+        description: meta.description,
+        produksiUnit: PRODUKSI_UNIT[key] || '',
+        aktif: true,
+        orderIndex: i,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }))
+    })
+    await Promise.all(batch)
+    invalidateDivisionsCache()
+  }
+
+  function render() {
+    const el = document.getElementById('pageContent')
+    if (!allDivs.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🏷️</div><p>Belum ada divisi</p></div>'
+      document.getElementById('addWrap').style.display = ''
+      return
+    }
+    el.innerHTML = allDivs.map((d, i) => `
+      <div class="div-row${d.aktif === false ? ' inactive' : ''}" id="row-${d.key}">
+        <div class="div-icon">${d.icon || '📦'}</div>
+        <div class="div-info">
+          <div class="div-label">${d.label} <span style="font-size:10px;font-weight:600;color:rgba(3,69,67,.3);margin-left:4px">${d.code || ''}</span>${d.aktif === false ? ' <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-weight:700">Non-aktif</span>' : ''}</div>
+          <div class="div-meta">${d.description || '—'} · ${d.produksiUnit || '—'}</div>
+        </div>
+        <div class="div-actions">
+          <button class="order-btn" onclick="moveUp(${i})" ${i===0?'disabled':''}>▲</button>
+          <button class="order-btn" onclick="moveDown(${i})" ${i===allDivs.length-1?'disabled':''}>▼</button>
+          <button class="btn btn-ghost btn-sm" onclick="openModal('${d.key}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAktif('${d.key}')" style="color:${d.aktif===false?'#059669':'#b91c1c'}">${d.aktif===false?'Aktifkan':'Nonaktifkan'}</button>
+        </div>
+      </div>`).join('')
+    document.getElementById('addWrap').style.display = ''
+  }
+
+  window.moveUp = async function(i) {
+    if (i === 0) return
+    ;[allDivs[i-1], allDivs[i]] = [allDivs[i], allDivs[i-1]]
+    await saveOrder()
+    render()
+  }
+
+  window.moveDown = async function(i) {
+    if (i >= allDivs.length - 1) return
+    ;[allDivs[i], allDivs[i+1]] = [allDivs[i+1], allDivs[i]]
+    await saveOrder()
+    render()
+  }
+
+  async function saveOrder() {
+    invalidateDivisionsCache()
+    await Promise.all(allDivs.map((d, i) =>
+      updateDoc(doc(db, 'divisions', d.key), { orderIndex: i, updatedAt: Timestamp.now() })
+    ))
+  }
+
+  window.toggleAktif = async function(key) {
+    const d = allDivs.find(x => x.key === key)
+    if (!d) return
+    const newVal = d.aktif === false ? true : false
+    await updateDoc(doc(db, 'divisions', key), { aktif: newVal, updatedAt: Timestamp.now() })
+    d.aktif = newVal
+    invalidateDivisionsCache()
+    render()
+  }
+
+  window.openModal = function(key) {
+    editingKey = key || null
+    const isNew = !key
+    document.getElementById('modalHeading').textContent = isNew ? 'Tambah Divisi Baru' : 'Edit Divisi'
+    document.getElementById('keyWrap').style.display = isNew ? '' : 'none'
+    document.getElementById('modalError').style.display = 'none'
+
+    if (key) {
+      const d = allDivs.find(x => x.key === key)
+      document.getElementById('fIcon').value = d.icon || ''
+      document.getElementById('fCode').value = d.code || ''
+      document.getElementById('fLabel').value = d.label || ''
+      document.getElementById('fDesc').value = d.description || ''
+      document.getElementById('fUnit').value = d.produksiUnit || ''
+      document.getElementById('fKey').value = key
+    } else {
+      document.getElementById('fIcon').value = ''
+      document.getElementById('fCode').value = ''
+      document.getElementById('fLabel').value = ''
+      document.getElementById('fDesc').value = ''
+      document.getElementById('fUnit').value = ''
+      document.getElementById('fKey').value = ''
+    }
+
+    document.getElementById('editModal').style.display = 'flex'
+  }
+
+  window.closeModal = function() {
+    document.getElementById('editModal').style.display = 'none'
+    editingKey = null
+  }
+
+  window.saveDiv = async function() {
+    const icon  = document.getElementById('fIcon').value.trim()
+    const code  = document.getElementById('fCode').value.trim().toUpperCase()
+    const label = document.getElementById('fLabel').value.trim()
+    const desc  = document.getElementById('fDesc').value.trim()
+    const unit  = document.getElementById('fUnit').value.trim()
+    const errEl = document.getElementById('modalError')
+
+    if (!label || !icon || !code) {
+      errEl.textContent = 'Icon, kode, dan nama divisi wajib diisi'
+      errEl.style.display = ''
+      return
+    }
+
+    let key = editingKey
+    if (!key) {
+      key = document.getElementById('fKey').value.trim().toLowerCase()
+      if (!key || !/^[a-z0-9-]+$/.test(key)) {
+        errEl.textContent = 'Key harus huruf kecil, angka, atau tanda hubung (contoh: medali-pin)'
+        errEl.style.display = ''
+        return
+      }
+      const existing = await getDoc(doc(db, 'divisions', key))
+      if (existing.exists()) {
+        errEl.textContent = `Key "${key}" sudah dipakai. Pilih key lain.`
+        errEl.style.display = ''
+        return
+      }
+    }
+
+    const btn = document.getElementById('modalSaveBtn')
+    btn.textContent = 'Menyimpan…'
+    btn.disabled = true
+
+    try {
+      const isNew = !editingKey
+      const data = { label, code, icon, description: desc, produksiUnit: unit, updatedAt: Timestamp.now() }
+      if (isNew) {
+        data.aktif = true
+        data.orderIndex = allDivs.length
+        data.createdAt = Timestamp.now()
+      }
+      await setDoc(doc(db, 'divisions', key), data, { merge: true })
+      invalidateDivisionsCache()
+      closeModal()
+      await load()
+    } catch(e) {
+      errEl.textContent = 'Gagal menyimpan: ' + e.message
+      errEl.style.display = ''
+    } finally {
+      btn.textContent = 'Simpan'
+      btn.disabled = false
+    }
+  }
+</script>
+</body>
+</html>
