@@ -110,23 +110,16 @@ export default {
     }
   },
 
-  // ── Cron handler ────────────────────────────────────────────────────────────
+  // ── Cron handler — jalan setiap hari 08.00 WITA ────────────────────────────
   async scheduled(event, env, ctx) {
-    if (event.cron === '0 18 * * 0') {
-      // Minggu 02.00 WITA — auto backup ke R2
-      ctx.waitUntil(
-        getFirebaseToken(env)
-          .then(token => runBackup(env, token))
-          .catch(err => console.error('Backup error:', err))
-      )
-    } else {
-      // Setiap hari 08.00 WITA — deadline reminder
-      ctx.waitUntil(
-        getFirebaseToken(env)
-          .then(token => runDeadlineCheck(env, token))
-          .catch(err => console.error('Deadline check error:', err))
-      )
-    }
+    ctx.waitUntil((async () => {
+      const token = await getFirebaseToken(env)
+      await runDeadlineCheck(env, token).catch(err => console.error('Deadline check error:', err))
+      // Backup otomatis setiap Minggu (hari 0 = Sunday UTC)
+      if (new Date().getUTCDay() === 0) {
+        await runBackup(env, token).catch(err => console.error('Backup error:', err))
+      }
+    })())
   },
 }
 
