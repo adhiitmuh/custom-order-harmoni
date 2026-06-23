@@ -59,50 +59,86 @@
     loadNotifSummary(profile)
   })
 
+  function notifTimeAgo(ts) {
+    const t = ts?.toDate ? ts.toDate() : new Date()
+    const m = Math.floor((Date.now() - t.getTime()) / 60000)
+    if (m < 1) return 'baru saja'
+    if (m < 60) return `${m} mnt lalu`
+    if (m < 1440) return `${Math.floor(m/60)} jam lalu`
+    return `${Math.floor(m/1440)} hari lalu`
+  }
+
   async function loadNotifSummary(profile) {
     const el = document.getElementById('notifSummary')
     if (!el) return
 
-    // Unread customer chat
-    let unreadChatQ = query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0))
-    const chatSnap = await getDocs(unreadChatQ).catch(() => null)
-    let unreadOrders = chatSnap ? chatSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(o => {
-        if (profile.role === 'owner') return true
-        if (profile.divisions?.length) return profile.divisions.includes(o.division)
-        return !o.lokasiId || o.lokasiId === profile.lokasiId
-      }) : []
+    // Unread customer chat (owner/cs/manager only)
+    let unreadOrders = []
+    if (profile.role !== 'production') {
+      const chatSnap = await getDocs(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0))).catch(() => null)
+      unreadOrders = chatSnap ? chatSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(o => {
+          if (profile.role === 'owner') return true
+          if (profile.divisions?.length) return profile.divisions.includes(o.division)
+          return !o.lokasiId || o.lokasiId === profile.lokasiId
+        }) : []
+    }
 
-    // Unread mentions
+    // Notification list for this user (mentions)
+    const notifSnap = await getDocs(query(collection(db, 'notifications'), where('targetUid', '==', profile.id))).catch(() => null)
+    const notifs = notifSnap
+      ? notifSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+          .slice(0, 15)
+      : []
+
+    // Unread mention count
     const mentionSnap = await getDoc(doc(db, 'user_mentions', profile.id)).catch(() => null)
     const mentionCount = mentionSnap?.exists() ? (mentionSnap.data().unreadMentions || 0) : 0
 
-    const items = []
+    let html = ''
+
+    // Alert card: unread customer chat
     if (unreadOrders.length > 0) {
-      items.push(`
-        <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;flex:1;min-width:0">
+      html += `
+        <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;margin-bottom:12px">
           <span style="font-size:20px">💬</span>
           <div>
-            <div style="font-size:13px;font-weight:700;color:#b91c1c">${unreadOrders.length} order ada pesan baru</div>
-            <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Pesan customer belum dibalas</div>
+            <div style="font-size:13px;font-weight:700;color:#b91c1c">${unreadOrders.length} order ada pesan baru dari customer</div>
+            <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
           </div>
-        </a>`)
-    }
-    if (mentionCount > 0) {
-      items.push(`
-        <a href="inbox.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(251,191,36,.3);text-decoration:none;flex:1;min-width:0">
-          <span style="font-size:20px">🔔</span>
-          <div>
-            <div style="font-size:13px;font-weight:700;color:#92400e">${mentionCount} mention belum dibaca</div>
-            <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Seseorang menyebut kamu di chat</div>
-          </div>
-        </a>`)
+        </a>`
     }
 
-    el.innerHTML = items.length
-      ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${items.join('')}</div>`
-      : ''
+    // Notification list panel
+    if (notifs.length > 0) {
+      const rows = notifs.map(n => {
+        const link = n.orderId ? `order.html?id=${n.orderId}` : 'inbox.html'
+        const preview = (n.preview || 'menyebut kamu di chat').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        return `
+          <a href="${link}" style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(3,69,67,.07);text-decoration:none;color:inherit">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(251,191,36,.15);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">@</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--green)">${n.fromName || 'Staff'} menyebut kamu</div>
+              <div style="font-size:12px;color:rgba(3,69,67,.65);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
+              ${n.orderNumber ? `<div style="font-size:10px;color:rgba(3,69,67,.4);margin-top:2px">${n.orderNumber}</div>` : ''}
+            </div>
+            <div style="font-size:10px;color:rgba(3,69,67,.35);white-space:nowrap;padding-top:2px">${notifTimeAgo(n.createdAt)}</div>
+          </a>`
+      }).join('')
+
+      html += `
+        <div class="card" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <h2 style="font-size:14px;font-weight:700">Notifikasi Saya</h2>
+            ${mentionCount > 0 ? `<span style="background:#f59e0b;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${mentionCount} belum dibaca</span>` : ''}
+          </div>
+          ${rows}
+        </div>`
+    }
+
+    el.innerHTML = html
   }
 
   async function loadStats(profile) {
