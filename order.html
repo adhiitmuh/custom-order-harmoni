@@ -231,7 +231,21 @@
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Divisi</p><p style="font-weight:600">${meta.label||''}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
-              ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
+              ${showContact ? `
+              <div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+                  <p style="font-size:11px;color:rgba(3,69,67,.45)">Kontak</p>
+                  <button onclick="editContact()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 7px;line-height:1.4" id="editContactBtn">Edit</button>
+                </div>
+                <p style="font-weight:600;font-family:monospace" id="contactDisplay">${order.customerContact||'-'}</p>
+                <div id="contactEditForm" style="display:none;gap:6px;align-items:center;margin-top:4px">
+                  <input type="text" id="contactInput" value="${(order.customerContact||'').replace(/"/g,'&quot;')}"
+                    style="font-family:monospace;font-size:13px;padding:5px 9px;border:1.5px solid var(--green);border-radius:8px;outline:none;width:160px"
+                    onkeydown="if(event.key==='Enter')saveContact();if(event.key==='Escape')cancelContactEdit()">
+                  <button onclick="saveContact()" class="btn btn-primary btn-sm" style="font-size:11px">Simpan</button>
+                  <button onclick="cancelContactEdit()" class="btn btn-ghost btn-sm" style="font-size:11px">Batal</button>
+                </div>
+              </div>` : ''}
             </div>
             ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
               <hr class="sep">
@@ -1215,6 +1229,34 @@
       })
       await loadOrder(getProfile())
     } finally { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+
+  window.editContact = function() {
+    document.getElementById('contactDisplay').style.display = 'none'
+    document.getElementById('editContactBtn').style.display = 'none'
+    document.getElementById('contactEditForm').style.display = 'flex'
+    document.getElementById('contactInput').focus()
+    document.getElementById('contactInput').select()
+  }
+
+  window.cancelContactEdit = function() {
+    document.getElementById('contactDisplay').style.display = ''
+    document.getElementById('editContactBtn').style.display = ''
+    document.getElementById('contactEditForm').style.display = 'none'
+  }
+
+  window.saveContact = async function() {
+    const input = document.getElementById('contactInput')
+    const newContact = input.value.trim()
+    if (!newContact) return
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { customerContact: newContact, updatedAt: Timestamp.now() })
+      order.customerContact = newContact
+      document.getElementById('contactDisplay').textContent = newContact
+      cancelContactEdit()
+    } catch(err) {
+      alert('Gagal simpan: ' + err.message)
+    }
   }
 
   window.togglePaymentEdit = function() {
