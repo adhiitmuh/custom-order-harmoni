@@ -129,12 +129,13 @@
         <strong style="color:rgba(3,69,67,.5)">Tidak termasuk:</strong> Riwayat chat (tidak kritis untuk operasional)
       </div>
 
-      <!-- API Key setup (sekali) -->
+      <!-- API Key setup / ganti -->
       <div id="apiKeySetup" style="padding:14px 0;border-top:1px solid rgba(3,69,67,.07);display:none">
-        <div style="font-size:13px;font-weight:700;margin-bottom:6px">Setup API Key</div>
-        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Masukkan Worker API Key untuk mengakses backup cloud. Lihat di n8n atau tanyakan ke developer.</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px" id="apiKeySetupTitle">Setup API Key</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Masukkan Worker API Key untuk mengakses backup cloud. Nilai ini sama dengan <code style="background:rgba(3,69,67,.07);padding:1px 5px;border-radius:4px">API_SECRET_KEY</code> yang di-set saat deploy Worker.</div>
         <div style="display:flex;gap:8px">
           <input type="password" id="apiKeyInput" placeholder="API key…" style="flex:1;font-size:12px;padding:6px 10px;border:1px solid rgba(3,69,67,.2);border-radius:8px">
+          <button class="btn btn-ghost btn-sm" id="apiKeyCancelBtn" onclick="cancelChangeApiKey()" style="display:none">Batal</button>
           <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Simpan</button>
         </div>
       </div>
@@ -146,7 +147,10 @@
             <div style="font-size:13px;font-weight:700">Backup Otomatis (Cloud)</div>
             <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">Tersimpan otomatis setiap Minggu · 12 backup terakhir disimpan</div>
           </div>
-          <button id="triggerBackupBtn" class="btn btn-ghost btn-sm" onclick="triggerCloudBackup()">↻ Backup Sekarang</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="showChangeApiKey()" style="font-size:11px;color:rgba(3,69,67,.4)">🔑 Ganti Key</button>
+            <button id="triggerBackupBtn" class="btn btn-ghost btn-sm" onclick="triggerCloudBackup()">↻ Backup Sekarang</button>
+          </div>
         </div>
         <div id="cloudBackupList"><div style="font-size:12px;color:rgba(3,69,67,.35);padding:8px 0">Memuat daftar backup…</div></div>
       </div>
@@ -425,7 +429,20 @@
     if (!key) return
     localStorage.setItem('harmoni_backup_key', key)
     document.getElementById('apiKeySetup').style.display = 'none'
+    document.getElementById('apiKeyCancelBtn').style.display = 'none'
     loadCloudBackupList()
+  }
+
+  window.showChangeApiKey = function() {
+    document.getElementById('apiKeySetupTitle').textContent = 'Ganti API Key'
+    document.getElementById('apiKeyInput').value = ''
+    document.getElementById('apiKeyCancelBtn').style.display = ''
+    document.getElementById('apiKeySetup').style.display = ''
+  }
+
+  window.cancelChangeApiKey = function() {
+    document.getElementById('apiKeySetup').style.display = 'none'
+    document.getElementById('apiKeyCancelBtn').style.display = 'none'
   }
 
   async function loadCloudBackupList() {
