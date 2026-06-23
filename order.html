@@ -1505,6 +1505,8 @@
     _staffList = s
     const chatInput = document.getElementById('chatInput')
     if (chatInput) attachMentionAutocomplete(chatInput, _staffList)
+    const internalInput = document.getElementById('internalChatInput')
+    if (internalInput) attachMentionAutocomplete(internalInput, _staffList)
   })
 
   function initChat() {
@@ -1662,6 +1664,8 @@
       senderRole: profile.role,
       createdAt:  Timestamp.now(),
     })
+    const mentionedStaff = parseMentions(content, _staffList)
+    if (mentionedStaff.length) writeMentionNotifs(mentionedStaff, profile.id)
     // Tulis notifikasi untuk staff lain
     addDoc(collection(db, 'notifications'), {
       type:        'internal_chat',
