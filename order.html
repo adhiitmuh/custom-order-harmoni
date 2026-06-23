@@ -119,6 +119,11 @@
     if (!snap.exists()) { document.getElementById('pageContent').innerHTML = '<p>Order tidak ditemukan</p>'; return }
     order = { id: snap.id, ...snap.data() }
 
+    // Reset unread counter saat staff buka order
+    if (order.unreadCustomerChat > 0) {
+      updateDoc(doc(db,'orders',orderId), { unreadCustomerChat: 0 }).catch(() => {})
+    }
+
     // Cabang guard — non-owner hanya bisa akses order dari cabang mereka
     if (profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) {
       document.getElementById('pageContent').innerHTML = `

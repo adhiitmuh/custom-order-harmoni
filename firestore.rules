@@ -14,7 +14,8 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isAuth();
       allow create: if isAuth();
-      allow update: if isAuth();
+      allow update: if isAuth() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCustomerChat']);
       allow delete: if isOwner();
     }
     match /orders/{orderId}/progress_updates/{id} {
