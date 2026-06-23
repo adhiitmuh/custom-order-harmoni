@@ -1501,16 +1501,15 @@
   let chatUnsub = null
   let internalChatUnsub = null
   let _staffList = []
-  loadStaff().then(s => {
-    _staffList = s
-    const chatInput = document.getElementById('chatInput')
-    if (chatInput) attachMentionAutocomplete(chatInput, _staffList)
-    const internalInput = document.getElementById('internalChatInput')
-    if (internalInput) attachMentionAutocomplete(internalInput, _staffList)
-  })
+  loadStaff().then(s => { _staffList = s })
 
   function initChat() {
     if (!order.chatToken) return
+    loadStaff().then(s => {
+      _staffList = s
+      const el = document.getElementById('chatInput')
+      if (el) attachMentionAutocomplete(el, s)
+    })
     const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
     const chatQ = query(chatCol, orderBy('createdAt'))
     chatUnsub = onSnapshot(chatQ, (snap) => {
@@ -1617,6 +1616,11 @@
   }
 
   function initInternalChat() {
+    loadStaff().then(s => {
+      _staffList = s
+      const el = document.getElementById('internalChatInput')
+      if (el) attachMentionAutocomplete(el, s)
+    })
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
