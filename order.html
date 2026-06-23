@@ -1585,7 +1585,7 @@
     })
 
     const mentioned = parseMentions(text, _staffList)
-    if (mentioned.length) writeMentionNotifs(mentioned, profile.id)
+    if (mentioned.length) writeMentionNotifs(mentioned, profile.id, profile.name, text, orderId, order.orderNumber)
   }
 
   window.sendChatFile = async function(input) {
@@ -1674,7 +1674,7 @@
       createdAt:  Timestamp.now(),
     })
     const mentionedStaff = parseMentions(content, _staffList)
-    if (mentionedStaff.length) writeMentionNotifs(mentionedStaff, profile.id)
+    if (mentionedStaff.length) writeMentionNotifs(mentionedStaff, profile.id, profile.name, content, orderId, order.orderNumber)
     // Tulis notifikasi untuk staff lain
     addDoc(collection(db, 'notifications'), {
       type:        'internal_chat',

@@ -1,6 +1,6 @@
 import { db } from './config.js'
 import {
-  collection, doc, getDocs, setDoc, increment
+  collection, doc, getDocs, addDoc, setDoc, increment, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
 let _staffCache = null
@@ -40,11 +40,21 @@ export function highlightMentions(escapedHtml, staffList, myId) {
   return result
 }
 
-export async function writeMentionNotifs(mentionedStaff, fromId) {
+export async function writeMentionNotifs(mentionedStaff, fromId, fromName, preview, orderId, orderNumber) {
   for (const staff of mentionedStaff) {
     if (staff.id === fromId) continue
     try {
       await setDoc(doc(db, 'user_mentions', staff.id), { unreadMentions: increment(1) }, { merge: true })
+      await addDoc(collection(db, 'notifications'), {
+        type:        'mention',
+        targetUid:   staff.id,
+        fromUid:     fromId,
+        fromName:    fromName || 'Staff',
+        preview:     preview ? preview.slice(0, 80) : '',
+        orderId:     orderId || null,
+        orderNumber: orderNumber || null,
+        createdAt:   Timestamp.now(),
+      })
     } catch (e) {
       console.warn('mention notif failed:', staff.id, e)
     }

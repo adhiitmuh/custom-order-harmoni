@@ -386,15 +386,17 @@ function initNotifications(profile) {
     let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
     // Filter sesuai role + lokasi + divisi
-    if (profile.role !== 'owner') {
-      notifs = notifs.filter(n => {
-        if (n.fromUid === profile.id) return false
+    notifs = notifs.filter(n => {
+      if (n.fromUid === profile.id) return false
+      // @mention khusus untuk user ini
+      if (n.type === 'mention') return n.targetUid === profile.id
+      // Order notifications: owner lihat semua, staff filter by divisi/lokasi
+      if (profile.role !== 'owner') {
         if (profile.divisions?.length) return profile.divisions.includes(n.division)
         return !n.lokasiId || n.lokasiId === profile.lokasiId
-      })
-    } else {
-      notifs = notifs.filter(n => n.fromUid !== profile.id)
-    }
+      }
+      return true
+    })
 
     const lastReadAt = getLastRead()
     const unread = notifs.filter(n => {
@@ -419,12 +421,17 @@ function initNotifications(profile) {
     list.innerHTML = notifs.slice(0, 20).map(n => {
       const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
       const isUnread = ts > lastReadAt
-      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId}')"
+      const isMention = n.type === 'mention'
+      const icon = isMention ? '💬' : '🔔'
+      const label = isMention
+        ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
+        : (n.orderNumber || '—')
+      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId || ''}')"
         style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
         onmouseover="this.style.background='rgba(3,69,67,.08)'"
         onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-size:11px;font-weight:700;color:#034543">${n.orderNumber || '—'}</span>
+          <span style="font-size:11px;font-weight:700;color:#034543">${icon} ${label}</span>
           <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
         </div>
         <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>

@@ -469,7 +469,8 @@ window.sendReply = async function() {
 
     // Write mention notifications
     const mentioned = parseMentions(msg, staffList)
-    if (mentioned.length) writeMentionNotifs(mentioned, profile.id)
+    const thread = allThreads.find(t => t.id === activeThreadId)
+    if (mentioned.length) writeMentionNotifs(mentioned, profile.id, profile.name, msg, thread?.orderId || null, thread?.orderNumber || null)
   } catch (err) {
     alert('Gagal kirim: ' + err.message)
   } finally {
