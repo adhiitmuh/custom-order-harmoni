@@ -72,6 +72,11 @@ export default {
       return handleCreateOrderFromChat(request, env)
     }
 
+    // Backup endpoints: verifikasi Firebase ID token (owner only)
+    if (url.pathname === '/backups' || url.pathname === '/backup' || url.pathname === '/trigger-backup') {
+      return handleBackupRequest(request, url, env)
+    }
+
     // Endpoint lain: wajib API_SECRET_KEY
     const apiKey = request.headers.get('X-API-Key')
     if (apiKey !== env.API_SECRET_KEY) {
@@ -105,13 +110,23 @@ export default {
     }
   },
 
-  // ── Cron handler — jalan otomatis setiap hari 08.00 WITA (00:00 UTC) ───────
+  // ── Cron handler ────────────────────────────────────────────────────────────
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      getFirebaseToken(env)
-        .then(token => runDeadlineCheck(env, token))
-        .catch(err => console.error('Deadline check error:', err))
-    )
+    if (event.cron === '0 18 * * 0') {
+      // Minggu 02.00 WITA — auto backup ke R2
+      ctx.waitUntil(
+        getFirebaseToken(env)
+          .then(token => runBackup(env, token))
+          .catch(err => console.error('Backup error:', err))
+      )
+    } else {
+      // Setiap hari 08.00 WITA — deadline reminder
+      ctx.waitUntil(
+        getFirebaseToken(env)
+          .then(token => runDeadlineCheck(env, token))
+          .catch(err => console.error('Deadline check error:', err))
+      )
+    }
   },
 }
 
@@ -813,6 +828,132 @@ function json(data, status = 200) {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
+}
+
+// ── Backup & Recovery ─────────────────────────────────────────────────────────
+
+const BACKUP_COLLECTIONS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
+const BACKUP_RETAIN = 12 // simpan 12 backup terakhir (~3 bulan)
+
+async function handleBackupRequest(request, url, env) {
+  // Verifikasi Firebase ID token
+  const authHeader = request.headers.get('Authorization')
+  const idToken = authHeader?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const user = await verifyFirebaseIdToken(idToken, env)
+  if (!user) return json({ error: 'Token tidak valid' }, 401)
+
+  // Cek role owner di Firestore operasional
+  const projectId = env.FIREBASE_PROJECT_ID
+  const token = await getFirebaseToken(env)
+  const userDoc = await firestoreGet(projectId, token, `users/${user.localId}`)
+  const role = userDoc?.fields?.role?.stringValue
+  if (role !== 'owner') return json({ error: 'Hanya owner yang bisa akses backup' }, 403)
+
+  // GET /backups — list semua backup
+  if (request.method === 'GET' && url.pathname === '/backups') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    const list = await env.BACKUP_BUCKET.list()
+    const backups = (list.objects || [])
+      .sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded))
+      .map(o => ({ key: o.key, size: o.size, uploadedAt: o.uploaded }))
+    return json({ success: true, backups })
+  }
+
+  // GET /backup?key=xxx — download satu backup
+  if (request.method === 'GET' && url.pathname === '/backup') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    const key = url.searchParams.get('key')
+    if (!key) return json({ error: 'key wajib diisi' }, 400)
+    const obj = await env.BACKUP_BUCKET.get(key)
+    if (!obj) return json({ error: 'Backup tidak ditemukan' }, 404)
+    return new Response(obj.body, {
+      headers: { ...CORS, 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${key}"` }
+    })
+  }
+
+  // POST /trigger-backup — jalankan backup sekarang
+  if (request.method === 'POST' && url.pathname === '/trigger-backup') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    await runBackup(env, token)
+    return json({ success: true, message: 'Backup selesai' })
+  }
+
+  return json({ error: 'Endpoint tidak ditemukan' }, 404)
+}
+
+async function runBackup(env, token) {
+  const projectId = env.FIREBASE_PROJECT_ID
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    projectId,
+    collections: {}
+  }
+
+  for (const col of BACKUP_COLLECTIONS) {
+    try {
+      backup.collections[col] = await firestoreListAll(projectId, token, col)
+    } catch (e) {
+      console.error(`Backup ${col} gagal:`, e.message)
+      backup.collections[col] = {}
+    }
+  }
+
+  const totalDocs = Object.values(backup.collections).reduce((s, c) => s + Object.keys(c).length, 0)
+  const key = `backup-${new Date().toISOString().slice(0, 10)}.json`
+
+  await env.BACKUP_BUCKET.put(key, JSON.stringify(backup), {
+    httpMetadata: { contentType: 'application/json' },
+    customMetadata: { totalDocs: String(totalDocs) }
+  })
+
+  console.log(`Backup selesai: ${key} (${totalDocs} dokumen)`)
+
+  // Hapus backup lama — simpan hanya BACKUP_RETAIN terakhir
+  const list = await env.BACKUP_BUCKET.list()
+  const sorted = (list.objects || []).sort((a, b) => new Date(a.uploaded) - new Date(b.uploaded))
+  if (sorted.length > BACKUP_RETAIN) {
+    for (const obj of sorted.slice(0, sorted.length - BACKUP_RETAIN)) {
+      await env.BACKUP_BUCKET.delete(obj.key).catch(() => {})
+    }
+  }
+}
+
+async function firestoreListAll(projectId, token, collectionId) {
+  const docs = {}
+  let pageToken = null
+  do {
+    let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionId}?pageSize=300`
+    if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) break
+    const data = await res.json()
+    for (const d of data.documents || []) {
+      const id = d.name.split('/').pop()
+      docs[id] = parseFields(d.fields || {})
+    }
+    pageToken = data.nextPageToken || null
+  } while (pageToken)
+  return docs
+}
+
+function parseFields(fields) {
+  const out = {}
+  for (const [k, v] of Object.entries(fields)) out[k] = parseVal(v)
+  return out
+}
+
+function parseVal(v) {
+  if (v.stringValue  !== undefined) return v.stringValue
+  if (v.integerValue !== undefined) return parseInt(v.integerValue)
+  if (v.doubleValue  !== undefined) return Number(v.doubleValue)
+  if (v.booleanValue !== undefined) return v.booleanValue
+  if (v.nullValue    !== undefined) return null
+  if (v.timestampValue !== undefined) return { __type: 'timestamp', value: v.timestampValue }
+  if (v.arrayValue   !== undefined) return (v.arrayValue.values || []).map(parseVal)
+  if (v.mapValue     !== undefined) return parseFields(v.mapValue.fields || {})
+  return null
 }
 
 // ── Deadline Reminder ─────────────────────────────────────────────────────────
