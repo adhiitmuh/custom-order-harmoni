@@ -700,7 +700,11 @@ async function verifyFirebaseIdToken(idToken, env) {
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) }
   )
-  if (!resp.ok) return null
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}))
+    console.error('verifyToken HTTP error:', resp.status, JSON.stringify(errBody))
+    return { _error: `HTTP ${resp.status}: ${errBody?.error?.message || 'unknown'}` }
+  }
   const data = await resp.json()
   return data.users?.[0] || null
 }
@@ -834,7 +838,8 @@ async function handleBackupRequest(request, url, env) {
   const idToken = authHeader?.replace('Bearer ', '').trim()
   if (!idToken) return json({ error: 'Authorization required' }, 401)
   const user = await verifyFirebaseIdToken(idToken, env)
-  if (!user) return json({ error: 'Token tidak valid' }, 401)
+  if (!user) return json({ error: 'Token tidak valid — user tidak ditemukan' }, 401)
+  if (user._error) return json({ error: 'Token tidak valid — ' + user._error }, 401)
 
   // Cek role owner di Firestore operasional
   const projectId = env.FIREBASE_PROJECT_ID
