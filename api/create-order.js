@@ -1101,8 +1101,26 @@ async function fonnteSend(apiKey, target, message) {
 // ── Google Service Account JWT → Firebase access token ────────────────────────
 
 // Google Service Account JWT → Firebase access token
+function parseServiceAccountKey(raw) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // Fallback: literal newlines inside string values — escape them properly
+    let out = '', inStr = false, esc = false
+    for (const ch of raw) {
+      if (esc)          { out += ch; esc = false }
+      else if (ch === '\\') { out += ch; esc = true }
+      else if (ch === '"')  { out += ch; inStr = !inStr }
+      else if (inStr && ch === '\n') { out += '\\n' }
+      else if (inStr && ch === '\r') { out += '\\r' }
+      else                  { out += ch }
+    }
+    return JSON.parse(out)
+  }
+}
+
 async function getFirebaseToken(env) {
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_KEY)
+  const sa = parseServiceAccountKey(env.FIREBASE_SERVICE_ACCOUNT_KEY)
   const now = Math.floor(Date.now() / 1000)
 
   const b64url = (s) => btoa(s).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
