@@ -69,22 +69,38 @@
 
     <!-- QRIS -->
     <div class="card" style="margin-bottom:20px">
-      <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">QRIS</h2>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-        <input type="checkbox" id="qrisActive" style="width:16px;height:16px;accent-color:var(--green)">
-        <label for="qrisActive" style="font-size:13px;cursor:pointer">Aktifkan QRIS sebagai metode pembayaran</label>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:15px;font-weight:700">QRIS</h2>
+        <button class="btn btn-ghost btn-sm" onclick="openQrisForm()">+ Tambah QRIS</button>
       </div>
-      <div id="qrisFields">
+      <div id="qrisList"><div class="loading">Memuat…</div></div>
+      <div id="qrisForm" style="display:none;margin-top:16px;border-top:1px solid rgba(3,69,67,.08);padding-top:16px">
+        <h3 style="font-size:13px;font-weight:700;margin-bottom:12px" id="qrisFormTitle">Tambah QRIS</h3>
+        <input type="hidden" id="editQrisIndex" value="-1">
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Berlaku untuk Divisi</label>
+          <select id="qrisDivision" style="font-size:13px">
+            <option value="">— Semua Divisi —</option>
+          </select>
+          <p class="form-hint">Kosongkan jika QRIS ini berlaku untuk semua divisi</p>
+        </div>
         <div class="form-group" style="margin-bottom:8px">
-          <label>URL Gambar QRIS</label>
-          <input type="url" id="qrisImageUrl" placeholder="https://… (link langsung ke file gambar PNG/JPG)">
-          <p class="form-hint">Upload gambar QRIS ke Google Drive / ImgBB / Firebase Storage lalu paste link-nya di sini. Link harus bisa dibuka langsung di browser.</p>
+          <label>URL Gambar QRIS <span class="req">*</span></label>
+          <input type="url" id="qrisImageUrl" placeholder="https://…">
+          <p class="form-hint">Upload ke Google Drive / ImgBB / Firebase Storage lalu paste link-nya</p>
         </div>
-        <div id="qrisPreview" style="display:none;margin-top:10px">
-          <img id="qrisImg" style="max-width:200px;border-radius:10px;border:1px solid rgba(3,69,67,.12)" alt="QRIS Preview">
+        <div id="qrisPreview" style="display:none;margin-bottom:12px">
+          <img id="qrisImg" style="max-width:160px;border-radius:10px;border:1px solid rgba(3,69,67,.12)" alt="QRIS Preview">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <input type="checkbox" id="qrisActive" checked style="width:16px;height:16px;accent-color:var(--green)">
+          <label for="qrisActive" style="font-size:13px;cursor:pointer">Aktif</label>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="closeQrisForm()">Batal</button>
+          <button class="btn btn-primary btn-sm" onclick="saveQris()">Simpan</button>
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="saveQris()">Simpan QRIS</button>
     </div>
 
     <!-- Cash -->
@@ -175,12 +191,15 @@
   let paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true }
 
   // Populate bank division select (deferred until DOM ready via requireAuth)
-  function populateBankDivisionSelect() {
-    const sel = document.getElementById('bankDivision')
-    DIVISIONS.forEach(d => {
-      const opt = document.createElement('option')
-      opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-      sel.appendChild(opt)
+  function populateDivisionSelects() {
+    ;['bankDivision', 'qrisDivision'].forEach(id => {
+      const sel = document.getElementById(id)
+      if (!sel) return
+      DIVISIONS.forEach(d => {
+        const opt = document.createElement('option')
+        opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+        sel.appendChild(opt)
+      })
     })
   }
 
@@ -195,7 +214,7 @@
       return
     }
     // Render defaults immediately — no loading state
-    populateBankDivisionSelect()
+    populateDivisionSelects()
     renderBankList()
     loadPaymentInfo()
     loadCloudBackupList()
@@ -204,13 +223,17 @@
   async function loadPaymentInfo() {
     try {
       const snap = await getDoc(doc(db, 'settings', 'payment_info'))
-      if (snap.exists()) paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true, ...snap.data() }
+      if (snap.exists()) paymentInfo = { banks: [], qris: [], cashActive: true, ...snap.data() }
     } catch (e) { console.error(e) }
+    // Migrate lama: qrisImageUrl + qrisActive → array qris
+    if (!Array.isArray(paymentInfo.qris)) {
+      paymentInfo.qris = paymentInfo.qrisImageUrl
+        ? [{ imageUrl: paymentInfo.qrisImageUrl, division: '', isActive: paymentInfo.qrisActive !== false }]
+        : []
+    }
     renderBankList()
-    document.getElementById('qrisActive').checked = !!paymentInfo.qrisActive
-    document.getElementById('qrisImageUrl').value = paymentInfo.qrisImageUrl || ''
+    renderQrisList()
     document.getElementById('cashActive').checked = paymentInfo.cashActive !== false
-    if (paymentInfo.qrisImageUrl) showQrisPreview(paymentInfo.qrisImageUrl)
   }
 
   function renderBankList() {
@@ -290,12 +313,74 @@
     showAlert('Rekening disimpan ✓', 'success')
   }
 
-  window.saveQris = async function() {
-    paymentInfo.qrisActive = document.getElementById('qrisActive').checked
-    paymentInfo.qrisImageUrl = document.getElementById('qrisImageUrl').value.trim()
-    if (paymentInfo.qrisActive && !paymentInfo.qrisImageUrl) { showAlert('Masukkan URL gambar QRIS', 'error'); return }
+  function renderQrisList() {
+    const el = document.getElementById('qrisList')
+    const list = paymentInfo.qris || []
+    if (!list.length) {
+      el.innerHTML = `<p style="font-size:13px;color:rgba(3,69,67,.4);text-align:center;padding:16px 0">Belum ada QRIS. Klik "+ Tambah QRIS" untuk menambahkan.</p>`
+      return
+    }
+    el.innerHTML = list.map((q, i) => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(3,69,67,.06)">
+        <img src="${q.imageUrl}" alt="QRIS" style="width:48px;height:48px;border-radius:10px;border:1px solid rgba(3,69,67,.1);object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px">QRIS${q.division ? ` · ${DIVISION_META[q.division]?.icon||''} ${DIVISION_META[q.division]?.label||q.division}` : ' · Semua Divisi'}</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.imageUrl}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:${q.isActive!==false?'rgba(5,150,105,.1)':'rgba(3,69,67,.06)'};color:${q.isActive!==false?'#065f46':'rgba(3,69,67,.4)'}">${q.isActive!==false?'Aktif':'Nonaktif'}</span>
+          <button class="btn btn-ghost btn-sm" onclick="editQris(${i})">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:#b91c1c" onclick="deleteQris(${i})">Hapus</button>
+        </div>
+      </div>`).join('')
+  }
+
+  window.openQrisForm = function() {
+    document.getElementById('editQrisIndex').value = '-1'
+    document.getElementById('qrisFormTitle').textContent = 'Tambah QRIS'
+    document.getElementById('qrisDivision').value = ''
+    document.getElementById('qrisImageUrl').value = ''
+    document.getElementById('qrisActive').checked = true
+    document.getElementById('qrisPreview').style.display = 'none'
+    document.getElementById('qrisForm').style.display = ''
+    document.getElementById('qrisImageUrl').focus()
+  }
+
+  window.editQris = function(i) {
+    const q = paymentInfo.qris[i]
+    document.getElementById('editQrisIndex').value = i
+    document.getElementById('qrisFormTitle').textContent = 'Edit QRIS'
+    document.getElementById('qrisDivision').value = q.division || ''
+    document.getElementById('qrisImageUrl').value = q.imageUrl
+    document.getElementById('qrisActive').checked = q.isActive !== false
+    if (q.imageUrl) showQrisPreview(q.imageUrl)
+    document.getElementById('qrisForm').style.display = ''
+  }
+
+  window.deleteQris = async function(i) {
+    if (!confirm('Hapus QRIS ini?')) return
+    paymentInfo.qris.splice(i, 1)
     await savePaymentInfo()
-    if (paymentInfo.qrisImageUrl) showQrisPreview(paymentInfo.qrisImageUrl)
+    renderQrisList()
+    showAlert('QRIS dihapus', 'success')
+  }
+
+  window.closeQrisForm = function() {
+    document.getElementById('qrisForm').style.display = 'none'
+  }
+
+  window.saveQris = async function() {
+    const imageUrl = document.getElementById('qrisImageUrl').value.trim()
+    if (!imageUrl) { showAlert('URL gambar QRIS wajib diisi', 'error'); return }
+    const division = document.getElementById('qrisDivision').value
+    const isActive = document.getElementById('qrisActive').checked
+    const entry = { imageUrl, division: division || '', isActive }
+    if (!paymentInfo.qris) paymentInfo.qris = []
+    const idx = parseInt(document.getElementById('editQrisIndex').value)
+    if (idx >= 0) { paymentInfo.qris[idx] = entry } else { paymentInfo.qris.push(entry) }
+    await savePaymentInfo()
+    renderQrisList()
+    closeQrisForm()
     showAlert('QRIS disimpan ✓', 'success')
   }
 

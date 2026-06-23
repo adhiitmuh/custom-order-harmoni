@@ -385,7 +385,9 @@
         o.textContent = `🏦 Transfer ${b.bankName} — ${b.accountNumber}`
         sel.appendChild(o)
       })
-      if (info.qrisActive && info.qrisImageUrl) {
+      const qrisList = Array.isArray(info.qris) ? info.qris : (info.qrisActive && info.qrisImageUrl ? [{ imageUrl: info.qrisImageUrl, division: '', isActive: true }] : [])
+      const hasQris = qrisList.some(q => q.isActive !== false && (!q.division || !division || q.division === division))
+      if (hasQris) {
         const o = document.createElement('option'); o.value = 'qris'; o.textContent = '📱 QRIS'; sel.appendChild(o)
       }
     } catch(e) { console.error(e) }
