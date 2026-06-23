@@ -72,11 +72,6 @@ export default {
       return handleCreateOrderFromChat(request, env)
     }
 
-    // Backup endpoints: verifikasi Firebase ID token (owner only)
-    if (url.pathname === '/backups' || url.pathname === '/backup' || url.pathname === '/trigger-backup') {
-      return handleBackupRequest(request, url, env)
-    }
-
     // Endpoint lain: wajib API_SECRET_KEY
     const apiKey = request.headers.get('X-API-Key')
     if (apiKey !== env.API_SECRET_KEY) {
@@ -102,6 +97,10 @@ export default {
       if (request.method === 'POST' && url.pathname === '/trigger-deadline-check') {
         await runDeadlineCheck(env, token)
         return json({ success: true, message: 'Deadline check selesai' }, 200)
+      }
+      // Backup endpoints — pakai API_SECRET_KEY yang sama
+      if (url.pathname === '/backups' || url.pathname === '/backup' || url.pathname === '/trigger-backup') {
+        return handleBackupRequest(request, url, env, token)
       }
       return json({ error: 'Endpoint tidak ditemukan' }, 404)
     } catch (err) {
@@ -832,21 +831,9 @@ function json(data, status = 200) {
 const BACKUP_COLLECTIONS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
 const BACKUP_RETAIN = 12 // simpan 12 backup terakhir (~3 bulan)
 
-async function handleBackupRequest(request, url, env) {
-  // Verifikasi Firebase ID token
-  const authHeader = request.headers.get('Authorization')
-  const idToken = authHeader?.replace('Bearer ', '').trim()
-  if (!idToken) return json({ error: 'Authorization required' }, 401)
-  const user = await verifyFirebaseIdToken(idToken, env)
-  if (!user) return json({ error: 'Token tidak valid — user tidak ditemukan' }, 401)
-  if (user._error) return json({ error: 'Token tidak valid — ' + user._error }, 401)
-
-  // Cek role owner di Firestore operasional
+async function handleBackupRequest(request, url, env, token) {
+  // Auth sudah diverifikasi via X-API-Key sebelum masuk sini
   const projectId = env.FIREBASE_PROJECT_ID
-  const token = await getFirebaseToken(env)
-  const userDoc = await firestoreGet(projectId, token, `users/${user.localId}`)
-  const role = userDoc?.fields?.role?.stringValue
-  if (role !== 'owner') return json({ error: 'Hanya owner yang bisa akses backup' }, 403)
 
   // GET /backups — list semua backup
   if (request.method === 'GET' && url.pathname === '/backups') {

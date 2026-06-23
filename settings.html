@@ -113,6 +113,16 @@
         <strong style="color:rgba(3,69,67,.5)">Tidak termasuk:</strong> Riwayat chat (tidak kritis untuk operasional)
       </div>
 
+      <!-- API Key setup (sekali) -->
+      <div id="apiKeySetup" style="padding:14px 0;border-top:1px solid rgba(3,69,67,.07);display:none">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">Setup API Key</div>
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Masukkan Worker API Key untuk mengakses backup cloud. Lihat di n8n atau tanyakan ke developer.</div>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="apiKeyInput" placeholder="API key…" style="flex:1;font-size:12px;padding:6px 10px;border:1px solid rgba(3,69,67,.2);border-radius:8px">
+          <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Simpan</button>
+        </div>
+      </div>
+
       <!-- Backup Otomatis (R2) -->
       <div style="padding:14px 0;border-top:1px solid rgba(3,69,67,.07)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -323,21 +333,32 @@
 
   // ===== CLOUD BACKUP (R2 via Worker) =====
 
-  async function getIdToken() {
-    if (!auth.currentUser) return null
-    try { return await auth.currentUser.getIdToken() } catch { return null }
+  function getStoredApiKey() { return localStorage.getItem('harmoni_backup_key') || '' }
+
+  window.saveApiKey = function() {
+    const key = document.getElementById('apiKeyInput').value.trim()
+    if (!key) return
+    localStorage.setItem('harmoni_backup_key', key)
+    document.getElementById('apiKeySetup').style.display = 'none'
+    loadCloudBackupList()
   }
 
   async function loadCloudBackupList() {
     const el = document.getElementById('cloudBackupList')
     if (!el) return
+    const apiKey = getStoredApiKey()
+    if (!apiKey) {
+      document.getElementById('apiKeySetup').style.display = ''
+      el.innerHTML = `<div style="font-size:12px;color:rgba(3,69,67,.45);padding:4px 0">Masukkan API Key di atas untuk melihat daftar backup.</div>`
+      return
+    }
+    document.getElementById('apiKeySetup').style.display = 'none'
     try {
-      const token = await getIdToken()
-      const res = await fetch(`${WORKER_URL}/backups`, { headers: { Authorization: `Bearer ${token}` } })
+      const res = await fetch(`${WORKER_URL}/backups`, { headers: { 'X-API-Key': apiKey } })
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Gagal memuat backup')
       if (!data.backups.length) {
-        el.innerHTML = `<div style="font-size:12px;color:rgba(3,69,67,.35);padding:4px 0">Belum ada backup otomatis. Backup pertama akan dibuat Minggu depan, atau klik "↻ Backup Sekarang".</div>`
+        el.innerHTML = `<div style="font-size:12px;color:rgba(3,69,67,.35);padding:4px 0">Belum ada backup. Klik "↻ Backup Sekarang" untuk buat backup pertama.</div>`
         return
       }
       el.innerHTML = data.backups.map(b => {
@@ -353,19 +374,17 @@
           </div>`
       }).join('')
     } catch (e) {
-      el.innerHTML = `<div style="font-size:12px;color:rgba(3,69,67,.35);padding:4px 0">${e.message === 'R2 bucket belum dikonfigurasi' ? 'R2 belum disetup — ikuti langkah di bawah' : 'Gagal memuat: ' + e.message}</div>`
+      el.innerHTML = `<div style="font-size:12px;color:rgba(3,69,67,.35);padding:4px 0">Gagal memuat: ${e.message}</div>`
     }
   }
 
   window.triggerCloudBackup = async function() {
+    const apiKey = getStoredApiKey()
+    if (!apiKey) { document.getElementById('apiKeySetup').style.display = ''; return }
     const btn = document.getElementById('triggerBackupBtn')
     btn.disabled = true; btn.textContent = 'Memproses…'
     try {
-      const token = await getIdToken()
-      const res = await fetch(`${WORKER_URL}/trigger-backup`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch(`${WORKER_URL}/trigger-backup`, { method: 'POST', headers: { 'X-API-Key': apiKey } })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
       showBackupStatus('✓ Backup cloud selesai', 'success')
@@ -378,11 +397,10 @@
   }
 
   window.downloadCloudBackup = async function(key) {
+    const apiKey = getStoredApiKey()
+    if (!apiKey) return
     try {
-      const token = await getIdToken()
-      const res = await fetch(`${WORKER_URL}/backup?key=${encodeURIComponent(key)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch(`${WORKER_URL}/backup?key=${encodeURIComponent(key)}`, { headers: { 'X-API-Key': apiKey } })
       if (!res.ok) throw new Error('Gagal download')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
