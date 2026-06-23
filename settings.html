@@ -7,7 +7,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pengaturan — Harmoni</title>
+  <title>Pengaturan & Backup — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -16,8 +16,8 @@
   <main class="main">
     <div style="margin-bottom:28px">
       <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PENGATURAN</p>
-      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Metode Pembayaran</h1>
-      <p style="font-size:12px;color:rgba(3,69,67,.4);margin-top:3px">Rekening bank dan QRIS yang ditampilkan di invoice</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Pengaturan & Backup</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.4);margin-top:3px">Metode pembayaran, dan backup & recovery data</p>
     </div>
 
     <div id="alertMsg" style="display:none;margin-bottom:16px"></div>
@@ -100,13 +100,53 @@
       <button class="btn btn-primary btn-sm" onclick="saveCash()">Simpan</button>
     </div>
 
+    <!-- Backup & Recovery -->
+    <div class="card" style="margin-bottom:20px">
+      <h2 style="font-size:15px;font-weight:700;margin-bottom:4px">Backup & Recovery Data</h2>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-bottom:20px">Export semua data ke file JSON untuk backup. Gunakan file yang sama untuk recovery jika ada masalah.</p>
+
+      <div style="background:rgba(3,69,67,.03);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:rgba(3,69,67,.6);line-height:1.6">
+        <strong style="color:var(--green)">Yang di-backup:</strong> Orders, Product Knowledge, Price List, Lokasi, Pengaturan, Users, Nomor Order<br>
+        <strong style="color:rgba(3,69,67,.5)">Tidak termasuk:</strong> Riwayat chat (tidak kritis untuk operasional)
+      </div>
+
+      <!-- Backup -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-top:1px solid rgba(3,69,67,.07)">
+        <div>
+          <div style="font-size:13px;font-weight:700">Download Backup</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">Simpan file JSON ke komputer Anda</div>
+        </div>
+        <button id="backupBtn" class="btn btn-primary btn-sm" onclick="doBackup()" style="white-space:nowrap">⬇ Backup Sekarang</button>
+      </div>
+
+      <!-- Restore -->
+      <div style="padding:14px 0;border-top:1px solid rgba(3,69,67,.07)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div style="font-size:13px;font-weight:700">Restore dari Backup</div>
+            <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">Upload file backup JSON untuk memulihkan data</div>
+          </div>
+        </div>
+        <div style="background:#fff8f8;border:1.5px solid rgba(239,68,68,.2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#991b1b">
+          ⚠️ <strong>Peringatan:</strong> Restore akan menimpa data yang ada. Pastikan Anda punya backup terbaru sebelum melanjutkan.
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="handleRestoreFile(this)">
+          <button id="restoreBtn" class="btn btn-ghost btn-sm" onclick="document.getElementById('restoreFile').click()" style="border-color:rgba(239,68,68,.4);color:#b91c1c">⬆ Pilih File Backup</button>
+          <span id="restoreFileName" style="font-size:12px;color:rgba(3,69,67,.45)">Belum ada file dipilih</span>
+        </div>
+      </div>
+
+      <div id="backupStatus" style="display:none;margin-top:12px"></div>
+    </div>
+
   </main>
 </div>
 
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth } from './js/auth.js'
-  import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
   let paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true }
@@ -266,6 +306,105 @@
     el.textContent = msg
     el.style.display = ''
     setTimeout(() => { el.style.display = 'none' }, 3000)
+  }
+
+  // ===== BACKUP & RECOVERY =====
+  const BACKUP_COLS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
+
+  function toJSON(data) {
+    if (data === null || data === undefined) return data
+    if (data?.seconds !== undefined && data?.nanoseconds !== undefined) {
+      return { __type: 'timestamp', value: new Date(data.seconds * 1000).toISOString() }
+    }
+    if (Array.isArray(data)) return data.map(toJSON)
+    if (typeof data === 'object') {
+      const out = {}
+      for (const [k, v] of Object.entries(data)) out[k] = toJSON(v)
+      return out
+    }
+    return data
+  }
+
+  function fromJSON(data) {
+    if (data === null || data === undefined) return data
+    if (data?.__type === 'timestamp') return Timestamp.fromDate(new Date(data.value))
+    if (Array.isArray(data)) return data.map(fromJSON)
+    if (typeof data === 'object') {
+      const out = {}
+      for (const [k, v] of Object.entries(data)) out[k] = fromJSON(v)
+      return out
+    }
+    return data
+  }
+
+  function showBackupStatus(msg, type) {
+    const el = document.getElementById('backupStatus')
+    el.className = `alert alert-${type === 'success' ? 'success' : 'error'}`
+    el.textContent = msg
+    el.style.display = ''
+    if (type === 'success') setTimeout(() => { el.style.display = 'none' }, 5000)
+  }
+
+  window.doBackup = async function() {
+    const btn = document.getElementById('backupBtn')
+    btn.disabled = true; btn.textContent = 'Memproses…'
+    try {
+      const backup = { version: 1, exportedAt: new Date().toISOString(), projectId: 'harmoni-custom-order', collections: {} }
+      for (const col of BACKUP_COLS) {
+        const snap = await getDocs(collection(db, col))
+        backup.collections[col] = {}
+        snap.docs.forEach(d => { backup.collections[col][d.id] = toJSON(d.data()) })
+      }
+      const totalDocs = Object.values(backup.collections).reduce((s, c) => s + Object.keys(c).length, 0)
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `harmoni-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showBackupStatus(`✓ Backup berhasil — ${totalDocs} dokumen dari ${BACKUP_COLS.length} koleksi`, 'success')
+    } catch (e) {
+      showBackupStatus('Backup gagal: ' + e.message, 'error')
+    } finally {
+      btn.disabled = false; btn.textContent = '⬇ Backup Sekarang'
+    }
+  }
+
+  window.handleRestoreFile = async function(input) {
+    const file = input.files[0]
+    if (!file) return
+    document.getElementById('restoreFileName').textContent = file.name
+    const text = await file.text()
+    let backup
+    try { backup = JSON.parse(text) } catch {
+      showBackupStatus('File tidak valid — bukan format JSON yang benar', 'error'); return
+    }
+    if (!backup.version || !backup.collections) {
+      showBackupStatus('Format file backup tidak dikenal', 'error'); return
+    }
+    const totalDocs = Object.values(backup.collections).reduce((s, c) => s + Object.keys(c).length, 0)
+    const cols = Object.keys(backup.collections).join(', ')
+    const exportedAt = new Date(backup.exportedAt).toLocaleString('id-ID')
+    const ok = confirm(`RESTORE DATA\n\nFile backup: ${exportedAt}\nKoleksi: ${cols}\nJumlah dokumen: ${totalDocs}\n\n⚠️ Ini akan menimpa data yang ada.\nLanjutkan restore?`)
+    if (!ok) { input.value = ''; document.getElementById('restoreFileName').textContent = 'Belum ada file dipilih'; return }
+    const btn = document.getElementById('restoreBtn')
+    btn.disabled = true; btn.textContent = 'Memulihkan…'
+    try {
+      let count = 0
+      for (const [colName, docs] of Object.entries(backup.collections)) {
+        for (const [docId, data] of Object.entries(docs)) {
+          await setDoc(doc(db, colName, docId), fromJSON(data), { merge: true })
+          count++
+        }
+      }
+      showBackupStatus(`✓ Restore selesai — ${count} dokumen berhasil dipulihkan`, 'success')
+    } catch (e) {
+      showBackupStatus('Restore gagal: ' + e.message, 'error')
+    } finally {
+      btn.disabled = false; btn.textContent = '⬆ Pilih File Backup'
+      input.value = ''; document.getElementById('restoreFileName').textContent = 'Belum ada file dipilih'
+    }
   }
 </script>
 </body>

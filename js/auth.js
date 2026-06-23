@@ -288,7 +288,7 @@ export function renderSidebar(profile) {
         <span class="icon">🏷️</span>Kelola Divisi
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
-        <span class="icon">💳</span>Metode Pembayaran
+        <span class="icon">⚙️</span>Pengaturan & Backup
       </a>` : ''}
     </div>
     </div>
