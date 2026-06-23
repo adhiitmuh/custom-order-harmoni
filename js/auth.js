@@ -22,6 +22,7 @@ export const dataAuthReady = Promise.race([
 let _user = null
 let _profile = null
 let _notifInitialized = false
+let _mentionCount = 0
 let _divisions = null
 let _divisionsPromise = null
 
@@ -255,6 +256,7 @@ export function renderSidebar(profile) {
       <div class="sidebar-label">KOMUNIKASI</div>
       <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
         <span class="icon">💬</span>Chat Inbox
+        <span id="mentionBadge" style="display:${_mentionCount > 0 ? '' : 'none'}" class="mention-badge">${_mentionCount > 9 ? '9+' : _mentionCount}</span>
       </a>
     </div>` : ''}
 
@@ -364,6 +366,18 @@ window.goToOrderFromNotif = function(orderId) {
 function initNotifications(profile) {
   injectNotifPanel()
   const getLastRead = () => parseInt(localStorage.getItem(`notifReadAt_${profile.id}`) || '0')
+
+  // Mention badge — subscribe to user_mentions/{uid}
+  dataAuthReady.then(() => {
+    onSnapshot(doc(db, 'user_mentions', profile.id), snap => {
+      _mentionCount = snap.exists() ? (snap.data().unreadMentions || 0) : 0
+      const badge = document.getElementById('mentionBadge')
+      if (badge) {
+        badge.textContent = _mentionCount > 9 ? '9+' : String(_mentionCount)
+        badge.style.display = _mentionCount > 0 ? '' : 'none'
+      }
+    }, () => {})
+  })
 
   // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
   dataAuthReady.then(() => {

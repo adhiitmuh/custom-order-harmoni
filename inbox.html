@@ -224,6 +224,7 @@ import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { timeAgo, DIVISION_META, DIVISIONS } from './js/utils.js'
+import { loadStaff, attachMentionAutocomplete, parseMentions, highlightMentions, writeMentionNotifs, resetMentionCount } from './js/mentions.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 // Set ke URL Cloudflare Worker Anda (contoh: 'https://harmoni-order-api.username.workers.dev')
@@ -234,6 +235,8 @@ let allThreads     = []
 let currentFilter  = 'open'
 let activeThreadId = null
 let unsubMsgs      = null
+let staffList      = []
+let currentProfile = null
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 requireAuth(async (profile) => {
@@ -242,6 +245,9 @@ requireAuth(async (profile) => {
   }
 
   await dataAuthReady
+  currentProfile = profile
+  staffList = await loadStaff()
+  resetMentionCount(profile.id)
 
   const userLokasiId = profile.lokasiId || null
   const isOwner = profile.role === 'owner'
@@ -377,6 +383,10 @@ window.openThread = function(threadId) {
     </div>`}
   `
 
+  // Attach mention autocomplete to reply textarea
+  const replyTa = document.getElementById('replyTa')
+  if (replyTa && staffList.length) attachMentionAutocomplete(replyTa, staffList)
+
   // Subscribe to messages
   unsubMsgs = onSnapshot(
     query(collection(db, 'chat_threads', threadId, 'messages'), orderBy('createdAt', 'asc')),
@@ -414,8 +424,8 @@ function renderMessages(msgs) {
         <div style="display:flex;flex-direction:column;align-items:${isCustomer ? 'flex-start' : 'flex-end'}">
           ${isAI ? `<div class="sender-label">🤖 AI Agent</div>` : ''}
           ${!isCustomer && !isAI && m.senderName ? `<div class="sender-label">${esc(m.senderName)}</div>` : ''}
-          <div class="bubble ${st}${m.flagged ? ' flagged' : ''}">
-            <div style="white-space:pre-wrap">${esc(m.content || '')}</div>
+          <div class="bubble ${st}${m.flagged ? ' flagged' : ''}${m.mentions?.some(x => x.id === currentProfile?.id) ? ' bubble-mentioned' : ''}">
+            <div style="white-space:pre-wrap">${highlightMentions(esc(m.content || ''), staffList, currentProfile?.id)}</div>
             ${m.flagged ? `<div class="flag-tag">🚩 ${esc(m.flagReason || 'Konten mencurigakan')}</div>` : ''}
             <div class="bubble-time">${time}</div>
           </div>
@@ -456,6 +466,10 @@ window.sendReply = async function() {
     }
     ta.value = ''
     ta.style.height = 'auto'
+
+    // Write mention notifications
+    const mentioned = parseMentions(msg, staffList)
+    if (mentioned.length) writeMentionNotifs(mentioned, profile.id)
   } catch (err) {
     alert('Gagal kirim: ' + err.message)
   } finally {

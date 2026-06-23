@@ -140,6 +140,30 @@ hr.sep { border: none; border-top: 1px solid rgba(3,69,67,.07); margin: 16px 0; 
   to   { opacity:1; transform:translateY(0); }
 }
 
+/* @mention */
+.mention { color: var(--green); font-weight: 700; }
+.mention-me { background: rgba(3,69,67,.12); border-radius: 4px; padding: 1px 4px; }
+.mention-dropdown {
+  background: var(--white); border: 1.5px solid rgba(3,69,67,.12);
+  border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,.12);
+  overflow: hidden; max-height: 220px; overflow-y: auto;
+}
+.mention-item {
+  padding: 8px 13px; cursor: pointer; font-size: 13px;
+  font-weight: 600; color: var(--black); display: flex; align-items: center; gap: 6px;
+}
+.mention-item.hover, .mention-item:hover { background: rgba(3,69,67,.06); }
+.mention-item-role {
+  font-size: 10px; font-weight: 400; color: rgba(3,69,67,.4);
+  margin-left: auto; text-transform: uppercase;
+}
+.mention-badge {
+  background: #ef4444; color: white; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; border-radius: 999px; min-width: 15px;
+  text-align: center; line-height: 1.6; margin-left: auto;
+}
+.bubble-mentioned { outline: 2px solid rgba(3,69,67,.3); }
+
 /* Login page */
 .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;

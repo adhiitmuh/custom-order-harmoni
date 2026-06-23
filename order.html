@@ -83,6 +83,7 @@
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
+  import { loadStaff, attachMentionAutocomplete, parseMentions, highlightMentions, writeMentionNotifs } from './js/mentions.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -1499,6 +1500,12 @@
   // ===== CHAT =====
   let chatUnsub = null
   let internalChatUnsub = null
+  let _staffList = []
+  loadStaff().then(s => {
+    _staffList = s
+    const chatInput = document.getElementById('chatInput')
+    if (chatInput) attachMentionAutocomplete(chatInput, _staffList)
+  })
 
   function initChat() {
     if (!order.chatToken) return
@@ -1532,7 +1539,7 @@
             ${m.type==='file'&&m.imageUrl
               ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
               : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:6px;display:block"></a>` : ''}
-            ${m.text ? m.text.replace(/\n/g,'<br>') : ''}
+            ${m.text ? highlightMentions(m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'), _staffList, profile?.id) : ''}
           </div>
         </div>`
       }).join('')
@@ -1570,6 +1577,9 @@
       senderBranch: profile.branch || '',
       createdAt: Timestamp.now(),
     })
+
+    const mentioned = parseMentions(text, _staffList)
+    if (mentioned.length) writeMentionNotifs(mentioned, profile.id)
   }
 
   window.sendChatFile = async function(input) {
