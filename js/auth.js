@@ -1,6 +1,6 @@
 import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
 if ('serviceWorker' in navigator) {
@@ -256,6 +256,7 @@ export function renderSidebar(profile) {
       <div class="sidebar-label">KOMUNIKASI</div>
       <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
         <span class="icon">💬</span>Chat Inbox
+        <span id="inboxBadge" style="display:none;background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:999px;min-width:16px;text-align:center">0</span>
         <span id="mentionBadge" style="display:${_mentionCount > 0 ? '' : 'none'}" class="mention-badge">${_mentionCount > 9 ? '9+' : _mentionCount}</span>
       </a>
     </div>` : ''}
@@ -377,6 +378,18 @@ function initNotifications(profile) {
         badge.style.display = _mentionCount > 0 ? '' : 'none'
       }
     }, () => {})
+
+    // Inbox thread badge — unread threads dari chat_threads
+    if (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') {
+      onSnapshot(query(collection(db, 'chat_threads'), where('unreadCount', '>', 0)), snap => {
+        const count = snap.docs.length
+        const badge = document.getElementById('inboxBadge')
+        if (badge) {
+          badge.textContent = count > 9 ? '9+' : String(count)
+          badge.style.display = count > 0 ? '' : 'none'
+        }
+      }, () => {})
+    }
   })
 
   // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
