@@ -91,6 +91,7 @@
 
   let order = null
   let paymentInfo = null
+  let staffList = []
 
   async function loadPaymentInfo() {
     try {
@@ -102,6 +103,7 @@
 
   requireAuth((profile) => {
     loadPaymentInfo()
+    loadStaff().then(l => { staffList = l }).catch(() => {})
     // Timeout fallback — kalau 10 detik masih loading, minta refresh
     const loadTimeout = setTimeout(() => {
       const el = document.getElementById('pageContent')
@@ -136,6 +138,15 @@
 
     clearTimeout(loadTimeout)
     renderPage(profile)
+    // Attach mention autocomplete to internal chat textarea (programmatic, not via oninput attr)
+    ;(function() {
+      const ta = document.getElementById('internalChatInput')
+      if (!ta || ta._mcReady) return
+      ta._mcReady = true
+      const doAttach = () => attachMentionAutocomplete(ta, staffList)
+      if (staffList.length) { doAttach() }
+      else { loadStaff().then(l => { staffList = l; doAttach() }).catch(() => {}) }
+    })()
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
     setTimeout(() => { initChat(); initInternalChat() }, 200)
@@ -657,8 +668,7 @@
         <div style="display:flex;gap:8px;align-items:flex-end">
           <textarea id="internalChatInput" placeholder="Tulis pesan untuk tim… (Enter kirim, Shift+Enter baris baru)" rows="2"
             style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"
-            oninput="initMentionLazy(this)"></textarea>
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"></textarea>
           <button onclick="sendInternalMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>
@@ -1454,18 +1464,6 @@
       await updateDoc(doc(db,'orders',orderId), { measurements, updatedAt: now, ukuranEditBy: getProfile().name, ukuranEditAt: now })
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
-  }
-
-  window.initMentionLazy = async function(ta) {
-    if (ta._mcReady) return
-    ta._mcReady = true
-    let list = await loadStaff().catch(() => [])
-    if (!list.length) {
-      const p = getProfile()
-      if (p?.id) list = [{ id: p.id, name: p.name, role: p.role }]
-    }
-    attachMentionAutocomplete(ta, list)
-    ta.dispatchEvent(new Event('input'))
   }
 
   window.editLokasi = async function() {
