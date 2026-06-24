@@ -86,7 +86,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getActiveDivisions, invalidateDivisionsCache } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions, invalidateDivisionsCache } from './js/auth.js'
   import { collection, doc, getDoc, getDocs, setDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, PRODUKSI_UNIT } from './js/utils.js'
 
@@ -98,6 +98,7 @@
       window.location.href = 'orders.html'
       return
     }
+    await dataAuthReady
     await load()
   })
 
