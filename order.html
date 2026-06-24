@@ -1337,6 +1337,7 @@
     const v = document.getElementById('paymentView')
     const e = document.getElementById('paymentEdit')
     const btn = document.getElementById('payEditBtn')
+    if (!v || !e || !btn) return
     const isEditing = e.style.display !== 'none'
     v.style.display = isEditing ? '' : 'none'
     e.style.display = isEditing ? 'none' : ''
@@ -1374,6 +1375,8 @@
       }
       await updateDoc(doc(db,'orders',orderId), updates)
       await loadOrder(getProfile())
+    } catch(err) {
+      alert('Gagal simpan: ' + err.message)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
 

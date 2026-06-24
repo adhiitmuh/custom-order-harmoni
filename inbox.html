@@ -221,7 +221,7 @@
 import { db, auth } from './js/config.js'
 import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
 import {
-  collection, doc, query, orderBy, onSnapshot, updateDoc, Timestamp
+  collection, doc, query, orderBy, onSnapshot, updateDoc, arrayUnion, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { timeAgo, DIVISION_META, DIVISIONS } from './js/utils.js'
 import { loadStaff, attachMentionAutocomplete, parseMentions, highlightMentions, writeMentionNotifs, resetMentionCount } from './js/mentions.js'
@@ -256,8 +256,12 @@ requireAuth(async (profile) => {
     query(collection(db, 'chat_threads'), orderBy('lastMessageAt', 'desc')),
     snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      // Owner lihat semua; CS/manager lihat thread lokasi mereka + thread belum di-assign
-      allThreads = isOwner ? all : all.filter(t => !t.lokasiId || t.lokasiId === userLokasiId)
+      // Owner lihat semua; CS/manager lihat thread lokasi mereka + thread belum di-assign + thread dimana mereka di-@mention
+      allThreads = isOwner ? all : all.filter(t =>
+        !t.lokasiId ||
+        t.lokasiId === userLokasiId ||
+        (t.guestStaffIds || []).includes(profile.id)
+      )
       const openCount = allThreads.filter(t => t.status === 'open').length
       document.getElementById('inboxCount').textContent =
         `${openCount} aktif · ${allThreads.length} total`
@@ -291,10 +295,13 @@ function renderList() {
     return
   }
 
+  const userLokasiId = currentProfile?.lokasiId || null
+  const isOwner = currentProfile?.role === 'owner'
   el.innerHTML = list.map(t => {
     const stCls = { open: 'th-open', closed: 'th-closed', escalated: 'th-escalated' }[t.status] || 'th-open'
     const stLabel = { open: 'Aktif', closed: 'Selesai', escalated: 'Eskalasi' }[t.status] || t.status
     const unread = t.unreadCount > 0
+    const isGuest = !isOwner && t.lokasiId && t.lokasiId !== userLokasiId
     return `
       <div class="thread-row ${t.id === activeThreadId ? 'active' : ''}" onclick="openThread('${t.id}')">
         <div class="tr-head">
@@ -304,6 +311,7 @@ function renderList() {
         <div style="display:flex;align-items:center;gap:6px">
           <span class="tr-name">${esc(t.customerName || 'Customer')}</span>
           ${t.hasFlag ? `<span title="Ada pesan mencurigakan" style="font-size:12px">🚩</span>` : ''}
+          ${isGuest ? `<span title="Thread dari ${esc(t.lokasiNama || 'cabang lain')}" style="font-size:10px;background:#e0f2fe;color:#0c4a6e;padding:1px 5px;border-radius:4px;font-weight:600">tamu</span>` : ''}
         </div>
         <div class="tr-preview">${esc(t.lastMessage || '—')}</div>
         <div class="tr-footer">
@@ -338,6 +346,10 @@ window.openThread = function(threadId) {
   const stCls   = { open: 'th-open', closed: 'th-closed', escalated: 'th-escalated' }[thread.status] || 'th-open'
   const stLabel = { open: 'Aktif', closed: 'Selesai', escalated: 'Eskalasi' }[thread.status] || thread.status
   const isClosed = thread.status === 'closed'
+  const _userLokasiId = currentProfile?.lokasiId || null
+  const _isOwner = currentProfile?.role === 'owner'
+  const isGuest = !_isOwner && thread.lokasiId && thread.lokasiId !== _userLokasiId
+  const canCreateOrder = _isOwner || !thread.lokasiId || thread.lokasiId === _userLokasiId
 
   const panel = document.getElementById('chatPanelEl')
   panel.innerHTML = `
@@ -346,7 +358,10 @@ window.openThread = function(threadId) {
       <div style="display:flex;align-items:center;gap:10px">
         <div class="chat-avatar">${(thread.customerName || '?')[0].toUpperCase()}</div>
         <div>
-          <div style="font-size:15px;font-weight:700;color:var(--black)">${esc(thread.customerName || 'Customer')}</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="font-size:15px;font-weight:700;color:var(--black)">${esc(thread.customerName || 'Customer')}</div>
+            ${isGuest ? `<span style="font-size:10px;background:#e0f2fe;color:#0c4a6e;padding:2px 7px;border-radius:5px;font-weight:700">👥 Tamu · ${esc(thread.lokasiNama || 'Cabang lain')}</span>` : ''}
+          </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
             <span style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.45)">${esc(thread.token || '')}</span>
             <span class="badge ${stCls}" style="font-size:9px;padding:2px 6px">${stLabel}</span>
@@ -356,13 +371,14 @@ window.openThread = function(threadId) {
       <div style="display:flex;gap:5px;flex-wrap:wrap">
         ${thread.orderId
           ? `<a href="order.html?id=${thread.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${thread.orderNumber || 'Lihat Order'}</a>`
-          : (!isClosed ? `<button onclick="openOrderModal()" class="btn btn-primary btn-sm" style="font-size:11px">+ Buat Order</button>` : '')}
+          : (!isClosed && canCreateOrder ? `<button onclick="openOrderModal()" class="btn btn-primary btn-sm" style="font-size:11px">+ Buat Order</button>` : '')}
         ${!isClosed ? `<button onclick="setStatus('closed')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tutup</button>` : ''}
         ${thread.status === 'open' ? `<button onclick="setStatus('escalated')" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1.5px solid #fde68a;font-size:11px">⚠ Eskalasi</button>` : ''}
         ${!isClosed && thread.status !== 'open' ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka</button>` : ''}
         ${isClosed ? `<button onclick="setStatus('open')" class="btn btn-ghost btn-sm" style="font-size:11px">↺ Buka Lagi</button>` : ''}
       </div>
     </div>
+    ${isGuest ? `<div style="padding:6px 18px;background:#e0f2fe;font-size:11px;color:#0c4a6e;font-weight:600">👥 Anda diberi akses ke thread ini karena di-@mention. Hanya tim ${esc(thread.lokasiNama || 'cabang ini')} yang dapat membuat order/invoice.</div>` : ''}
 
     <!-- Messages -->
     <div class="chat-messages" id="msgAreaEl">
@@ -468,10 +484,14 @@ window.sendReply = async function() {
     ta.value = ''
     ta.style.height = 'auto'
 
-    // Write mention notifications
+    // Grant guest access + write mention notifications
     const mentioned = parseMentions(msg, staffList)
     const thread = allThreads.find(t => t.id === activeThreadId)
-    if (mentioned.length) writeMentionNotifs(mentioned, profile.id, profile.name, msg, thread?.orderId || null, thread?.orderNumber || null)
+    if (mentioned.length) {
+      const mentionedIds = mentioned.map(s => s.id)
+      updateDoc(doc(db, 'chat_threads', activeThreadId), { guestStaffIds: arrayUnion(...mentionedIds) }).catch(() => {})
+      writeMentionNotifs(mentioned, profile.id, profile.name, msg, thread?.orderId || null, thread?.orderNumber || null)
+    }
   } catch (err) {
     alert('Gagal kirim: ' + err.message)
   } finally {
