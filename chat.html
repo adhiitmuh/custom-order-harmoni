@@ -190,6 +190,19 @@
         <span style="font-size:12px;font-weight:600;color:#282828;margin-left:auto">Halo, ${orderInfo.customerName} 👋</span>
       </div>
 
+      ${orderInfo.designFiles?.length ? `
+      <!-- File Desain -->
+      <div style="padding:10px 14px;border-bottom:1px solid rgba(3,69,67,.08);background:#fafffe">
+        <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">📁 File Desain</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${orderInfo.designFiles.map(url => `
+            <a href="${url}" target="_blank" style="display:block;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1.5px solid rgba(3,69,67,.12);flex-shrink:0">
+              <img src="${url}" style="width:100%;height:100%;object-fit:cover" loading="lazy">
+            </a>
+          `).join('')}
+        </div>
+      </div>` : ''}
+
       <!-- Tabs -->
       <div class="tabs">
         <div class="tab active" id="tabChat" onclick="switchTab('chat')">💬 Chat</div>

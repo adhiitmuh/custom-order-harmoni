@@ -138,6 +138,11 @@
       updateDoc(doc(db,'orders',orderId), { unreadCustomerChat: 0 }).catch(() => {})
     }
 
+    // Sync designFiles ke public_order_info supaya customer bisa lihat
+    if (order.chatToken && order.designFiles?.length) {
+      updateDoc(doc(db,'public_order_info',order.chatToken), { designFiles: order.designFiles }).catch(() => {})
+    }
+
     // Cabang guard — non-owner hanya bisa akses order dari cabang mereka
     if (profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) {
       document.getElementById('pageContent').innerHTML = `
@@ -1128,6 +1133,10 @@
         designFiles: arrayUnion(...urls),
         updatedAt: Timestamp.now(),
       })
+      if (order.chatToken) {
+        const merged = [...(order.designFiles||[]), ...urls]
+        await updateDoc(doc(db,'public_order_info',order.chatToken), { designFiles: merged }).catch(()=>{})
+      }
       input.value = ''
       await loadOrder(getProfile())
     } catch(err) {
@@ -1788,6 +1797,9 @@
     const chatUrl = order.chatToken
       ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}`
       : null
+    const itemLines = (order.orderItems?.length)
+      ? [`*RINCIAN ITEM*`, ...order.orderItems.map(it => `• ${it.name}: ${it.qty} x ${fmtCurrency(it.pricePerUnit)} = ${fmtCurrency(it.subtotal)}`), ``]
+      : []
     const lines = [
       `*INVOICE HARMONI*`, ``,
       `No. Order: *${order.orderNumber}*`,
@@ -1796,6 +1808,7 @@
       `*Pemesan:* ${order.customerName}`,
       `*Tanggal Pesan:* ${fmtDate(order.orderDate)}`,
       `*Target Selesai:* ${fmtDate(order.dueDate)}`, ``,
+      ...itemLines,
       `*RINCIAN PEMBAYARAN*`,
       `Total Harga: ${fmtCurrency(order.totalPrice)}`,
       `DP Dibayar: ${fmtCurrency(order.depositPaid)}`,
