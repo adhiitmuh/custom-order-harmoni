@@ -1625,6 +1625,11 @@
         badge.textContent = unread || ''
         badge.style.display = unread > 0 ? '' : 'none'
       }
+      // Sync counter ke Firestore kalau beda supaya card order & dashboard akurat
+      if (unread !== (order.unreadCustomerChat || 0)) {
+        updateDoc(doc(db,'orders',orderId), { unreadCustomerChat: unread }).catch(() => {})
+        order.unreadCustomerChat = unread
+      }
     })
   }
 
