@@ -73,11 +73,13 @@
     const el = document.getElementById('notifSummary')
     if (!el) return
 
+    // Render kerangka dulu supaya chatUnreadAlert ada di DOM sebelum onSnapshot fire
+    el.innerHTML = '<div id="chatUnreadAlert"></div>'
+
     // Unread customer chat — real-time dengan onSnapshot
-    let unreadOrders = []
     if (profile.role !== 'production') {
       onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), (snap) => {
-        unreadOrders = snap.docs
+        const unreadOrders = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(o => {
             if (profile.role === 'owner') return true
@@ -110,7 +112,7 @@
     const mentionSnap = await getDoc(doc(db, 'user_mentions', profile.id)).catch(() => null)
     const mentionCount = mentionSnap?.exists() ? (mentionSnap.data().unreadMentions || 0) : 0
 
-    let html = '<div id="chatUnreadAlert"></div>'
+    let html = ''
 
     // Notification list panel
     if (notifs.length > 0) {
@@ -139,7 +141,15 @@
         </div>`
     }
 
-    el.innerHTML = html
+    // Append notif panel setelah chatUnreadAlert (jangan replace seluruh el)
+    const existing = document.getElementById('chatUnreadAlert')
+    if (existing) {
+      const notifEl = document.createElement('div')
+      notifEl.innerHTML = html
+      existing.after(notifEl)
+    } else {
+      el.innerHTML = html
+    }
   }
 
   async function loadStats(profile) {
