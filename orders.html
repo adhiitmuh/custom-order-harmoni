@@ -65,7 +65,7 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, query, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
 
   let allOrders = []
@@ -135,36 +135,41 @@
       }
     }, 10000)
 
-    // Tunggu dataAuth siap sebelum query Firestore (defensive: fallback jika undefined)
-    ;(dataAuthReady || Promise.resolve()).then(() =>
-    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')))).catch(err => {
-      clearTimeout(loadTimeout)
-      document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Coba refresh</a></p></div>`
-    }).then(snap => { if (!snap) return
-      clearTimeout(loadTimeout)
-      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      if (profile.role === 'owner') {
-        const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
-        const sel = document.getElementById('branchFilter')
-        branches.forEach(b => {
-          const opt = document.createElement('option')
-          opt.value = b; opt.textContent = `📍 ${b}`
-          sel.appendChild(opt)
-        })
-
-        const lokasiNames = {}
-        allOrders.filter(o => o.lokasiId).forEach(o => { lokasiNames[o.lokasiId] = o.lokasiNama || o.lokasiId })
-        const lokasiSel = document.getElementById('lokasiFilter')
-        Object.entries(lokasiNames).sort((a,b) => a[1].localeCompare(b[1])).forEach(([id, nama]) => {
-          const opt = document.createElement('option')
-          opt.value = id; opt.textContent = `📍 ${nama}`
-          lokasiSel.appendChild(opt)
-        })
-        if (Object.keys(lokasiNames).length > 0) lokasiSel.style.display = ''
-      }
-      render()
+    // Tunggu dataAuth siap, lalu onSnapshot untuk update real-time (badge unread chat langsung muncul)
+    let _filtersBuilt = false
+    ;(dataAuthReady || Promise.resolve()).then(() => {
+      onSnapshot(
+        query(collection(db, 'orders'), orderBy('createdAt', 'desc')),
+        (snap) => {
+          clearTimeout(loadTimeout)
+          allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          if (!_filtersBuilt && profile.role === 'owner') {
+            _filtersBuilt = true
+            const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
+            const sel = document.getElementById('branchFilter')
+            branches.forEach(b => {
+              const opt = document.createElement('option')
+              opt.value = b; opt.textContent = `📍 ${b}`
+              sel.appendChild(opt)
+            })
+            const lokasiNames = {}
+            allOrders.filter(o => o.lokasiId).forEach(o => { lokasiNames[o.lokasiId] = o.lokasiNama || o.lokasiId })
+            const lokasiSel = document.getElementById('lokasiFilter')
+            Object.entries(lokasiNames).sort((a,b) => a[1].localeCompare(b[1])).forEach(([id, nama]) => {
+              const opt = document.createElement('option')
+              opt.value = id; opt.textContent = `📍 ${nama}`
+              lokasiSel.appendChild(opt)
+            })
+            if (Object.keys(lokasiNames).length > 0) lokasiSel.style.display = ''
+          }
+          render()
+        },
+        (err) => {
+          clearTimeout(loadTimeout)
+          document.getElementById('orderList').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat order: ${err.message}<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Coba refresh</a></p></div>`
+        }
+      )
     })
-  })
 
   function render() {
     const search = document.getElementById('searchInput').value.toLowerCase()

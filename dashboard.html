@@ -72,17 +72,29 @@
     const el = document.getElementById('notifSummary')
     if (!el) return
 
-    // Unread customer chat (owner/cs/manager only)
+    // Unread customer chat — real-time dengan onSnapshot
     let unreadOrders = []
     if (profile.role !== 'production') {
-      const chatSnap = await getDocs(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0))).catch(() => null)
-      unreadOrders = chatSnap ? chatSnap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(o => {
-          if (profile.role === 'owner') return true
-          if (profile.divisions?.length) return profile.divisions.includes(o.division)
-          return !o.lokasiId || o.lokasiId === profile.lokasiId
-        }) : []
+      onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), (snap) => {
+        unreadOrders = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(o => {
+            if (profile.role === 'owner') return true
+            if (profile.divisions?.length) return profile.divisions.includes(o.division)
+            return !o.lokasiId || o.lokasiId === profile.lokasiId
+          })
+        const chatEl = document.getElementById('chatUnreadAlert')
+        if (chatEl) {
+          chatEl.innerHTML = unreadOrders.length > 0 ? `
+            <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;margin-bottom:12px">
+              <span style="font-size:20px">💬</span>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#b91c1c">${unreadOrders.length} order ada pesan baru dari customer</div>
+                <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
+              </div>
+            </a>` : ''
+        }
+      })
     }
 
     // Notification list for this user (mentions)
@@ -97,19 +109,7 @@
     const mentionSnap = await getDoc(doc(db, 'user_mentions', profile.id)).catch(() => null)
     const mentionCount = mentionSnap?.exists() ? (mentionSnap.data().unreadMentions || 0) : 0
 
-    let html = ''
-
-    // Alert card: unread customer chat
-    if (unreadOrders.length > 0) {
-      html += `
-        <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;margin-bottom:12px">
-          <span style="font-size:20px">💬</span>
-          <div>
-            <div style="font-size:13px;font-weight:700;color:#b91c1c">${unreadOrders.length} order ada pesan baru dari customer</div>
-            <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
-          </div>
-        </a>`
-    }
+    let html = '<div id="chatUnreadAlert"></div>'
 
     // Notification list panel
     if (notifs.length > 0) {
