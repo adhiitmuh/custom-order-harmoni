@@ -73,30 +73,44 @@
     const el = document.getElementById('notifSummary')
     if (!el) return
 
-    // Render kerangka dulu supaya chatUnreadAlert ada di DOM sebelum onSnapshot fire
-    el.innerHTML = '<div id="chatUnreadAlert"></div>'
+    // Render kerangka dulu supaya alert-div ada di DOM sebelum onSnapshot fire
+    el.innerHTML = '<div id="chatUnreadAlert"></div><div id="internalUnreadAlert"></div>'
 
-    // Unread customer chat — real-time dengan onSnapshot
+    // Unread customer chat — real-time
     if (profile.role !== 'production') {
       onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), (snap) => {
-        const unreadOrders = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(o => {
-            if (profile.role === 'owner') return true
-            if (profile.divisions?.length) return profile.divisions.includes(o.division)
-            return !o.lokasiId || o.lokasiId === profile.lokasiId
-          })
-        const chatEl = document.getElementById('chatUnreadAlert')
-        if (chatEl) {
-          chatEl.innerHTML = unreadOrders.length > 0 ? `
-            <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;margin-bottom:12px">
-              <span style="font-size:20px">💬</span>
-              <div>
-                <div style="font-size:13px;font-weight:700;color:#b91c1c">${unreadOrders.length} order ada pesan baru dari customer</div>
-                <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
-              </div>
-            </a>` : ''
-        }
+        const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => {
+          if (profile.role === 'owner') return true
+          if (profile.divisions?.length) return profile.divisions.includes(o.division)
+          return !o.lokasiId || o.lokasiId === profile.lokasiId
+        })
+        const el2 = document.getElementById('chatUnreadAlert')
+        if (el2) el2.innerHTML = orders.length > 0 ? `
+          <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(239,68,68,.2);text-decoration:none;margin-bottom:8px">
+            <span style="font-size:20px">💬</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#b91c1c">${orders.length} order ada pesan baru dari customer</div>
+              <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
+            </div>
+          </a>` : ''
+      })
+
+      // Unread internal chat — real-time
+      onSnapshot(query(collection(db, 'orders'), where('unreadInternalChat', '>', 0)), (snap) => {
+        const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => {
+          if (profile.role === 'owner') return true
+          if (profile.divisions?.length) return profile.divisions.includes(o.division)
+          return !o.lokasiId || o.lokasiId === profile.lokasiId
+        })
+        const el2 = document.getElementById('internalUnreadAlert')
+        if (el2) el2.innerHTML = orders.length > 0 ? `
+          <a href="orders.html" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:10px;border:1.5px solid rgba(7,89,133,.15);text-decoration:none;margin-bottom:8px">
+            <span style="font-size:20px">🔒</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#075985">${orders.length} order ada pesan baru dari tim internal</div>
+              <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">Klik untuk buka daftar order</div>
+            </div>
+          </a>` : ''
       })
     }
 

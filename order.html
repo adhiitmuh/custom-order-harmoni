@@ -80,7 +80,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, generateChatToken } from './js/utils.js'
   import { loadStaff, attachMentionAutocomplete, parseMentions, highlightMentions, writeMentionNotifs } from './js/mentions.js'
@@ -138,6 +138,11 @@
     if (order.chatToken && order.designFiles?.length) {
       updateDoc(doc(db,'public_order_info',order.chatToken), { designFiles: order.designFiles }).catch(() => {})
     }
+
+    // Reset unread counter saat staff buka order
+    const resetFields = {}
+    if (order.unreadInternalChat > 0) resetFields.unreadInternalChat = 0
+    if (Object.keys(resetFields).length) updateDoc(doc(db,'orders',orderId), resetFields).catch(() => {})
 
     // Cabang guard — non-owner hanya bisa akses order dari cabang mereka
     if (profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) {
@@ -1747,6 +1752,7 @@
       senderRole: profile.role,
       createdAt:  Timestamp.now(),
     })
+    updateDoc(doc(db,'orders',orderId), { unreadInternalChat: increment(1) }).catch(() => {})
     const mentionedStaff = parseMentions(content, _staffList)
     if (mentionedStaff.length) writeMentionNotifs(mentionedStaff, profile.id, profile.name, content, orderId, order.orderNumber)
     // Tulis notifikasi untuk staff lain
