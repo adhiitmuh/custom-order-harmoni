@@ -3,7 +3,13 @@ main = "create-order.js"
 compatibility_date = "2024-01-01"
 
 [triggers]
-crons = ["0 0 * * *"]  # Setiap hari jam 08.00 WITA (00:00 UTC)
+crons = ["0 0 * * *"]
+# 0 0 * * * → setiap hari jam 08.00 WITA (00:00 UTC)
+# Deadline reminder setiap hari, backup otomatis setiap Minggu (dicek via getDay() di kode)
+
+[[r2_buckets]]
+binding = "BACKUP_BUCKET"
+bucket_name = "harmoni-backups"
 
 # Set env vars via CLI (jangan hardcode di sini):
 #   npx wrangler secret put FIREBASE_PROJECT_ID

@@ -40,7 +40,7 @@ const PRODUKSI_UNIT = {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, Authorization',
 }
 
 // ── Bot (WA Agent) constants ──────────────────────────────────────────────────
@@ -175,6 +175,10 @@ export default {
         await runDeadlineCheck(env, token)
         return json({ success: true, message: 'Deadline check selesai' }, 200)
       }
+      // Backup endpoints — pakai API_SECRET_KEY yang sama
+      if (url.pathname === '/backups' || url.pathname === '/backup' || url.pathname === '/trigger-backup') {
+        return handleBackupRequest(request, url, env, token)
+      }
       return json({ error: 'Endpoint tidak ditemukan' }, 404)
     } catch (err) {
       console.error(err)
@@ -182,13 +186,16 @@ export default {
     }
   },
 
-  // ── Cron handler — jalan otomatis setiap hari 08.00 WITA (00:00 UTC) ───────
+  // ── Cron handler — jalan setiap hari 08.00 WITA ────────────────────────────
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      getFirebaseToken(env)
-        .then(token => runDeadlineCheck(env, token))
-        .catch(err => console.error('Deadline check error:', err))
-    )
+    ctx.waitUntil((async () => {
+      const token = await getFirebaseToken(env)
+      await runDeadlineCheck(env, token).catch(err => console.error('Deadline check error:', err))
+      // Backup otomatis setiap Minggu (hari 0 = Sunday UTC)
+      if (new Date().getUTCDay() === 0) {
+        await runBackup(env, token).catch(err => console.error('Backup error:', err))
+      }
+    })())
   },
 }
 
@@ -1008,7 +1015,11 @@ async function verifyFirebaseIdToken(idToken, env) {
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) }
   )
-  if (!resp.ok) return null
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}))
+    console.error('verifyToken HTTP error:', resp.status, JSON.stringify(errBody))
+    return { _error: `HTTP ${resp.status}: ${errBody?.error?.message || 'unknown'}` }
+  }
   const data = await resp.json()
   return data.users?.[0] || null
 }
@@ -1129,6 +1140,121 @@ function json(data, status = 200) {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
+}
+
+// ── Backup & Recovery ─────────────────────────────────────────────────────────
+
+const BACKUP_COLLECTIONS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
+const BACKUP_RETAIN = 12 // simpan 12 backup terakhir (~3 bulan)
+
+async function handleBackupRequest(request, url, env, token) {
+  // Auth sudah diverifikasi via X-API-Key sebelum masuk sini
+  const projectId = env.FIREBASE_PROJECT_ID
+
+  // GET /backups — list semua backup
+  if (request.method === 'GET' && url.pathname === '/backups') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    const list = await env.BACKUP_BUCKET.list()
+    const backups = (list.objects || [])
+      .sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded))
+      .map(o => ({ key: o.key, size: o.size, uploadedAt: o.uploaded }))
+    return json({ success: true, backups })
+  }
+
+  // GET /backup?key=xxx — download satu backup
+  if (request.method === 'GET' && url.pathname === '/backup') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    const key = url.searchParams.get('key')
+    if (!key) return json({ error: 'key wajib diisi' }, 400)
+    const obj = await env.BACKUP_BUCKET.get(key)
+    if (!obj) return json({ error: 'Backup tidak ditemukan' }, 404)
+    return new Response(obj.body, {
+      headers: { ...CORS, 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${key}"` }
+    })
+  }
+
+  // POST /trigger-backup — jalankan backup sekarang
+  if (request.method === 'POST' && url.pathname === '/trigger-backup') {
+    if (!env.BACKUP_BUCKET) return json({ error: 'R2 bucket belum dikonfigurasi' }, 503)
+    await runBackup(env, token)
+    return json({ success: true, message: 'Backup selesai' })
+  }
+
+  return json({ error: 'Endpoint tidak ditemukan' }, 404)
+}
+
+async function runBackup(env, token) {
+  const projectId = env.FIREBASE_PROJECT_ID
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    projectId,
+    collections: {}
+  }
+
+  for (const col of BACKUP_COLLECTIONS) {
+    try {
+      backup.collections[col] = await firestoreListAll(projectId, token, col)
+    } catch (e) {
+      console.error(`Backup ${col} gagal:`, e.message)
+      backup.collections[col] = {}
+    }
+  }
+
+  const totalDocs = Object.values(backup.collections).reduce((s, c) => s + Object.keys(c).length, 0)
+  const key = `backup-${new Date().toISOString().slice(0, 10)}.json`
+
+  await env.BACKUP_BUCKET.put(key, JSON.stringify(backup), {
+    httpMetadata: { contentType: 'application/json' },
+    customMetadata: { totalDocs: String(totalDocs) }
+  })
+
+  console.log(`Backup selesai: ${key} (${totalDocs} dokumen)`)
+
+  // Hapus backup lama — simpan hanya BACKUP_RETAIN terakhir
+  const list = await env.BACKUP_BUCKET.list()
+  const sorted = (list.objects || []).sort((a, b) => new Date(a.uploaded) - new Date(b.uploaded))
+  if (sorted.length > BACKUP_RETAIN) {
+    for (const obj of sorted.slice(0, sorted.length - BACKUP_RETAIN)) {
+      await env.BACKUP_BUCKET.delete(obj.key).catch(() => {})
+    }
+  }
+}
+
+async function firestoreListAll(projectId, token, collectionId) {
+  const docs = {}
+  let pageToken = null
+  do {
+    let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionId}?pageSize=300`
+    if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) break
+    const data = await res.json()
+    for (const d of data.documents || []) {
+      const id = d.name.split('/').pop()
+      docs[id] = parseFields(d.fields || {})
+    }
+    pageToken = data.nextPageToken || null
+  } while (pageToken)
+  return docs
+}
+
+function parseFields(fields) {
+  const out = {}
+  for (const [k, v] of Object.entries(fields)) out[k] = parseVal(v)
+  return out
+}
+
+function parseVal(v) {
+  if (v.stringValue  !== undefined) return v.stringValue
+  if (v.integerValue !== undefined) return parseInt(v.integerValue)
+  if (v.doubleValue  !== undefined) return Number(v.doubleValue)
+  if (v.booleanValue !== undefined) return v.booleanValue
+  if (v.nullValue    !== undefined) return null
+  if (v.timestampValue !== undefined) return { __type: 'timestamp', value: v.timestampValue }
+  if (v.arrayValue   !== undefined) return (v.arrayValue.values || []).map(parseVal)
+  if (v.mapValue     !== undefined) return parseFields(v.mapValue.fields || {})
+  return null
 }
 
 // ── Deadline Reminder ─────────────────────────────────────────────────────────
@@ -1291,8 +1417,26 @@ async function fonnteSend(apiKey, target, message) {
 // ── Google Service Account JWT → Firebase access token ────────────────────────
 
 // Google Service Account JWT → Firebase access token
+function parseServiceAccountKey(raw) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // Fallback: literal newlines inside string values — escape them properly
+    let out = '', inStr = false, esc = false
+    for (const ch of raw) {
+      if (esc)          { out += ch; esc = false }
+      else if (ch === '\\') { out += ch; esc = true }
+      else if (ch === '"')  { out += ch; inStr = !inStr }
+      else if (inStr && ch === '\n') { out += '\\n' }
+      else if (inStr && ch === '\r') { out += '\\r' }
+      else                  { out += ch }
+    }
+    return JSON.parse(out)
+  }
+}
+
 async function getFirebaseToken(env) {
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_KEY)
+  const sa = parseServiceAccountKey(env.FIREBASE_SERVICE_ACCOUNT_KEY)
   const now = Math.floor(Date.now() / 1000)
 
   const b64url = (s) => btoa(s).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')

@@ -83,7 +83,7 @@
       render()
       renderWeek()
     }).catch(err => {
-      document.getElementById('calendarWrap').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
+      document.getElementById('calendarGrid').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`
     })
   })
 

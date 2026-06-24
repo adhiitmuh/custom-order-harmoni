@@ -1,6 +1,6 @@
 import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
-import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
 if ('serviceWorker' in navigator) {
@@ -22,6 +22,7 @@ export const dataAuthReady = Promise.race([
 let _user = null
 let _profile = null
 let _notifInitialized = false
+let _mentionCount = 0
 let _divisions = null
 let _divisionsPromise = null
 
@@ -151,7 +152,7 @@ export function requireAuth(callback) {
       // Sync role to harmoni-custom-order so Firestore Rules can check it.
       // Also write under the anon UID (from dataAuth) because Firestore rules
       // check request.auth.uid = anon UID, not the portal UID.
-      const roleDoc = { role: appRole, branch: data.branch || '' }
+      const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '' }
       setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
       dataAuthReady.then(anonUser => {
         if (anonUser && anonUser.uid !== snap.id) {
@@ -255,6 +256,8 @@ export function renderSidebar(profile) {
       <div class="sidebar-label">KOMUNIKASI</div>
       <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
         <span class="icon">💬</span>Chat Inbox
+        <span id="inboxBadge" style="display:none;background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:999px;min-width:16px;text-align:center">0</span>
+        <span id="mentionBadge" style="display:${_mentionCount > 0 ? '' : 'none'}" class="mention-badge">${_mentionCount > 9 ? '9+' : _mentionCount}</span>
       </a>
       ${profile.role === 'owner' ? `
       <a href="audit-chat.html" class="sidebar-link ${page==='audit-chat.html'?'active':''}">
@@ -289,7 +292,7 @@ export function renderSidebar(profile) {
         <span class="icon">🏷️</span>Kelola Divisi
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
-        <span class="icon">💳</span>Metode Pembayaran
+        <span class="icon">⚙️</span>Pengaturan & Backup
       </a>` : ''}
     </div>
     </div>
@@ -369,6 +372,30 @@ function initNotifications(profile) {
   injectNotifPanel()
   const getLastRead = () => parseInt(localStorage.getItem(`notifReadAt_${profile.id}`) || '0')
 
+  // Mention badge — subscribe to user_mentions/{uid}
+  dataAuthReady.then(() => {
+    onSnapshot(doc(db, 'user_mentions', profile.id), snap => {
+      _mentionCount = snap.exists() ? (snap.data().unreadMentions || 0) : 0
+      const badge = document.getElementById('mentionBadge')
+      if (badge) {
+        badge.textContent = _mentionCount > 9 ? '9+' : String(_mentionCount)
+        badge.style.display = _mentionCount > 0 ? '' : 'none'
+      }
+    }, () => {})
+
+    // Inbox thread badge — unread threads dari chat_threads
+    if (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') {
+      onSnapshot(query(collection(db, 'chat_threads'), where('unreadCount', '>', 0)), snap => {
+        const count = snap.docs.length
+        const badge = document.getElementById('inboxBadge')
+        if (badge) {
+          badge.textContent = count > 9 ? '9+' : String(count)
+          badge.style.display = count > 0 ? '' : 'none'
+        }
+      }, () => {})
+    }
+  })
+
   // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
   dataAuthReady.then(() => {
   const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
@@ -376,15 +403,17 @@ function initNotifications(profile) {
     let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
     // Filter sesuai role + lokasi + divisi
-    if (profile.role !== 'owner') {
-      notifs = notifs.filter(n => {
-        if (n.fromUid === profile.id) return false
+    notifs = notifs.filter(n => {
+      if (n.fromUid === profile.id) return false
+      // @mention khusus untuk user ini
+      if (n.type === 'mention') return n.targetUid === profile.id
+      // Order notifications: owner lihat semua, staff filter by divisi/lokasi
+      if (profile.role !== 'owner') {
         if (profile.divisions?.length) return profile.divisions.includes(n.division)
         return !n.lokasiId || n.lokasiId === profile.lokasiId
-      })
-    } else {
-      notifs = notifs.filter(n => n.fromUid !== profile.id)
-    }
+      }
+      return true
+    })
 
     const lastReadAt = getLastRead()
     const unread = notifs.filter(n => {
@@ -409,12 +438,17 @@ function initNotifications(profile) {
     list.innerHTML = notifs.slice(0, 20).map(n => {
       const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
       const isUnread = ts > lastReadAt
-      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId}')"
+      const isMention = n.type === 'mention'
+      const icon = isMention ? '💬' : '🔔'
+      const label = isMention
+        ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
+        : (n.orderNumber || '—')
+      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId || ''}')"
         style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
         onmouseover="this.style.background='rgba(3,69,67,.08)'"
         onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-size:11px;font-weight:700;color:#034543">${n.orderNumber || '—'}</span>
+          <span style="font-size:11px;font-weight:700;color:#034543">${icon} ${label}</span>
           <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
         </div>
         <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
