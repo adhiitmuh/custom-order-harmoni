@@ -657,7 +657,8 @@
         <div style="display:flex;gap:8px;align-items:flex-end">
           <textarea id="internalChatInput" placeholder="Tulis pesan untuk tim… (Enter kirim, Shift+Enter baris baru)" rows="2"
             style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"></textarea>
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"
+            oninput="initMentionLazy(this)"></textarea>
           <button onclick="sendInternalMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>
@@ -1455,6 +1456,18 @@
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
   }
 
+  window.initMentionLazy = async function(ta) {
+    if (ta._mcReady) return
+    ta._mcReady = true
+    let list = await loadStaff().catch(() => [])
+    if (!list.length) {
+      const p = getProfile()
+      if (p?.id) list = [{ id: p.id, name: p.name, role: p.role }]
+    }
+    attachMentionAutocomplete(ta, list)
+    ta.dispatchEvent(new Event('input'))
+  }
+
   window.editLokasi = async function() {
     const wrap = document.getElementById('lokasiEditWrap')
     if (!wrap) return
@@ -1667,16 +1680,6 @@
   }
 
   async function initInternalChat() {
-    let staffList = await loadStaff().catch(e => { console.warn('[mention] loadStaff failed:', e); return [] })
-    if (!staffList.length) {
-      const p = getProfile()
-      if (p?.id) staffList = [{ id: p.id, name: p.name, role: p.role }]
-    }
-    console.log('[mention] staff loaded:', staffList.map(s => s.name))
-    const textarea = document.getElementById('internalChatInput')
-    console.log('[mention] textarea found:', !!textarea)
-    if (textarea) attachMentionAutocomplete(textarea, staffList)
-
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
