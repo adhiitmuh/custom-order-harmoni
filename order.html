@@ -1667,13 +1667,14 @@
   }
 
   async function initInternalChat() {
-    let staffList = await loadStaff().catch(e => { console.warn('loadStaff failed:', e); return [] })
-    // Fallback: kalau Firestore kosong, gunakan profile yang sedang login
+    let staffList = await loadStaff().catch(e => { console.warn('[mention] loadStaff failed:', e); return [] })
     if (!staffList.length) {
       const p = getProfile()
       if (p?.id) staffList = [{ id: p.id, name: p.name, role: p.role }]
     }
+    console.log('[mention] staff loaded:', staffList.map(s => s.name))
     const textarea = document.getElementById('internalChatInput')
+    console.log('[mention] textarea found:', !!textarea)
     if (textarea) attachMentionAutocomplete(textarea, staffList)
 
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
