@@ -71,7 +71,7 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady } from './js/auth.js'
-  import { collection, query, orderBy, onSnapshot, updateDoc, doc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, query, orderBy, onSnapshot, updateDoc, doc, setDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { timeAgo } from './js/utils.js'
 
   let allFlags = []
@@ -79,7 +79,11 @@
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'orders.html'; return }
-    await dataAuthReady
+    const anonUser = await dataAuthReady
+    // Pastikan users/{anonUID} ada di Firestore sebelum onSnapshot agar isOwner() di rules bisa resolve
+    if (anonUser) {
+      await setDoc(doc(db, 'users', anonUser.uid), { role: 'owner', name: profile.name }, { merge: true }).catch(() => {})
+    }
 
     onSnapshot(
       query(collection(db, 'chat_flags'), orderBy('createdAt', 'desc')),
