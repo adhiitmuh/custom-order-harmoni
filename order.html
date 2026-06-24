@@ -83,6 +83,7 @@
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
+  import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -1665,7 +1666,11 @@
     production: { bg: '#1d4ed8', text: '#dbeafe', label: 'Tim Produksi' },
   }
 
-  function initInternalChat() {
+  async function initInternalChat() {
+    const staffList = await loadStaff().catch(() => [])
+    const textarea = document.getElementById('internalChatInput')
+    if (textarea) attachMentionAutocomplete(textarea, staffList)
+
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
@@ -1683,6 +1688,9 @@
         const bubbleBg = isMe ? rc.bg : '#fff'
         const bubbleColor = isMe ? rc.text : '#282828'
         const bubbleBorder = isMe ? 'none' : '1px solid rgba(3,69,67,.1)'
+        const escaped = (m.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+        const rendered = highlightMentions(escaped, staffList, profile?.id)
+        const isMentioned = staffList.some(s => s.id === profile?.id && (m.content||'').includes('@'+s.name))
         return `
           <div style="display:flex;flex-direction:column;align-items:${align}">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
@@ -1690,8 +1698,8 @@
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
             </div>
-            <div style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-              ${(m.content || '').replace(/\n/g, '<br>')}
+            <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              ${rendered}
             </div>
           </div>`
       }).join('')
@@ -1704,6 +1712,9 @@
     const content = input?.value.trim()
     if (!content || !order) return
     const profile = getProfile()
+    const staffList = await loadStaff().catch(() => [])
+    const mentioned = parseMentions(content, staffList)
+
     input.value = ''
     input.style.height = 'auto'
     await addDoc(collection(db, 'orders', orderId, 'internal_chat'), {
@@ -1711,21 +1722,27 @@
       senderId:   profile.id,
       senderName: profile.name,
       senderRole: profile.role,
+      mentions:   mentioned.map(s => ({ id: s.id, name: s.name })),
       createdAt:  Timestamp.now(),
     })
-    // Tulis notifikasi untuk staff lain
-    addDoc(collection(db, 'notifications'), {
-      type:        'internal_chat',
-      orderId,
-      orderNumber: order.orderNumber || '',
-      division:    order.division || '',
-      lokasiId:    order.lokasiId || null,
-      fromUid:     profile.id,
-      fromName:    profile.name,
-      fromRole:    profile.role,
-      preview:     content.substring(0, 80),
-      createdAt:   Timestamp.now(),
-    }).catch(err => console.error('Notification write failed:', err))
+
+    if (mentioned.length) {
+      // Ada @mention: kirim mention notif saja (tidak double dengan internal_chat notif)
+      writeMentionNotifs(mentioned, profile.id, profile.name, content, orderId, order.orderNumber).catch(() => {})
+    } else {
+      addDoc(collection(db, 'notifications'), {
+        type:        'internal_chat',
+        orderId,
+        orderNumber: order.orderNumber || '',
+        division:    order.division || '',
+        lokasiId:    order.lokasiId || null,
+        fromUid:     profile.id,
+        fromName:    profile.name,
+        fromRole:    profile.role,
+        preview:     content.substring(0, 80),
+        createdAt:   Timestamp.now(),
+      }).catch(() => {})
+    }
   }
 
   window.copyChatLink = function(token) {
