@@ -1580,7 +1580,7 @@
     loadStaff().then(s => {
       _staffList = s
       const el = document.getElementById('chatInput')
-      if (el) attachMentionAutocomplete(el, s)
+      if (el && !el._mentionAttached) { attachMentionAutocomplete(el, s); el._mentionAttached = true }
     })
     const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
     const chatQ = query(chatCol, orderBy('createdAt'))
@@ -1691,7 +1691,7 @@
     loadStaff().then(s => {
       _staffList = s
       const el = document.getElementById('internalChatInput')
-      if (el) attachMentionAutocomplete(el, s)
+      if (el && !el._mentionAttached) { attachMentionAutocomplete(el, s); el._mentionAttached = true }
     })
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
