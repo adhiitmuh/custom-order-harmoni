@@ -260,39 +260,82 @@ API_SECRET_KEY            = {random secret, sama dengan yang di n8n}
 
 ---
 
-## Arsitektur Agent WA Bot
+## Arsitektur Unified WA Bot (Custom Order + Ready Stock)
+
+Bot berjalan langsung di Cloudflare Worker (`/incoming-chat`) — tidak pakai n8n.
+Fonnte webhook → Worker → proses background via `ctx.waitUntil()` → balas via Fonnte API.
 
 ```
 Customer WA
     │
     ▼
-[Fonnte Webhook → n8n]
+Fonnte Webhook → POST /incoming-chat (Cloudflare Worker)
     │
-    ├─ 1. Haiku: routing — order baru / follow-up / FAQ / ready stock?
+    ├─ Load session chat_sessions/{waNumber}
     │
-    ├─ FAQ hardcoded → balas langsung (0 token Claude)
+    ├─ [Pesan pertama / idle 12 jam] → kirim GREETING MENU
+    │       🎨 CUSTOM ORDER (1–11, per divisi)
+    │       🛍 READY STOCK  (12)
+    │       💬 BICARA CS    (13)
     │
-    ├─ Cek status → GET /get-order → balas
+    ├─ [Pilih 1–11: Custom Order]
+    │       ├─ Load product_knowledge/{division} ← Firestore
+    │       ├─ Load price_list/{division} ← Firestore
+    │       ├─ Claude Haiku (cached knowledge) — kumpulkan info order
+    │       ├─ Customer konfirmasi → POST /create-order → Firestore
+    │       └─ Notif owner via Fonnte
     │
-    └─ Order baru:
-         ├─ GET /knowledge?division=xxx → fetch dari Firestore
-         ├─ Sonnet: kumpulkan info (nama, spek, qty, deadline)
-         ├─ Customer konfirmasi → POST /create-order → Firebase
-         └─ Notif WA customer + owner (via Fonnte)
+    ├─ [Pilih 12: Ready Stock]
+    │       ├─ Fetch kategori dari Olsera API (cache 1 jam di Firestore settings/olsera_cache)
+    │       ├─ Customer pilih kategori → tanya produk spesifik
+    │       ├─ Query stok semua cabang PARALEL (Promise.all)
+    │       │       Branch Pusat  (Olsera API Key 1)
+    │       │       Branch Cabang (Olsera API Key 2..N)
+    │       ├─ Tampilkan cabang yang ada stok + jumlah (stok 0 disembunyikan)
+    │       ├─ Customer pilih cabang
+    │       └─ [Reservasi] → instruksikan full payment dulu
+    │               ├─ Bot kirim info rekening transfer
+    │               ├─ Customer kirim bukti bayar
+    │               ├─ Bot forward notif ke CS/owner
+    │               └─ CS verifikasi → konfirmasi ke customer → update Olsera manual
+    │
+    ├─ [Pilih 13 / kompleks / tidak tahu]
+    │       └─ Eskalasi ke CS → buat consultations/{token} → notif CS
+    │
+    └─ [FAQ hardcoded] → balas langsung, 0 Claude token
 ```
 
-### Endpoint Tambahan: GET /knowledge
+### Session State: `chat_sessions/{waNumber}`
 
-Fetch knowledge divisi dari Firestore `product_knowledge` collection.
+```json
+{
+  "mode": "menu | custom_order | ready_stock | cs_escalated",
+  "division": "jersey | bordir | ... | null",
+  "history": ["...8 pesan terakhir..."],
+  "lastActive": 1234567890,
+  "customerName": "Ahmad",
+  "orderDraft": { "qty": 11, "spek": "merah-hitam", "deadline": "2025-08-01" }
+}
+```
+
+Session reset setelah idle 12 jam.
+
+### Biaya per Mode
+
+| Mode | Knowledge Source | Claude | Fonnte |
+|---|---|---|---|
+| Greeting / FAQ | Hardcoded | 0 token | 1 pesan |
+| Custom Order | Firestore product_knowledge + price_list | Haiku (cached) | 1/balas |
+| Ready Stock | Olsera API real-time | Haiku (data inject) | 1/balas |
+| Eskalasi CS | — | 0 token | 2 pesan |
+
+### Endpoint `GET /knowledge`
 
 ```
 GET /knowledge?division=jersey
 Header: X-API-Key: {API_SECRET_KEY}
+Response: { "success": true, "division": "jersey", "knowledge": "...(markdown)..." }
 ```
-
-Response: `{ "success": true, "division": "jersey", "knowledge": "...(markdown)..." }`
-
-Dipakai n8n untuk inject ke system prompt Claude sebelum percakapan order.
 
 ---
 
@@ -364,32 +407,110 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 
 ## Fase Pengembangan Agent
 
-### Phase 1 (Sekarang — deploy dulu)
+### Phase 1 — Bot Custom Order (Sudah/Segera)
 - [x] Cloudflare Worker API (`api/create-order.js`)
 - [x] Field `sumberOrder` di app
 - [x] Tag lokasi per order (lokasiId, lokasiNama, lokasiTipe, produksiUnit)
 - [x] Halaman `lokasi.html` — CRUD kelola lokasi (owner only)
 - [x] `laporan.html` — section per lokasi + komisi mitra
 - [x] `orders.html` — filter per lokasi + badge
-- [ ] Deploy Worker ke Cloudflare
-- [ ] Setup n8n + Fonnte webhook
-- [ ] Build CS Agent flow (1 divisi dulu — Jersey)
+- [x] Bot flow lengkap di Worker (`/incoming-chat` dengan `ctx.waitUntil`)
+- [x] `WORKER_URL` diisi di `inbox.html` dan `chat.html`
+- [ ] **Deploy Worker** — `cd api && npx wrangler deploy`
+- [ ] **Set `CLAUDE_API_KEY`** — `npx wrangler secret put CLAUDE_API_KEY`
+- [ ] **Deploy Firestore rules** — `firebase deploy --only firestore:rules`
+- [ ] Setup Fonnte webhook → arahkan ke `https://harmoni-order-api.adhiitmuh.workers.dev/incoming-chat`
+- [ ] Update `GREETING_MSG` di Worker → format menu bernomor (1–13)
+- [ ] Tambah handler angka 1–11 → set session.mode + session.division + load knowledge
+- [ ] Knowledge files semua 11 divisi diisi di Firestore `product_knowledge`
 
-### Phase 2
-- [ ] Endpoint `GET /knowledge` di Worker
-- [ ] Knowledge files semua 11 divisi di Firestore
-- [ ] Status Update Agent → notif otomatis ke customer saat status berubah
-- [ ] Daily WA summary ke owner (n8n scheduled, jam 08.00)
+### Phase 2 — Integrasi Olsera Ready Stock
+- [ ] Buat Cloudflare KV namespace `OLSERA_KV` — tambah ke `wrangler.toml`
+- [ ] Isi daftar cabang di Firestore `settings/olsera_branches`
+- [ ] Isi API key per cabang di KV — `npx wrangler kv:key put --binding=OLSERA_KV`
+- [ ] Fungsi `fetchOlseraCategories(env)` → GET Olsera API → cache Firestore
+- [ ] Fungsi `queryOlseraStock(keyword, env)` → `Promise.all()` semua cabang
+- [ ] Handler menu 12 (ready stock) — tampil cabang berisi stok, customer pilih
+- [ ] Flow reservasi — bot kirim info rekening, forward bukti ke CS
+- [ ] **Cek dulu di Olsera API**: apakah ada field `available_stock` / `reserved`?
 
-### Phase 3
+### Phase 3 — Notifikasi & Owner Query
+- [ ] Status Update Agent → notif otomatis ke customer saat status order berubah
+- [ ] Daily WA summary ke owner (cron Worker jam 08.00 WITA / 00:00 UTC — sudah ada di wrangler.toml)
 - [ ] Owner Query Agent — owner tanya via WA, agent jawab dari Firestore
 - [ ] Deadline reminder H-2 otomatis
 
 ---
 
-## Integrasi Olsera
+## Integrasi Olsera (Ready Stock)
 
-**Tidak diintegrasikan untuk sekarang.** Olsera = ready stock, app ini = custom order — beda proses. Kalau customer tanya soal ready stock via WA Bot, agent jawab hardcoded: *"Ready stock bisa dilihat langsung di toko / hubungi admin."*
+Olsera = ready stock, app ini = custom order. Keduanya dihandle oleh 1 WA Bot yang sama.
+
+### API Key per Cabang — simpan di Cloudflare KV
+
+Jangan pakai env vars untuk banyak cabang. Pakai **Cloudflare KV**:
+
+`wrangler.toml` perlu tambah:
+```toml
+[[kv_namespaces]]
+binding = "OLSERA_KV"
+id = "xxx"  # buat via: npx wrangler kv:namespace create OLSERA_KV
+```
+
+Setup key per cabang:
+```bash
+npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_PUSAT" "api_key_xxx"
+npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_CABANG_A" "api_key_yyy"
+# dst untuk tiap cabang
+```
+
+Daftar cabang + mapping KV key disimpan di Firestore `settings/olsera_branches`:
+```json
+[
+  { "id": "pusat", "name": "Pusat Makassar", "kvKey": "OLSERA_PUSAT", "alamat": "Jl. ...", "jam": "08.00–17.00" },
+  { "id": "pnk", "name": "Cabang Panakkukang", "kvKey": "OLSERA_PNK", "alamat": "Jl. ...", "jam": "08.00–17.00" }
+]
+```
+
+Mudah tambah/hapus cabang tanpa redeploy Worker — cukup update Firestore + tambah KV key.
+
+### Data yang Diambil dari Olsera
+
+| Data | Metode | Cache |
+|---|---|---|
+| Kategori produk | GET /categories | 1 jam di Firestore settings/olsera_cache |
+| Stok per produk per cabang | GET /products?q=xxx | Real-time (selalu fetch) |
+| Pending/reserved stock | Field available_stock (cek dulu di API response) | Real-time |
+
+**Stok selalu real-time** — otomatis update setiap transaksi kasir di Olsera POS.
+
+### Aturan Reservasi Ready Stock
+
+- **Tidak ada soft reservation** — stok tidak di-hold tanpa pembayaran
+- **Full payment dulu** → CS konfirmasi → stok dikonfirmasi
+- Flow: bot kirim info rekening → customer transfer → kirim bukti → CS verifikasi manual → update Olsera
+- Payment gateway (Midtrans/Xendit) bisa ditambah belakangan kalau volume tinggi
+
+---
+
+## Env Vars Cloudflare Worker (Lengkap)
+
+```bash
+# Secrets (wrangler secret put):
+npx wrangler secret put FIREBASE_PROJECT_ID        # harmoni-custom-order
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_KEY  # JSON service account
+npx wrangler secret put FONNTE_API_KEY             # dari fonnte.com
+npx wrangler secret put OWNER_WA_NUMBER            # 628xxx
+npx wrangler secret put API_SECRET_KEY             # random secret
+npx wrangler secret put NOTIFY_KEY                 # key untuk /incoming-chat + /notify-cs
+npx wrangler secret put CLAUDE_API_KEY             # Anthropic API key
+npx wrangler secret put FIREBASE_AUTH_API_KEY      # opsional
+
+# KV (setelah buat namespace):
+npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_PUSAT" "api_key"
+npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_CABANG_A" "api_key"
+# dst per cabang
+```
 
 ---
 
@@ -397,5 +518,7 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 
 - Owner: Adhitya (Makassar)
 - Peak season jersey: Agustus (karnaval)
-- Volume: 10–30 order/bulan
-- Target: semua inquiry WA custom order dihandle AI Agent (n8n + Claude + Fonnte)
+- Volume custom order: bervariasi per divisi — 10–30 estimasi awal, bisa lebih
+- Target: 1 WA Bot menangani semua inquiry (custom order + ready stock) 24 jam via Fonnte
+- Fonnte cocok untuk volume sekarang — pertimbangkan WA Business API resmi kalau >200–300 percakapan/hari
+- Reservasi ready stock: full payment dulu (transfer manual, CS verifikasi) — payment gateway bisa ditambah belakangan
