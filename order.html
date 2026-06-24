@@ -148,6 +148,7 @@
     const meta = DIVISION_META[order.division] || {}
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
+    const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
     const canEditModal   = profile.role === 'owner'
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
@@ -232,6 +233,23 @@
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
+              <div>
+                <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Lokasi Harmoni</p>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-weight:600;flex:1" id="lokasiDisplay">${order.lokasiNama || '—'}</span>
+                  ${canEditLokasi ? `<button onclick="editLokasi()" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" id="lokasiEditBtn">Edit</button>` : ''}
+                </div>
+                ${canEditLokasi ? `
+                <div id="lokasiEditWrap" style="display:none;margin-top:6px">
+                  <select id="lokasiSelect" style="font-size:13px;width:100%;padding:6px 8px;border:1.5px solid rgba(3,69,67,.2);border-radius:8px;outline:none;background:white">
+                    <option value="">Memuat…</option>
+                  </select>
+                  <div style="display:flex;gap:6px;margin-top:6px">
+                    <button onclick="cancelLokasi()" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;font-size:12px">Batal</button>
+                    <button onclick="saveLokasi()" class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-size:12px" id="lokasiSaveBtn">Simpan</button>
+                  </div>
+                </div>` : ''}
+              </div>
             </div>
             ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
               <hr class="sep">
@@ -720,6 +738,7 @@
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
               <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
               ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
+              ${order.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
@@ -1433,6 +1452,56 @@
       await updateDoc(doc(db,'orders',orderId), { measurements, updatedAt: now, ukuranEditBy: getProfile().name, ukuranEditAt: now })
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
+  }
+
+  window.editLokasi = async function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (!wrap) return
+    wrap.style.display = ''
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = 'none'
+    const sel = document.getElementById('lokasiSelect')
+    if (sel.options.length > 1 && sel.options[0].value !== '') return
+    try {
+      await dataAuthReady
+      const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('nama')))
+      sel.innerHTML = '<option value="">— Tidak ada / kosongkan —</option>'
+      snap.docs.filter(d => d.data().aktif !== false).forEach(d => {
+        const opt = document.createElement('option')
+        opt.value = d.id
+        opt.textContent = d.data().nama
+        if (d.id === order.lokasiId) opt.selected = true
+        sel.appendChild(opt)
+      })
+    } catch(e) {
+      sel.innerHTML = `<option value="">Gagal memuat: ${e.message}</option>`
+    }
+  }
+
+  window.cancelLokasi = function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (wrap) wrap.style.display = 'none'
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = ''
+  }
+
+  window.saveLokasi = async function() {
+    const sel = document.getElementById('lokasiSelect')
+    const lokasiId = sel.value || null
+    const lokasiNama = lokasiId ? sel.options[sel.selectedIndex].textContent : null
+    const btn = document.getElementById('lokasiSaveBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        lokasiId,
+        lokasiNama,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(e) {
+      alert('Gagal simpan: ' + e.message)
+      btn.disabled = false; btn.textContent = 'Simpan'
+    }
   }
 
   window.showInvoice = function() {

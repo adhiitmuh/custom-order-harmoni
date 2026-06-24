@@ -70,15 +70,16 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth } from './js/auth.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, query, orderBy, onSnapshot, updateDoc, doc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { timeAgo } from './js/utils.js'
 
   let allFlags = []
   let currentFilter = 'unreviewed'
 
-  requireAuth((profile) => {
+  requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'orders.html'; return }
+    await dataAuthReady
 
     onSnapshot(
       query(collection(db, 'chat_flags'), orderBy('createdAt', 'desc')),
