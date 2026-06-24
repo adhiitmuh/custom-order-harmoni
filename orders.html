@@ -178,14 +178,13 @@
     const lokasiF = document.getElementById('lokasiFilter').value
     const status = document.getElementById('statusFilter').value
     const pay = document.getElementById('payFilter').value
-    const isFiltered = search || div || lokasiF || status || pay
+    const branch = document.getElementById('branchFilter')?.value || ''
+    const isFiltered = search || div || branch || lokasiF || status || pay
     document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
 
     const profile = getProfile()
     const showContact = profile?.role === 'owner'
     const showModal = profile?.role === 'owner'
-
-    const branch = document.getElementById('branchFilter').value
 
     const filtered = allOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false

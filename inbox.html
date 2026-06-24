@@ -454,6 +454,7 @@ window.sendReply = async function() {
 
   try {
     const profile  = getProfile()
+    if (!auth.currentUser) throw new Error('Sesi login habis, silakan refresh halaman.')
     const idToken  = await auth.currentUser.getIdToken()
     const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
       method: 'POST',
@@ -543,6 +544,7 @@ window.submitOrder = async function() {
   alertEl.innerHTML = ''
 
   try {
+    if (!auth.currentUser) throw new Error('Sesi login habis, silakan refresh halaman.')
     const idToken = await auth.currentUser.getIdToken()
     const resp = await fetch(`${WORKER_URL}/create-order-from-chat`, {
       method: 'POST',

@@ -354,7 +354,7 @@
             ${m.type==='file'&&m.imageUrl
               ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
               : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}"></a>` : ''}
-            ${m.text?m.text.replace(/\n/g,'<br>'):''}
+            ${m.text?m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'):''}
           </div>
         </div>`
       })
