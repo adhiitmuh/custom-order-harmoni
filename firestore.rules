@@ -29,7 +29,7 @@ service cloud.firestore {
     }
     match /product_knowledge/{id} {
       allow read: if true; // Public — customer can read
-      allow write: if isOwnerOrCS();
+      allow write: if isOwner() || isData();
     }
     match /order_counters/{div} {
       allow read, write: if isAuth();
