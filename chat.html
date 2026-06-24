@@ -146,21 +146,8 @@
   }
 
   async function init() {
-    const snap = await getDoc(doc(db,'public_order_info',token))
-    if (!snap.exists()) {
-      document.getElementById('app').innerHTML = `<div class="error-page"><div style="font-size:48px">❌</div><p style="font-size:16px;font-weight:700;margin-top:12px;color:#034543">Order tidak ditemukan</p></div>`
-      return
-    }
-    const orderInfo = snap.data()
-
-    // Fetch real-time status from orders collection (public_order_info.status bisa stale)
-    try {
-      const orderSnap = await getDoc(doc(db,'orders',orderInfo.orderId))
-      if (orderSnap.exists()) orderInfo.status = orderSnap.data().status
-    } catch (_) {}
-
-    // Load ALL knowledge & price lists (batch)
-    const { getDocs: gd, query: q, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    // Load knowledge & price lists (shared for both order and consultation mode)
+    const { getDocs: gd } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
     const [knowledgeSnap, ...priceSnaps] = await Promise.all([
       gd(collection(db,'product_knowledge')),
       ...DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))),
@@ -171,22 +158,46 @@
       if (priceSnaps[i].exists()) allPrices[d] = priceSnaps[i].data()
     })
 
-    renderApp(orderInfo, allKnowledge, allPrices)
+    // Try order first
+    const snap = await getDoc(doc(db,'public_order_info',token))
+    if (snap.exists()) {
+      const orderInfo = snap.data()
+      try {
+        const orderSnap = await getDoc(doc(db,'orders',orderInfo.orderId))
+        if (orderSnap.exists()) orderInfo.status = orderSnap.data().status
+      } catch (_) {}
+      renderApp(orderInfo, allKnowledge, allPrices)
+      return
+    }
+
+    // Fallback: konsultasi pra-order
+    const consultSnap = await getDoc(doc(db,'consultations',token))
+    if (consultSnap.exists()) {
+      const consultInfo = { ...consultSnap.data(), isConsultation: true, status: 'consulting' }
+      renderApp(consultInfo, allKnowledge, allPrices)
+      return
+    }
+
+    document.getElementById('app').innerHTML = `<div class="error-page"><div style="font-size:48px">❌</div><p style="font-size:16px;font-weight:700;margin-top:12px;color:#034543">Link tidak ditemukan atau sudah kedaluwarsa</p><p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:6px">Minta link baru dari tim Harmoni</p></div>`
   }
 
   let activeTab = 'chat'
   let activeDivInfo = null
 
   function renderApp(orderInfo, allKnowledge, allPrices) {
+    const isConsultation = orderInfo.isConsultation === true
     const divLabel = DIV_LABEL[orderInfo.division] || orderInfo.division
-    activeDivInfo = orderInfo.division
+    activeDivInfo = orderInfo.division || DIVISIONS_ALL[0]
 
     document.getElementById('app').innerHTML = `
-      <!-- Order bar -->
+      <!-- Order / Konsultasi bar -->
       <div class="orderbar">
-        <span class="order-num">${orderInfo.orderNumber}</span>
-        <span class="${STATUS_CLASS[orderInfo.status]||'st-pending'} status-badge">${STATUS_LABEL[orderInfo.status]||orderInfo.status}</span>
-        <span style="font-size:12px;color:rgba(3,69,67,.5)">${divLabel}</span>
+        ${isConsultation
+          ? `<span style="font-size:11px;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-weight:700">KONSULTASI</span>
+             ${divLabel ? `<span style="font-size:12px;color:rgba(3,69,67,.5)">${divLabel}</span>` : ''}`
+          : `<span class="order-num">${orderInfo.orderNumber}</span>
+             <span class="${STATUS_CLASS[orderInfo.status]||'st-pending'} status-badge">${STATUS_LABEL[orderInfo.status]||orderInfo.status}</span>
+             <span style="font-size:12px;color:rgba(3,69,67,.5)">${divLabel}</span>`}
         <span style="font-size:12px;font-weight:600;color:#282828;margin-left:auto">Halo, ${orderInfo.customerName} 👋</span>
       </div>
 
@@ -201,11 +212,11 @@
         <div class="messages" id="chatMessages">
           <div style="text-align:center;padding:20px">
             <div style="font-size:32px;margin-bottom:8px">👋</div>
-            <p style="font-size:13px;color:rgba(3,69,67,.5)">Halo <strong>${orderInfo.customerName}</strong>! Silakan diskusikan kebutuhan desain Anda di sini.</p>
+            <p style="font-size:13px;color:rgba(3,69,67,.5)">Halo <strong>${orderInfo.customerName}</strong>! ${isConsultation ? 'Silakan tanyakan apa saja seputar produk dan layanan Harmoni.' : 'Silakan diskusikan kebutuhan desain Anda di sini.'}</p>
             <p style="font-size:11px;color:rgba(3,69,67,.35);margin-top:6px">⚠ Dilarang mengirim nomor HP, email, atau kontak</p>
           </div>
         </div>
-        ${['delivered','cancelled'].includes(orderInfo.status) ? `
+        ${!isConsultation && ['delivered','cancelled'].includes(orderInfo.status) ? `
         <div style="padding:14px 16px;border-top:1px solid rgba(3,69,67,.08);background:#f8faf8;text-align:center">
           <p style="font-size:13px;color:rgba(3,69,67,.5)">
             ${orderInfo.status === 'delivered' ? '✅ Order selesai — chat ditutup. Terima kasih sudah mempercayakan pesanan ke Harmoni!' : '❌ Order dibatalkan — chat ditutup.'}
@@ -366,9 +377,17 @@
     input.value = ''
     input.style.height = 'auto'
     try {
-      const snap = await getDoc(doc(db,'public_order_info',token))
-      const info = snap.exists() ? snap.data() : {}
+      // Try public_order_info first, then consultations
+      let info = {}
+      const orderSnap = await getDoc(doc(db,'public_order_info',token))
+      if (orderSnap.exists()) {
+        info = orderSnap.data()
+      } else {
+        const consultSnap = await getDoc(doc(db,'consultations',token))
+        if (consultSnap.exists()) info = { ...consultSnap.data(), isConsultation: true }
+      }
       const name = info.customerName || 'Customer'
+
       await addDoc(collection(db,'chat_messages',token,'messages'), {
         text, imageUrl:null, type:'text',
         senderId: token,
@@ -376,16 +395,17 @@
         senderRole: 'customer',
         createdAt: Timestamp.now(),
       })
-      // Notif ke CS via Worker (aktif setelah Worker di-deploy)
+
       if (WORKER_URL && NOTIFY_KEY) {
         fetch(`${WORKER_URL}/notify-cs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
           body: JSON.stringify({
-            orderNumber: info.orderNumber || '',
+            orderNumber: info.orderNumber || (info.isConsultation ? '[Konsultasi]' : ''),
             customerName: name,
             division: info.division || '',
             previewText: text.slice(0, 80),
+            isConsultation: !!info.isConsultation,
           }),
         }).catch(() => {})
       }

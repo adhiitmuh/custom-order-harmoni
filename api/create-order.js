@@ -43,9 +43,78 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
 }
 
+// ── Bot (WA Agent) constants ──────────────────────────────────────────────────
+
+const GREETING_MSG = `Halo! 👋 Saya asisten virtual Harmoni.
+
+Saya bisa bantu:
+1️⃣ Info produk & harga (jersey, bordir, sablon, dll)
+2️⃣ Buat order custom
+3️⃣ Cek status order
+
+Atau ketik *KONSULTASI* untuk langsung ngobrol dengan tim kami. 😊
+
+Ada yang bisa saya bantu?`
+
+const FAQ_MAP = [
+  { keys: ['jam buka','jam operasional','buka jam','buka pukul'], reply: 'Kami buka *Senin–Sabtu, 08.00–17.00 WITA*. 🕗' },
+  { keys: ['hari libur','libur hari'], reply: 'Kami libur di hari *Minggu* dan hari besar nasional.' },
+  { keys: ['lokasi','alamat','dimana','di mana'], reply: 'Kami berlokasi di *Makassar*. Ketik *KONSULTASI* untuk tanya CS tentang alamat lengkap. 📍' },
+  { keys: ['ready stock','readystock','stok ready'], reply: 'Kami fokus di *custom order*. Untuk ready stock bisa langsung ke toko ya. 🛍️' },
+  { keys: ['minimum order','min order','minimal order','minimal pesan'], reply: 'Minimum order bervariasi per divisi. Sebutkan divisi yang diminati untuk info lengkap!' },
+  { keys: ['lama pengerjaan','berapa lama','estimasi pengerjaan'], reply: 'Estimasi pengerjaan *3–14 hari kerja* tergantung divisi dan jumlah pesanan.' },
+  { keys: ['pembayaran','metode bayar','cara bayar'], reply: 'Kami menerima *transfer bank, QRIS, dan tunai* (untuk walk-in). 💳' },
+  { keys: ['dp','down payment','uang muka','uang dp'], reply: 'DP minimal *50%* dari total harga untuk memulai produksi.' },
+]
+
+const CONSULT_TRIGGERS = [
+  'konsultasi','minta cs','minta admin','bicara admin','bicara cs',
+  'hubungi cs','hubungi admin','orang asli','manusia','ngobrol langsung',
+  'chat langsung','tim harmoni','speak to','talk to',
+]
+
+const STATUS_LABEL_ID = {
+  'pending': 'Menunggu Konfirmasi',
+  'pending-approval': 'Menunggu Approval',
+  'in-progress': 'Sedang Dikerjakan',
+  'quality-check': 'Quality Check',
+  'done': 'Selesai',
+  'delivered': 'Sudah Dikirim',
+  'cancelled': 'Dibatalkan',
+}
+
+const SESSION_IDLE_MS = 12 * 60 * 60 * 1000  // 12 jam reset sesi jika idle
+const MAX_HISTORY     = 8
+
+const BOT_SYSTEM_PROMPT = `Kamu adalah asisten CS virtual Harmoni, toko custom order di Makassar, Indonesia.
+
+TUGASMU:
+- Jawab pertanyaan soal produk, harga, dan proses order
+- Bantu customer kumpulkan info order: nama customer, spesifikasi/desain, jumlah, dan deadline
+- Jika semua info sudah lengkap → konfirmasi semua detail ke customer
+
+ATURAN:
+- Bahasa Indonesia yang ramah dan singkat (maks 4 kalimat per pesan)
+- JANGAN kirim nomor HP, rekening, atau kontak pribadi apapun
+- JANGAN sebut merek kompetitor
+
+KAPAN ESKALASI KE CS MANUSIA (set escalate=true):
+- Customer minta bicara admin/CS/orang asli secara eksplisit
+- Customer bilang bingung/ribet/tidak mengerti setelah 3+ pesan
+- Kebutuhan sangat custom yang tidak ada di daftar produk
+- Customer komplain atau minta negosiasi harga khusus
+
+FORMAT RESPONS — selalu akhiri dengan tag ini (wajib):
+<bot_action>{"action":"reply","escalate":false,"division":""}</bot_action>
+
+Nilai field:
+- action: "reply" (balas biasa) | "order_ready" (semua info order sudah lengkap)
+- escalate: true jika perlu CS manusia
+- division: nama divisi yang dibahas (jersey/bordir/sablon/dll), atau "" jika belum tahu`
+
 export default {
   // ── HTTP handler ────────────────────────────────────────────────────────────
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS })
     }
@@ -57,9 +126,14 @@ export default {
       return handleNotifyCS(request, env)
     }
 
-    // /incoming-chat: webhook dari n8n/Fonnte, pakai NOTIFY_KEY
+    // /incoming-chat: proses di background (ctx.waitUntil) — balas 200 segera
+    // agar Fonnte/n8n tidak timeout menunggu Claude API
     if (request.method === 'POST' && url.pathname === '/incoming-chat') {
-      return handleIncomingChat(request, env)
+      const notifyKey = request.headers.get('X-Notify-Key')
+      if (notifyKey !== env.NOTIFY_KEY) return json({ error: 'Unauthorized' }, 401)
+      const body = await request.json().catch(() => null)
+      if (body) ctx.waitUntil(handleIncomingChat(body, env))
+      return json({ success: true })
     }
 
     // /send-chat-reply: dari inbox.html, verifikasi Firebase ID token (tidak perlu API_SECRET_KEY)
@@ -92,6 +166,9 @@ export default {
       }
       if (request.method === 'PATCH' && url.pathname === '/update-status') {
         return handleUpdateStatus(request, env, token)
+      }
+      if (request.method === 'POST' && url.pathname === '/start-consultation') {
+        return handleStartConsultation(request, env, token)
       }
       // Manual trigger untuk test deadline check tanpa tunggu cron
       if (request.method === 'POST' && url.pathname === '/trigger-deadline-check') {
@@ -378,90 +455,291 @@ async function handleUpdateStatus(request, env, token) {
   return json({ success: true, message: `Status order berhasil diubah ke: ${status}` }, 200)
 }
 
-// ── Chat Inbox ────────────────────────────────────────────────────────────────
+// ── Chat Inbox + WA Bot ───────────────────────────────────────────────────────
 
-// Webhook dari n8n/Fonnte saat customer kirim WA — buat/update thread
-async function handleIncomingChat(request, env) {
-  const notifyKey = request.headers.get('X-Notify-Key')
-  if (notifyKey !== env.NOTIFY_KEY) return json({ error: 'Unauthorized' }, 401)
-
-  const body = await request.json().catch(() => null)
-  if (!body) return json({ error: 'Invalid body' }, 400)
-
+// Dipanggil via ctx.waitUntil — berjalan di background, tidak ada return yang dipakai
+async function handleIncomingChat(body, env) {
   const { waNumber, customerName = 'Customer', message, senderType = 'customer' } = body
-  if (!waNumber || !message) return json({ error: 'waNumber dan message wajib diisi' }, 400)
+  if (!waNumber || !message || senderType !== 'customer') return
 
-  const token = await getFirebaseToken(env)
+  const token     = await getFirebaseToken(env)
   const projectId = env.FIREBASE_PROJECT_ID
-  const now = new Date().toISOString()
+  const now       = new Date().toISOString()
+  const msgLower  = message.toLowerCase().trim()
 
-  // Cari thread yang sudah ada berdasarkan waNumber (doc ID = waNumber)
-  const waRef = `chat_wa_numbers/${encodeURIComponent(waNumber)}`
-  const waDoc = await firestoreGet(projectId, token, waRef).catch(() => null)
+  // ── 1. Resolve / buat thread WA ───────────────────────────────────────────
+  const waDocPath = `chat_wa_numbers/${waNumber}`
+  const waDoc     = await firestoreGet(projectId, token, waDocPath).catch(() => null)
+  let threadId, threadToken, isNewThread = false
 
-  let threadId, threadToken
-
-  if (waDoc?.fields) {
-    threadId    = waDoc.fields.threadId?.stringValue
-    threadToken = waDoc.fields.token?.stringValue
-    // Update thread: lastMessage, unreadCount
-    const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
-    const unread = parseInt(threadDoc?.fields?.unreadCount?.integerValue || '0') + 1
-    await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
-      ...((threadDoc?.fields) || {}),
-      lastMessage:    { stringValue: message.substring(0, 100) },
-      lastMessageAt:  { timestampValue: now },
-      unreadCount:    { integerValue: String(unread) },
-      updatedAt:      { timestampValue: now },
-    })
+  if (waDoc?.fields?.threadId?.stringValue) {
+    threadId    = waDoc.fields.threadId.stringValue
+    threadToken = waDoc.fields.token.stringValue
   } else {
-    // Thread baru — generate token CUST-XXXX
-    const counterPath = `chat_counters/threads`
+    isNewThread = true
+    const counterPath = 'chat_counters/threads'
     const counterDoc  = await firestoreGet(projectId, token, counterPath).catch(() => null)
-    const counter = parseInt(counterDoc?.fields?.counter?.integerValue || '0') + 1
+    const counter     = parseInt(counterDoc?.fields?.counter?.integerValue || '0') + 1
     threadToken = `CUST-${String(counter).padStart(4, '0')}`
     threadId    = crypto.randomUUID()
-
-    // Simpan counter baru
     await firestoreSet(projectId, token, counterPath, { counter: { integerValue: String(counter) } })
-
-    // Buat thread doc
     await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
-      token:           { stringValue: threadToken },
-      customerName:    { stringValue: customerName },
-      status:          { stringValue: 'open' },
-      orderId:         { nullValue: null },
-      orderNumber:     { nullValue: null },
-      assignedAdminId: { nullValue: null },
-      lastMessage:     { stringValue: message.substring(0, 100) },
-      lastMessageAt:   { timestampValue: now },
-      hasFlag:         { booleanValue: false },
-      unreadCount:     { integerValue: '1' },
-      createdAt:       { timestampValue: now },
-      updatedAt:       { timestampValue: now },
+      token:        { stringValue: threadToken },
+      customerName: { stringValue: customerName },
+      status:       { stringValue: 'open' },
+      orderId:      { nullValue: null },
+      orderNumber:  { nullValue: null },
+      lastMessage:  { stringValue: message.substring(0, 100) },
+      lastMessageAt:{ timestampValue: now },
+      hasFlag:      { booleanValue: false },
+      unreadCount:  { integerValue: '1' },
+      createdAt:    { timestampValue: now },
+      updatedAt:    { timestampValue: now },
     })
-
-    // Simpan mapping WA → thread (collection yang diblokir dari client)
-    await firestoreSet(projectId, token, `chat_wa_numbers/${waNumber}`, {
+    await firestoreSet(projectId, token, waDocPath, {
       token:     { stringValue: threadToken },
       threadId:  { stringValue: threadId },
       createdAt: { timestampValue: now },
     })
   }
 
-  // Simpan pesan
-  const msgId = crypto.randomUUID()
-  await firestoreSet(projectId, token, `chat_threads/${threadId}/messages/${msgId}`, {
-    senderType:  { stringValue: senderType },
-    senderName:  { nullValue: null },
-    senderId:    { nullValue: null },
-    content:     { stringValue: message },
-    flagged:     { booleanValue: false },
-    flagReason:  { nullValue: null },
-    createdAt:   { timestampValue: now },
-  })
+  // ── 2. Simpan pesan customer ke thread (untuk inbox.html) ─────────────────
+  await saveThreadMsg(projectId, token, threadId, 'customer', null, null, message, now)
+  if (!isNewThread) {
+    const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
+    if (threadDoc?.fields) {
+      const unread = parseInt(threadDoc.fields.unreadCount?.integerValue || '0') + 1
+      await firestoreSet(projectId, token, `chat_threads/${threadId}`, {
+        ...threadDoc.fields,
+        lastMessage:   { stringValue: message.substring(0, 100) },
+        lastMessageAt: { timestampValue: now },
+        unreadCount:   { integerValue: String(unread) },
+        updatedAt:     { timestampValue: now },
+      })
+    }
+  }
 
-  return json({ success: true, threadId, token: threadToken })
+  // ── 3. Load sesi bot ──────────────────────────────────────────────────────
+  const sessionPath = `chat_sessions/${waNumber}`
+  const sessionDoc  = await firestoreGet(projectId, token, sessionPath).catch(() => null)
+  let history = [], sessionDivision = ''
+
+  const isFirstMsg = !sessionDoc?.fields || (() => {
+    const lastActive = sessionDoc.fields.lastActivityAt?.timestampValue
+    return !lastActive || (Date.now() - new Date(lastActive).getTime()) > SESSION_IDLE_MS
+  })()
+
+  if (!isFirstMsg && sessionDoc?.fields) {
+    try { history = JSON.parse(sessionDoc.fields.historyJson?.stringValue || '[]') } catch {}
+    sessionDivision = sessionDoc.fields.division?.stringValue || ''
+  }
+
+  // ── 4. Greeting untuk percakapan baru / setelah idle ─────────────────────
+  if (isFirstMsg) {
+    await firestoreSet(projectId, token, sessionPath, {
+      customerName:   { stringValue: customerName },
+      threadId:       { stringValue: threadId },
+      historyJson:    { stringValue: '[]' },
+      division:       { stringValue: '' },
+      lastActivityAt: { timestampValue: now },
+      createdAt:      { timestampValue: now },
+    })
+    await sendBotReply(projectId, token, threadId, sessionPath, env, GREETING_MSG, '', [], '', now)
+    return
+  }
+
+  // ── 5. KONSULTASI keyword → langsung sambungkan ke CS ────────────────────
+  if (CONSULT_TRIGGERS.some(k => msgLower.includes(k))) {
+    await botEscalate(projectId, token, env, waNumber, customerName, threadId, sessionDivision, now)
+    return
+  }
+
+  // ── 6. FAQ hardcoded (0 token Claude) ────────────────────────────────────
+  for (const faq of FAQ_MAP) {
+    if (faq.keys.some(k => msgLower.includes(k))) {
+      await sendBotReply(projectId, token, threadId, sessionPath, env, faq.reply, sessionDivision, history, message, now)
+      return
+    }
+  }
+
+  // ── 7. Cek status order (nomor format HRM-XXX-YYYY-NNNN) ─────────────────
+  const orderMatch = message.match(/HRM-[A-Z]{3}-\d{4}-\d{4}/i)
+  if (orderMatch) {
+    const orderNumber = orderMatch[0].toUpperCase()
+    const results = await firestoreQuery(projectId, token, 'orders',
+      [{ field: 'orderNumber', op: 'EQUAL', value: orderNumber }])
+    const reply = results.length
+      ? (() => {
+          const f  = results[0].document.fields
+          const st = STATUS_LABEL_ID[f.status?.stringValue] || f.status?.stringValue || '—'
+          const pct = f.progressPercentage?.integerValue || '0'
+          const due = f.dueDate?.stringValue || '—'
+          return `📦 *Status ${orderNumber}*\n\nStatus: *${st}*\nProgress: ${pct}%\nTarget selesai: ${due}\n\nAda yang bisa saya bantu lagi?`
+        })()
+      : `Nomor order *${orderNumber}* tidak ditemukan. Pastikan nomornya sudah benar ya.`
+    await sendBotReply(projectId, token, threadId, sessionPath, env, reply, sessionDivision, history, message, now)
+    return
+  }
+
+  // ── 8. Claude Haiku — CS agent ────────────────────────────────────────────
+  if (!env.CLAUDE_API_KEY) {
+    await sendBotReply(projectId, token, threadId, sessionPath, env,
+      'Maaf, sistem sedang pemeliharaan. Ketik *KONSULTASI* untuk bicara langsung dengan tim kami. 🙏',
+      sessionDivision, history, message, now)
+    return
+  }
+
+  // Inject knowledge divisi jika sudah terdeteksi di sesi
+  let knowledgeBlock = ''
+  if (sessionDivision) {
+    const kDoc = await firestoreGet(projectId, token, `product_knowledge/${sessionDivision}`).catch(() => null)
+    if (kDoc?.fields) {
+      const desc  = kDoc.fields.description?.stringValue || ''
+      const items = kDoc.fields.items?.arrayValue?.values || []
+      const lines = items.map(i => {
+        const fd   = i.mapValue?.fields || {}
+        const name = val(fd.name) || ''
+        const price= val(fd.priceNormal)
+        const unit = val(fd.unit) || 'pcs'
+        const min  = val(fd.minQty)
+        const fmt  = n => n ? `Rp ${Number(n).toLocaleString('id-ID')}` : '-'
+        return `- ${name}: ${fmt(price)}/${unit}${min ? `, min ${min} ${unit}` : ''}`
+      }).join('\n')
+      knowledgeBlock = `\n\nKNOWLEDGE DIVISI ${sessionDivision.toUpperCase()}:\n${desc}${lines ? `\n\nHarga:\n${lines}` : ''}`
+    }
+  }
+
+  const systemPrompt   = BOT_SYSTEM_PROMPT + knowledgeBlock
+  const claudeMessages = [...history.slice(-MAX_HISTORY), { role: 'user', content: message }]
+  const rawReply       = await callClaude(claudeMessages, systemPrompt, env.CLAUDE_API_KEY)
+
+  if (!rawReply) {
+    await sendBotReply(projectId, token, threadId, sessionPath, env,
+      'Maaf, ada gangguan sementara. Ketik *KONSULTASI* untuk bicara langsung dengan tim kami. 🙏',
+      sessionDivision, history, message, now)
+    return
+  }
+
+  // Parse <bot_action> meta tag
+  const metaMatch = rawReply.match(/<bot_action>(\{.*?\})<\/bot_action>/s)
+  let shouldEscalate = false, newDivision = sessionDivision
+  if (metaMatch) {
+    try {
+      const meta = JSON.parse(metaMatch[1])
+      shouldEscalate = meta.escalate === true
+      if (meta.division) newDivision = meta.division
+    } catch {}
+  }
+  const visibleReply = rawReply.replace(/<bot_action>.*?<\/bot_action>/gs, '').trim()
+
+  if (shouldEscalate) {
+    if (visibleReply) {
+      await sendBotReply(projectId, token, threadId, sessionPath, env, visibleReply, newDivision, history, message, now)
+    }
+    await botEscalate(projectId, token, env, waNumber, customerName, threadId, newDivision, now)
+    return
+  }
+
+  await sendBotReply(projectId, token, threadId, sessionPath, env, visibleReply, newDivision, history, message, now)
+}
+
+// ── Kirim balasan bot & update sesi ──────────────────────────────────────────
+async function sendBotReply(projectId, token, threadId, sessionPath, env, reply, division, history, userMsg, now) {
+  const waNumber = sessionPath.replace('chat_sessions/', '')
+  if (env.FONNTE_API_KEY) {
+    await fonnteSend(env.FONNTE_API_KEY, waNumber, reply).catch(() => {})
+  }
+  await saveThreadMsg(projectId, token, threadId, 'ai', 'Bot Harmoni', null, reply, now)
+  const newHistory = userMsg
+    ? [...history.slice(-(MAX_HISTORY - 2)), { role: 'user', content: userMsg }, { role: 'assistant', content: reply }]
+    : history
+  await firestoreSet(projectId, token, sessionPath, {
+    historyJson:    { stringValue: JSON.stringify(newHistory) },
+    division:       { stringValue: division || '' },
+    lastActivityAt: { timestampValue: now },
+  }).catch(() => {})
+}
+
+// ── Eskalasi ke CS: buat consultation & kirim link customer ──────────────────
+async function botEscalate(projectId, token, env, waNumber, customerName, sourceThreadId, division, now) {
+  const chatToken = generateChatToken()
+  await firestoreSet(projectId, token, `consultations/${chatToken}`, {
+    token:          { stringValue: chatToken },
+    customerName:   { stringValue: customerName },
+    division:       { stringValue: division || '' },
+    agentSessionId: { stringValue: sourceThreadId },
+    sourceThreadId: { stringValue: sourceThreadId },
+    status:         { stringValue: 'open' },
+    lastMessage:    { stringValue: '' },
+    lastMessageAt:  { timestampValue: now },
+    unreadCount:    { integerValue: '0' },
+    hasFlag:        { booleanValue: false },
+    createdAt:      { timestampValue: now },
+    updatedAt:      { timestampValue: now },
+  })
+  const waDoc = await firestoreGet(projectId, token, `chat_wa_numbers/${waNumber}`).catch(() => null)
+  if (waDoc?.fields) {
+    await firestoreSet(projectId, token, `chat_wa_numbers/${waNumber}`, {
+      ...waDoc.fields,
+      consultationToken: { stringValue: chatToken },
+    }).catch(() => {})
+  }
+  const chatUrl = `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${chatToken}`
+  const escMsg  = [
+    '✅ Saya sambungkan ke tim Harmoni sekarang ya!',
+    '',
+    'Silakan klik link berikut untuk chat langsung dengan CS kami:',
+    chatUrl,
+    '',
+    '_(Tim kami aktif Senin–Sabtu, 08.00–17.00 WITA)_',
+  ].join('\n')
+  if (env.FONNTE_API_KEY) {
+    await fonnteSend(env.FONNTE_API_KEY, waNumber, escMsg).catch(() => {})
+  }
+  await saveThreadMsg(projectId, token, sourceThreadId, 'ai', 'Bot Harmoni', null, escMsg, now)
+  if (env.FONNTE_API_KEY && env.OWNER_WA_NUMBER) {
+    const divLabel = DIVISION_LABELS[division] || division || ''
+    const notif = [
+      '💬 *Konsultasi Baru dari WA Bot*',
+      `Customer: ${customerName}`,
+      divLabel ? `Minat: ${divLabel}` : '',
+      `Link CS: ${chatUrl}`,
+    ].filter(Boolean).join('\n')
+    await fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, notif).catch(() => {})
+  }
+}
+
+// ── Simpan pesan ke thread ────────────────────────────────────────────────────
+async function saveThreadMsg(projectId, token, threadId, senderType, senderName, senderId, content, now) {
+  return firestoreSet(projectId, token, `chat_threads/${threadId}/messages/${crypto.randomUUID()}`, {
+    senderType: { stringValue: senderType },
+    senderName: senderName ? { stringValue: senderName } : { nullValue: null },
+    senderId:   senderId   ? { stringValue: senderId }   : { nullValue: null },
+    content:    { stringValue: content },
+    flagged:    { booleanValue: false },
+    flagReason: { nullValue: null },
+    createdAt:  { timestampValue: now },
+  }).catch(() => {})
+}
+
+// ── Claude API ────────────────────────────────────────────────────────────────
+async function callClaude(messages, systemPrompt, apiKey, model = 'claude-haiku-4-5-20251001') {
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model, max_tokens: 600, system: systemPrompt, messages }),
+    })
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data.content?.[0]?.text || null
+  } catch {
+    return null
+  }
 }
 
 // Dari inbox.html — admin balas pesan customer
@@ -668,6 +946,44 @@ async function handleCreateOrderFromChat(request, env) {
   await sendFonnteNotif(env, orderNumber, customerName, division, Number(totalPrice), dueDate, notes, 'inbox')
 
   return json({ success: true, orderId, orderNumber, chatToken, chatUrl })
+}
+
+// Buat sesi konsultasi pra-order — dipanggil WA Bot Agent via n8n
+async function handleStartConsultation(request, env, token) {
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Request body tidak valid (harus JSON)' }, 400)
+
+  const { customerName, division = '', agentSessionId = '', waNumber = '' } = body
+  if (!customerName?.trim()) return json({ error: 'customerName wajib diisi' }, 400)
+
+  const projectId  = env.FIREBASE_PROJECT_ID
+  const chatToken  = generateChatToken()
+  const now        = new Date().toISOString()
+
+  await firestoreSet(projectId, token, `consultations/${chatToken}`, {
+    token:          { stringValue: chatToken },
+    customerName:   { stringValue: customerName.trim() },
+    division:       { stringValue: division },
+    agentSessionId: { stringValue: agentSessionId },
+    status:         { stringValue: 'open' },
+    lastMessage:    { stringValue: '' },
+    lastMessageAt:  { timestampValue: now },
+    unreadCount:    { integerValue: '0' },
+    hasFlag:        { booleanValue: false },
+    createdAt:      { timestampValue: now },
+    updatedAt:      { timestampValue: now },
+  })
+
+  // Simpan WA number terproteksi (CS tidak bisa baca)
+  if (waNumber) {
+    await firestoreSet(projectId, token, `chat_wa_numbers/${waNumber}`, {
+      token:     { stringValue: chatToken },
+      createdAt: { timestampValue: now },
+    }).catch(() => {})
+  }
+
+  const chatUrl = `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${chatToken}`
+  return json({ success: true, chatToken, chatUrl })
 }
 
 function detectRedFlag(content) {

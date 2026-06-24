@@ -256,6 +256,10 @@ export function renderSidebar(profile) {
       <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
         <span class="icon">💬</span>Chat Inbox
       </a>
+      ${profile.role === 'owner' ? `
+      <a href="audit-chat.html" class="sidebar-link ${page==='audit-chat.html'?'active':''}">
+        <span class="icon">🚩</span>Audit Chat
+      </a>` : ''}
     </div>` : ''}
 
     ${(profile.role === 'owner' || profile.role === 'manager') ? `
