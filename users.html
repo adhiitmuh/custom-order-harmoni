@@ -79,10 +79,26 @@
   </main>
 </div>
 
+<!-- Modal Edit Lokasi -->
+<div id="lokasiModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div class="card" style="width:100%;max-width:400px;margin:0">
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:16px">📍 Atur Lokasi Pengguna</h2>
+    <div class="form-group" style="margin-bottom:20px">
+      <label>Lokasi</label>
+      <select id="editLokasiSel" style="width:100%"></select>
+      <p class="form-hint">CS dan manager hanya melihat order dari lokasi yang dipilih</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeLokasiModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="saveLokasi()" class="btn btn-primary" style="flex:1;justify-content:center" id="saveLokasiBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { auth, db } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { collection, getDocs, doc, setDoc, deleteDoc, Timestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
@@ -147,7 +163,11 @@
           ${(() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
-        ${u.id !== getProfile()?.id ? `<button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
+        ${u.id !== getProfile()?.id ? `
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            ${u.role !== 'owner' ? `<button onclick="editLokasi('${u.id}','${u.lokasiId||''}')" class="btn btn-ghost btn-sm">📍 Lokasi</button>` : ''}
+            <button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>
+          </div>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
       </div>`).join('')
   }
 
@@ -202,6 +222,44 @@
       errEl.textContent = msgs[err.code] || err.message
       errEl.style.display=''
     } finally { btn.disabled=false; btn.textContent='Buat Akun' }
+  }
+
+  let _editLokasiUid = null
+
+  window.editLokasi = function(uid, currentLokasiId) {
+    _editLokasiUid = uid
+    const sel = document.getElementById('editLokasiSel')
+    sel.innerHTML = '<option value="">— Tidak ditentukan (akses semua) —</option>'
+    lokasiOptions.forEach(l => {
+      const opt = document.createElement('option')
+      opt.value = l.id
+      const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
+      opt.textContent = `${icon} ${l.nama}`
+      if (l.id === currentLokasiId) opt.selected = true
+      sel.appendChild(opt)
+    })
+    document.getElementById('lokasiModal').style.display = 'flex'
+  }
+
+  window.closeLokasiModal = function() {
+    document.getElementById('lokasiModal').style.display = 'none'
+    _editLokasiUid = null
+  }
+
+  window.saveLokasi = async function() {
+    if (!_editLokasiUid) return
+    const sel = document.getElementById('editLokasiSel')
+    const lokasiId = sel.value
+    const lokasiNama = lokasiId ? (lokasiOptions.find(l => l.id === lokasiId)?.nama || '') : ''
+    const btn = document.getElementById('saveLokasiBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await updateDoc(doc(db, 'users', _editLokasiUid), { lokasiId, lokasiNama })
+      closeLokasiModal()
+      await loadUsers()
+    } catch(err) {
+      alert('Gagal simpan: ' + err.message)
+    } finally { btn.disabled = false; btn.textContent = 'Simpan' }
   }
 
   window.deleteUser = async function(uid, name) {
