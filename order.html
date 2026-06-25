@@ -80,7 +80,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
@@ -1688,7 +1688,10 @@
 
   async function initInternalChat() {
     const profile = getProfile()
-    if (profile) updateDoc(doc(db, 'orders', orderId), { [`lastReadInternalChat.${profile.id}`]: Timestamp.now() }).catch(() => {})
+    if (profile) updateDoc(doc(db, 'orders', orderId), {
+      [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: order.internalChatCount || 0,
+    }).catch(() => {})
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
@@ -1745,7 +1748,9 @@
     })
     updateDoc(doc(db, 'orders', orderId), {
       internalChatLastAt: Timestamp.now(),
+      internalChatCount: increment(1),
       [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: increment(1),
     }).catch(() => {})
 
     if (mentioned.length) {

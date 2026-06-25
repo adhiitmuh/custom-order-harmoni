@@ -230,7 +230,7 @@
                 <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber||''}</span>
                 <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
                 ${o.unreadCustomerChat > 0 ? `<span style="background:#ef4444;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">💬 ${o.unreadCustomerChat}</span>` : ''}
-                ${(o.internalChatLastAt?.seconds||0) > (o.lastReadInternalChat?.[profile?.id]?.seconds||0) ? `<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒</span>` : ''}
+                ${(() => { const n = (o.internalChatCount||0)-(o.lastReadInternalChatCount?.[profile?.id]||0); return n>0?`<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒 ${n}</span>`:''; })()}
                 <span style="font-size:11px;color:rgba(3,69,67,.4)">${meta.label||''}</span>
                 ${o.sumberOrder && o.sumberOrder !== 'staff' ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:#ede9fe;color:#7c3aed">${o.sumberOrder==='wa_bot'?'🤖 WA Bot':o.sumberOrder==='walk_in'?'🚶 Walk In':o.sumberOrder==='instagram'?'📸 IG':o.sumberOrder==='shopee'?'🛒 Shopee':o.sumberOrder}</span>` : ''}
                 ${showContact && (o.lokasiNama || o.branch) ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:rgba(3,69,67,.07);color:rgba(3,69,67,.6)">📍 ${o.lokasiNama || o.branch}</span>` : ''}
