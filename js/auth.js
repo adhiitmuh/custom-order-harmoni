@@ -426,10 +426,34 @@ function initNotifications(profile) {
     })
 
     const lastReadAt = getLastRead()
-    const unread = notifs.filter(n => {
+
+    // Pisah @mention (tetap individual) vs internal_chat (di-group per order)
+    const mentions = notifs.filter(n => n.type === 'mention')
+    const chatNotifs = notifs.filter(n => n.type !== 'mention')
+
+    // Group chat notifs by orderId — ambil pesan terbaru + hitung unread per order
+    const orderMap = {}
+    chatNotifs.forEach(n => {
+      const key = n.orderId || '_no_order'
+      if (!orderMap[key]) orderMap[key] = []
+      orderMap[key].push(n)
+    })
+    const grouped = Object.values(orderMap).map(msgs => {
+      const latest = msgs[0] // sudah sorted desc dari query
+      const unreadInOrder = msgs.filter(n => {
+        const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+        return ts > lastReadAt
+      }).length
+      return { ...latest, _unreadCount: unreadInOrder, _totalCount: msgs.length }
+    }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+
+    // Badge = jumlah order unread + mention unread
+    const unreadMentions = mentions.filter(n => {
       const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
       return ts > lastReadAt
     }).length
+    const unreadOrders = grouped.filter(g => g._unreadCount > 0).length
+    const unread = unreadMentions + unreadOrders
 
     const badge = document.getElementById('notifBadge')
     if (badge) {
@@ -440,25 +464,33 @@ function initNotifications(profile) {
     const list = document.getElementById('notifList')
     if (!list) return
 
-    if (!notifs.length) {
+    const allItems = [...mentions, ...grouped]
+    if (!allItems.length) {
       list.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>'
       return
     }
 
-    list.innerHTML = notifs.slice(0, 20).map(n => {
+    list.innerHTML = allItems.slice(0, 20).map(n => {
       const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
-      const isUnread = ts > lastReadAt
       const isMention = n.type === 'mention'
-      const icon = isMention ? '💬' : '🔔'
+      const isUnread = isMention
+        ? ts > lastReadAt
+        : n._unreadCount > 0
+
       const label = isMention
         ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
         : (n.orderNumber || '—')
+
+      const countBadge = (!isMention && n._unreadCount > 0)
+        ? `<span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n._unreadCount} baru</span>`
+        : ''
+
       return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId || ''}')"
         style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
         onmouseover="this.style.background='rgba(3,69,67,.08)'"
         onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-size:11px;font-weight:700;color:#034543">${icon} ${label}</span>
+          <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : '🔔'} ${label}${countBadge}</span>
           <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
         </div>
         <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
