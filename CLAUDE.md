@@ -37,11 +37,13 @@ custom-order-harmoni/
 ├── knowledge.html      — Product knowledge per divisi + price list
 ├── users.html          — Kelola pengguna (owner only)
 ├── chat.html           — Chat publik pelanggan (token-based, standalone, no auth)
+├── inbox.html          — Chat Inbox staff: kelola thread WA bot, balas customer, buat order dari chat
 ├── css/style.css
 ├── js/
 │   ├── config.js       — Firebase init (auth, db, storage) — di-import semua halaman
 │   ├── auth.js         — requireAuth() + renderSidebar() + role helpers
-│   └── utils.js        — Konstanta + helper functions
+│   ├── utils.js        — Konstanta + helper functions
+│   └── mentions.js     — @mention autocomplete, parseMentions, writeMentionNotifs, loadStaff
 ├── api/
 │   ├── create-order.js — Cloudflare Worker: API untuk WA Bot
 │   └── wrangler.toml   — Config deploy Cloudflare
@@ -89,9 +91,70 @@ priceApprovalTier   string    — null | 'promo' | 'admin'
 priceApprovalReason string
 priceApprovalBy     string    — uid approver
 priceApprovalAt     timestamp
+unreadCustomerChat  number    — counter pesan customer belum dibaca staff (reset saat staff balas)
+unreadInternalChat  number    — counter pesan internal belum dibaca (reset saat staff buka order)
 createdBy           string    — uid user / 'wa_bot'
 createdAt           timestamp
 updatedAt           timestamp
+```
+
+### Subcollection `orders/{orderId}/internal_chat/{msgId}`
+Chat internal tim per order (hanya staff, tidak terlihat customer).
+```
+content     string
+senderId    string
+senderName  string
+senderRole  string
+createdAt   timestamp
+```
+
+### Collection `chat_threads/{threadId}`
+Thread percakapan WA Bot → dikelola di inbox.html.
+```
+token           string    — WA number customer (atau session ID)
+customerName    string
+lokasiId        string    — lokasi yang handle thread ini
+lokasiNama      string
+status          string    — 'open' | 'closed' | 'escalated'
+unreadCount     number
+lastMessage     string
+lastMessageAt   timestamp
+hasFlag         boolean   — ada pesan mencurigakan
+orderId         string    — FK ke orders (setelah order dibuat dari chat)
+orderNumber     string
+guestStaffIds   string[]  — UID staff dari lokasi lain yang diberi akses via @mention
+```
+
+### Subcollection `chat_threads/{threadId}/messages/{msgId}`
+```
+content       string
+senderType    string    — 'customer' | 'admin' | 'ai'
+senderId      string
+senderName    string
+createdAt     timestamp
+flagged       boolean
+flagReason    string
+mentions      array     — [{id, name}] staff yang di-@mention
+```
+
+### Collection `notifications/{notifId}`
+Notifikasi in-app untuk internal chat dan @mention.
+```
+type        string    — 'internal_chat' | 'mention'
+orderId     string
+orderNumber string
+fromUid     string
+fromName    string
+fromRole    string
+targetUid   string    — (untuk type 'mention') UID yang di-mention
+preview     string    — 80 karakter pertama pesan
+createdAt   timestamp
+```
+
+### Collection `user_mentions/{uid}`
+Badge counter @mention per user.
+```
+unreadMentions  number
 ```
 
 ### Collection `order_counters/{division}`
@@ -208,6 +271,12 @@ cancelled         → Dibatalkan
 - ✅ Field `sumberOrder` (staff/wa_bot/walk_in/shopee/instagram)
 - ✅ Firestore Security Rules (RLS)
 - ✅ Cloudflare Worker API untuk WA Bot (`api/create-order.js`)
+- ✅ Chat Inbox staff (`inbox.html`) — kelola thread WA bot, balas via Worker, buat order dari chat
+- ✅ Internal chat per order (tim internal, tidak terlihat customer)
+- ✅ Unread badge notifikasi — customer chat & internal chat di card order dan dashboard
+- ✅ @mention staff di chat internal & inbox (autocomplete, highlight, notifikasi)
+- ✅ Cross-lokasi inbox — staff di-@mention dapat akses thread cabang lain (guest mode, tidak bisa buat order)
+- ✅ Inline edit Harga/Pcs per item di tabel Rincian Item (auto-update subtotal & totalPrice)
 
 ---
 

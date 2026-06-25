@@ -383,15 +383,25 @@ function initNotifications(profile) {
       }
     }, () => {})
 
-    // Inbox thread badge — unread threads dari chat_threads
+    // Inbox thread badge — unread dari chat_threads + consultations
     if (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') {
-      onSnapshot(query(collection(db, 'chat_threads'), where('unreadCount', '>', 0)), snap => {
-        const count = snap.docs.length
+      let _chatUnread = 0
+      let _consultUnread = 0
+      const _updateInboxBadge = () => {
+        const total = _chatUnread + _consultUnread
         const badge = document.getElementById('inboxBadge')
         if (badge) {
-          badge.textContent = count > 9 ? '9+' : String(count)
-          badge.style.display = count > 0 ? '' : 'none'
+          badge.textContent = total > 9 ? '9+' : String(total)
+          badge.style.display = total > 0 ? '' : 'none'
         }
+      }
+      onSnapshot(query(collection(db, 'chat_threads'), where('unreadCount', '>', 0)), snap => {
+        _chatUnread = snap.docs.length
+        _updateInboxBadge()
+      }, () => {})
+      onSnapshot(query(collection(db, 'consultations'), where('unreadCount', '>', 0)), snap => {
+        _consultUnread = snap.docs.length
+        _updateInboxBadge()
       }, () => {})
     }
   })

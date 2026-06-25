@@ -80,9 +80,10 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
+  import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -90,6 +91,7 @@
 
   let order = null
   let paymentInfo = null
+  let staffList = []
 
   async function loadPaymentInfo() {
     try {
@@ -101,6 +103,7 @@
 
   requireAuth((profile) => {
     loadPaymentInfo()
+    loadStaff().then(l => { staffList = l }).catch(() => {})
     // Timeout fallback — kalau 10 detik masih loading, minta refresh
     const loadTimeout = setTimeout(() => {
       const el = document.getElementById('pageContent')
@@ -135,6 +138,15 @@
 
     clearTimeout(loadTimeout)
     renderPage(profile)
+    // Attach mention autocomplete to internal chat textarea (programmatic, not via oninput attr)
+    ;(function() {
+      const ta = document.getElementById('internalChatInput')
+      if (!ta || ta._mcReady) return
+      ta._mcReady = true
+      const doAttach = () => attachMentionAutocomplete(ta, staffList)
+      if (staffList.length) { doAttach() }
+      else { loadStaff().then(l => { staffList = l; doAttach() }).catch(() => {}) }
+    })()
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
     setTimeout(() => { initChat(); initInternalChat() }, 200)
@@ -148,6 +160,7 @@
     const meta = DIVISION_META[order.division] || {}
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
+    const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
     const canEditModal   = profile.role === 'owner'
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
@@ -232,6 +245,23 @@
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
+              <div>
+                <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Lokasi Harmoni</p>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-weight:600;flex:1" id="lokasiDisplay">${order.lokasiNama || '—'}</span>
+                  ${canEditLokasi ? `<button onclick="editLokasi()" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" id="lokasiEditBtn">Edit</button>` : ''}
+                </div>
+                ${canEditLokasi ? `
+                <div id="lokasiEditWrap" style="display:none;margin-top:6px">
+                  <select id="lokasiSelect" style="font-size:13px;width:100%;padding:6px 8px;border:1.5px solid rgba(3,69,67,.2);border-radius:8px;outline:none;background:white">
+                    <option value="">Memuat…</option>
+                  </select>
+                  <div style="display:flex;gap:6px;margin-top:6px">
+                    <button onclick="cancelLokasi()" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;font-size:12px">Batal</button>
+                    <button onclick="saveLokasi()" class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-size:12px" id="lokasiSaveBtn">Simpan</button>
+                  </div>
+                </div>` : ''}
+              </div>
             </div>
             ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
               <hr class="sep">
@@ -720,6 +750,7 @@
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
               <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
               ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
+              ${order.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
@@ -1006,6 +1037,15 @@
         status: pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status),
         updatedAt: now,
       })
+      // Kirim progress ke chat customer + update public info
+      if (order.chatToken) {
+        addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
+          type:'progress', percentage:pct, note, photos,
+          senderName: profile.name, senderRole: profile.role,
+          createdAt: now,
+        }).catch(() => {})
+        updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
+      }
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -1435,6 +1475,56 @@
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
   }
 
+  window.editLokasi = async function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (!wrap) return
+    wrap.style.display = ''
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = 'none'
+    const sel = document.getElementById('lokasiSelect')
+    if (sel.options.length > 1 && sel.options[0].value !== '') return
+    try {
+      await dataAuthReady
+      const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('nama')))
+      sel.innerHTML = '<option value="">— Tidak ada / kosongkan —</option>'
+      snap.docs.filter(d => d.data().aktif !== false).forEach(d => {
+        const opt = document.createElement('option')
+        opt.value = d.id
+        opt.textContent = d.data().nama
+        if (d.id === order.lokasiId) opt.selected = true
+        sel.appendChild(opt)
+      })
+    } catch(e) {
+      sel.innerHTML = `<option value="">Gagal memuat: ${e.message}</option>`
+    }
+  }
+
+  window.cancelLokasi = function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (wrap) wrap.style.display = 'none'
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = ''
+  }
+
+  window.saveLokasi = async function() {
+    const sel = document.getElementById('lokasiSelect')
+    const lokasiId = sel.value || null
+    const lokasiNama = lokasiId ? sel.options[sel.selectedIndex].textContent : null
+    const btn = document.getElementById('lokasiSaveBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        lokasiId,
+        lokasiNama,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(e) {
+      alert('Gagal simpan: ' + e.message)
+      btn.disabled = false; btn.textContent = 'Simpan'
+    }
+  }
+
   window.showInvoice = function() {
     // Switch to invoice view for printing
     document.querySelectorAll('.no-print').forEach(el => el.style.display='none')
@@ -1460,6 +1550,7 @@
 
   function initChat() {
     if (!order.chatToken) return
+    updateDoc(doc(db, 'orders', orderId), { unreadCustomerChat: 0 }).catch(() => {})
     const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
     const chatQ = query(chatCol, orderBy('createdAt'))
     chatUnsub = onSnapshot(chatQ, (snap) => {
@@ -1596,7 +1687,12 @@
     production: { bg: '#1d4ed8', text: '#dbeafe', label: 'Tim Produksi' },
   }
 
-  function initInternalChat() {
+  async function initInternalChat() {
+    const profile = getProfile()
+    if (profile) updateDoc(doc(db, 'orders', orderId), {
+      [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: order.internalChatCount || 0,
+    }).catch(() => {})
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
@@ -1614,6 +1710,9 @@
         const bubbleBg = isMe ? rc.bg : '#fff'
         const bubbleColor = isMe ? rc.text : '#282828'
         const bubbleBorder = isMe ? 'none' : '1px solid rgba(3,69,67,.1)'
+        const escaped = (m.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+        const rendered = highlightMentions(escaped, staffList, profile?.id)
+        const isMentioned = staffList.some(s => s.id === profile?.id && (m.content||'').includes('@'+s.name))
         return `
           <div style="display:flex;flex-direction:column;align-items:${align}">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
@@ -1621,8 +1720,8 @@
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
             </div>
-            <div style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-              ${(m.content || '').replace(/\n/g, '<br>')}
+            <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              ${rendered}
             </div>
           </div>`
       }).join('')
@@ -1635,6 +1734,9 @@
     const content = input?.value.trim()
     if (!content || !order) return
     const profile = getProfile()
+    const staffList = await loadStaff().catch(() => [])
+    const mentioned = parseMentions(content, staffList)
+
     input.value = ''
     input.style.height = 'auto'
     await addDoc(collection(db, 'orders', orderId, 'internal_chat'), {
@@ -1642,21 +1744,33 @@
       senderId:   profile.id,
       senderName: profile.name,
       senderRole: profile.role,
+      mentions:   mentioned.map(s => ({ id: s.id, name: s.name })),
       createdAt:  Timestamp.now(),
     })
-    // Tulis notifikasi untuk staff lain
-    addDoc(collection(db, 'notifications'), {
-      type:        'internal_chat',
-      orderId,
-      orderNumber: order.orderNumber || '',
-      division:    order.division || '',
-      lokasiId:    order.lokasiId || null,
-      fromUid:     profile.id,
-      fromName:    profile.name,
-      fromRole:    profile.role,
-      preview:     content.substring(0, 80),
-      createdAt:   Timestamp.now(),
-    }).catch(err => console.error('Notification write failed:', err))
+    updateDoc(doc(db, 'orders', orderId), {
+      internalChatLastAt: Timestamp.now(),
+      internalChatCount: increment(1),
+      [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: increment(1),
+    }).catch(() => {})
+
+    if (mentioned.length) {
+      // Ada @mention: kirim mention notif saja (tidak double dengan internal_chat notif)
+      writeMentionNotifs(mentioned, profile.id, profile.name, content, orderId, order.orderNumber).catch(() => {})
+    } else {
+      addDoc(collection(db, 'notifications'), {
+        type:        'internal_chat',
+        orderId,
+        orderNumber: order.orderNumber || '',
+        division:    order.division || '',
+        lokasiId:    order.lokasiId || null,
+        fromUid:     profile.id,
+        fromName:    profile.name,
+        fromRole:    profile.role,
+        preview:     content.substring(0, 80),
+        createdAt:   Timestamp.now(),
+      }).catch(() => {})
+    }
   }
 
   window.copyChatLink = function(token) {

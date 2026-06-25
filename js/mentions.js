@@ -8,10 +8,12 @@ let _staffCache = null
 export async function loadStaff() {
   if (_staffCache) return _staffCache
   const snap = await getDocs(collection(db, 'users'))
+  const seen = new Set()
   _staffCache = snap.docs
     .map(d => ({ id: d.id, name: d.data().name || d.data().nama || '', role: d.data().role || '' }))
     .filter(u => u.name)
     .sort((a, b) => a.name.localeCompare(b.name, 'id'))
+    .filter(u => { if (seen.has(u.name)) return false; seen.add(u.name); return true })
   return _staffCache
 }
 

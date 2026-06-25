@@ -76,15 +76,7 @@
 
 <!-- Top bar -->
 <div class="topbar">
-  <svg viewBox="0 0 100 100" width="28" height="28">
-    <circle cx="74" cy="20" r="11" fill="#FFFBD5"/>
-    <rect x="22" y="8" width="22" height="80" fill="#FFFBD5"/>
-    <path d="M44 88 L44 50 Q44 36 58 36 Q72 36 72 50 L72 88 Z" fill="#FFFBD5"/>
-  </svg>
-  <div>
-    <div class="topbar-logo">harmoni</div>
-    <div class="topbar-sub">ORDER SYSTEM</div>
-  </div>
+  <img src="img/logo-beige.png" alt="harmoni" style="height:28px;display:block">
   <div style="flex:1"></div>
   <div class="status-dot"></div>
   <span style="font-size:12px;color:#FFFBD5;opacity:.6">Online</span>
@@ -334,10 +326,28 @@
       if (!el) return
       const msgEls = snap.docs.map(d => {
         const m = d.data()
+
+        // Progress update card — dikirim otomatis saat staff update progress
+        if (m.type === 'progress') {
+          const safeNote = (m.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+          const photosHtml = m.photos?.length
+            ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${m.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="height:80px;width:80px;object-fit:cover;border-radius:8px;border:1px solid #86efac"></a>`).join('')}</div>`
+            : ''
+          return `<div style="display:flex;flex-direction:column;align-items:center;margin:10px 0">
+            <div style="font-size:11px;color:rgba(3,69,67,.4);margin-bottom:6px">📊 Update dari Tim Harmoni · ${timeAgo(m.createdAt)}</div>
+            <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:14px 18px;width:calc(100% - 24px);max-width:400px">
+              <div style="font-size:13px;font-weight:700;color:#166534;margin-bottom:8px">Progress ${m.percentage}%</div>
+              <div style="height:7px;background:#bbf7d0;border-radius:99px;overflow:hidden;margin-bottom:10px">
+                <div style="height:100%;width:${m.percentage}%;background:#16a34a;border-radius:99px"></div>
+              </div>
+              <div style="font-size:13px;color:#166534;line-height:1.5">${safeNote}</div>
+              ${photosHtml}
+            </div>
+          </div>`
+        }
+
         const isMe = m.senderRole === 'customer'
         const isStaff = m.senderRole !== 'customer'
-        const cls = isMe ? 'me' : 'customer' // customer's own = right, staff = left with green
-        const displayCls = isMe ? 'me' : ''
         const bubbleCls = isMe ? 'me' : 'other'
         const staffName = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
         const senderLabel = !isStaff
@@ -405,6 +415,7 @@
             division: info.division || '',
             previewText: text.slice(0, 80),
             isConsultation: !!info.isConsultation,
+            orderId: info.orderId || null,
           }),
         }).catch(() => {})
       }
