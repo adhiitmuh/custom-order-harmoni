@@ -311,6 +311,8 @@
               <span class="mono" style="font-size:10px;color:rgba(3,69,67,.4)">${o.orderNumber}</span>
               <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
               ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
+              ${o.unreadCustomerChat > 0 ? `<span style="background:#ef4444;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">💬 ${o.unreadCustomerChat}</span>` : ''}
+              ${o.unreadInternalChat > 0 ? `<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒 ${o.unreadInternalChat}</span>` : ''}
             </div>
             <div style="font-weight:700;font-size:14px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
           </div>
