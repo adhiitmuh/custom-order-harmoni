@@ -334,7 +334,7 @@ async function handleNotifyCS(request, env) {
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid JSON' }, 400)
 
-  const { orderNumber, customerName, division, previewText } = body
+  const { orderNumber, customerName, division, previewText, orderId, isConsultation } = body
   const divLabel = DIVISION_LABELS[division] || division || ''
 
   const msg = [
@@ -349,6 +349,28 @@ async function handleNotifyCS(request, env) {
   ].filter(Boolean).join('\n')
 
   await fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, msg).catch(() => {})
+
+  // Increment unreadCustomerChat di order secara atomic (fire-and-forget)
+  if (orderId && !isConsultation) {
+    getFirebaseToken(env).then(token => {
+      const projectId = env.FIREBASE_PROJECT_ID
+      return fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            writes: [{
+              transform: {
+                document: `projects/${projectId}/databases/(default)/documents/orders/${orderId}`,
+                fieldTransforms: [{ fieldPath: 'unreadCustomerChat', increment: { integerValue: '1' } }],
+              }
+            }]
+          }),
+        }
+      )
+    }).catch(() => {})
+  }
 
   return json({ success: true }, 200)
 }

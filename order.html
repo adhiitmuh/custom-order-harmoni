@@ -1550,6 +1550,7 @@
 
   function initChat() {
     if (!order.chatToken) return
+    updateDoc(doc(db, 'orders', orderId), { unreadCustomerChat: 0 }).catch(() => {})
     const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
     const chatQ = query(chatCol, orderBy('createdAt'))
     chatUnsub = onSnapshot(chatQ, (snap) => {
