@@ -50,7 +50,7 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
-  import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc, where, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, paymentStatus, daysDiff } from './js/utils.js'
 
   requireAuth((profile) => {
@@ -95,12 +95,16 @@
           </a>` : ''
       })
 
-      // Unread internal chat — real-time
-      onSnapshot(query(collection(db, 'orders'), where('unreadInternalChat', '>', 0)), (snap) => {
+      // Unread internal chat — real-time, per-user
+      onSnapshot(query(collection(db, 'orders'), where('internalChatLastAt', '>', Timestamp.fromMillis(Date.now() - 90 * 24 * 60 * 60 * 1000))), (snap) => {
         const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => {
-          if (profile.role === 'owner') return true
-          if (profile.divisions?.length) return profile.divisions.includes(o.division)
-          return !o.lokasiId || o.lokasiId === profile.lokasiId
+          if (profile.role !== 'owner') {
+            if (profile.divisions?.length && !profile.divisions.includes(o.division)) return false
+            if (!profile.divisions?.length && o.lokasiId && o.lokasiId !== profile.lokasiId) return false
+          }
+          const lastAt = o.internalChatLastAt?.seconds || 0
+          const readAt = o.lastReadInternalChat?.[profile.id]?.seconds || 0
+          return lastAt > readAt
         })
         const el2 = document.getElementById('internalUnreadAlert')
         if (el2) el2.innerHTML = orders.length > 0 ? `
@@ -312,7 +316,7 @@
               <span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span>
               ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
               ${o.unreadCustomerChat > 0 ? `<span style="background:#ef4444;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">💬 ${o.unreadCustomerChat}</span>` : ''}
-              ${o.unreadInternalChat > 0 ? `<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒 ${o.unreadInternalChat}</span>` : ''}
+              ${(o.internalChatLastAt?.seconds||0) > (o.lastReadInternalChat?.[getProfile()?.id]?.seconds||0) ? `<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒</span>` : ''}
             </div>
             <div style="font-weight:700;font-size:14px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
           </div>
