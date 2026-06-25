@@ -73,6 +73,7 @@
   let lockedDivision = null
   let lockedDivisions = null
   let lockedBranch = null
+  let lockedLokasiId = null
 
   requireAuth(async (profile) => {
     // Populate division filter with dynamic divisions
@@ -104,7 +105,12 @@
       }
     }
 
-    if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
+    if ((profile.role === 'manager' || profile.role === 'cs') && profile.lokasiId) {
+      lockedLokasiId = profile.lokasiId
+      const badge = document.getElementById('branchLockBadge')
+      badge.innerHTML = `📍 ${profile.lokasiNama || profile.lokasiId}`
+      badge.style.display = 'inline-flex'
+    } else if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
       lockedBranch = profile.branch
       const badge = document.getElementById('branchLockBadge')
       badge.innerHTML = `📍 ${profile.branch}`
@@ -191,6 +197,7 @@
       if (lockedDivision && o.division !== lockedDivision) return false
       if (lockedDivisions && !lockedDivisions.includes(o.division)) return false
       if (!lockedDivision && !lockedDivisions && div && o.division !== div) return false
+      if (lockedLokasiId && o.lokasiId !== lockedLokasiId) return false
       const branchCheck = lockedBranch || branch
       if (branchCheck && o.branch !== branchCheck) return false
       if (lokasiF && o.lokasiId !== lokasiF) return false

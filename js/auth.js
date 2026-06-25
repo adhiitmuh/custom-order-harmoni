@@ -265,7 +265,7 @@ export function renderSidebar(profile) {
       </a>` : ''}
     </div>` : ''}
 
-    ${(profile.role === 'owner' || profile.role === 'manager') ? `
+    ${profile.role === 'owner' ? `
     <div class="sidebar-section">
       <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
       <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
