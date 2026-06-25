@@ -1037,6 +1037,15 @@
         status: pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status),
         updatedAt: now,
       })
+      // Kirim progress ke chat customer + update public info
+      if (order.chatToken) {
+        addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
+          type:'progress', percentage:pct, note, photos,
+          senderName: profile.name, senderRole: profile.role,
+          createdAt: now,
+        }).catch(() => {})
+        updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
+      }
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
