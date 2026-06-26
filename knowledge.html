@@ -325,21 +325,21 @@
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
             <div>
               <label style="font-size:11px;color:#059669;font-weight:700">Harga Normal (Rp)</label>
-              <input type="number" value="${item.priceNormal||''}" oninput="updatePriceRow(${i},'priceNormal',this.value)" placeholder="misal: 25000" style="border-color:rgba(5,150,105,.3)">
+              <input type="text" inputmode="numeric" value="${fmtPrice(item.priceNormal)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceNormal',this.value)" placeholder="misal: 25.000" style="border-color:rgba(5,150,105,.3)">
             </div>
             <div>
               <label style="font-size:11px;color:#d97706;font-weight:700">Harga Promo (Rp)</label>
-              <input type="number" value="${item.pricePromo||''}" oninput="updatePriceRow(${i},'pricePromo',this.value)" placeholder="misal: 20000" style="border-color:rgba(217,119,6,.3)">
+              <input type="text" inputmode="numeric" value="${fmtPrice(item.pricePromo)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'pricePromo',this.value)" placeholder="misal: 20.000" style="border-color:rgba(217,119,6,.3)">
             </div>
             <div>
               <label style="font-size:11px;color:#b91c1c;font-weight:700">Harga Admin (Rp)</label>
-              <input type="number" value="${item.priceAdmin||''}" oninput="updatePriceRow(${i},'priceAdmin',this.value)" placeholder="misal: 15000" style="border-color:rgba(185,28,28,.3)">
+              <input type="text" inputmode="numeric" value="${fmtPrice(item.priceAdmin)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceAdmin',this.value)" placeholder="misal: 15.000" style="border-color:rgba(185,28,28,.3)">
             </div>
           </div>
           ${canModal ? `
           <div style="margin-bottom:8px">
             <label style="font-size:11px;color:#7c3aed;font-weight:700">Harga Modal (Rp) — Internal</label>
-            <input type="number" value="${item.priceModal||''}" oninput="updatePriceRow(${i},'priceModal',this.value)" placeholder="misal: 10000" style="border-color:rgba(124,58,237,.3)">
+            <input type="text" inputmode="numeric" value="${fmtPrice(item.priceModal)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceModal',this.value)" placeholder="misal: 10.000" style="border-color:rgba(124,58,237,.3)">
           </div>` : ''}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
@@ -375,19 +375,19 @@
       </div>
       <div>
         <label style="font-size:10px;font-weight:700;color:#059669;display:block;margin-bottom:3px">NORMAL</label>
-        <input type="number" value="${v.priceNormal||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceNormal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(5,150,105,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+        <input type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}" oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceNormal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(5,150,105,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>
       <div>
         <label style="font-size:10px;font-weight:700;color:#d97706;display:block;margin-bottom:3px">PROMO</label>
-        <input type="number" value="${v.pricePromo||''}" oninput="updateVariant(${itemIdx},${varIdx},'pricePromo',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(217,119,6,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+        <input type="text" inputmode="numeric" value="${fmtPrice(v.pricePromo)}" oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'pricePromo',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(217,119,6,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>
       <div>
         <label style="font-size:10px;font-weight:700;color:#b91c1c;display:block;margin-bottom:3px">ADMIN</label>
-        <input type="number" value="${v.priceAdmin||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceAdmin',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(185,28,28,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+        <input type="text" inputmode="numeric" value="${fmtPrice(v.priceAdmin)}" oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceAdmin',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(185,28,28,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>
       ${canModal ? `<div>
         <label style="font-size:10px;font-weight:700;color:#7c3aed;display:block;margin-bottom:3px">MODAL</label>
-        <input type="number" value="${v.priceModal||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceModal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(124,58,237,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+        <input type="text" inputmode="numeric" value="${fmtPrice(v.priceModal)}" oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceModal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(124,58,237,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>` : ''}
       <div style="display:flex;align-items:flex-end;padding-bottom:4px">
         <button type="button" onclick="removeVariant(${itemIdx},${varIdx})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:3px;line-height:1" title="Hapus varian">✕</button>
@@ -395,7 +395,13 @@
     </div>`
   }
 
-  window.updatePriceRow = (i, field, val) => { if (window._priceItems) window._priceItems[i][field] = val }
+  const _priceFields = ['priceNormal','pricePromo','priceAdmin','priceModal']
+  window.updatePriceRow = (i, field, val) => {
+    if (!window._priceItems) return
+    window._priceItems[i][field] = _priceFields.includes(field)
+      ? Number(String(val).replace(/\./g,''))||0
+      : val
+  }
 
   window.addVariant = function(itemIdx) {
     if (!window._priceItems?.[itemIdx]) return
@@ -412,7 +418,8 @@
 
   window.updateVariant = function(itemIdx, varIdx, field, val) {
     const v = window._priceItems?.[itemIdx]?.variants?.[varIdx]
-    if (v) v[field] = val
+    if (!v) return
+    v[field] = _priceFields.includes(field) ? Number(String(val).replace(/\./g,''))||0 : val
   }
 
   window.checkModalDupes = function() {
@@ -534,6 +541,15 @@
     return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
   }
 
+  function fmtPrice(n) {
+    const num = Number(String(n||'').replace(/\./g,''))
+    return num > 0 ? num.toLocaleString('id-ID') : ''
+  }
+  window.fmtInputPrice = function(val) {
+    const digits = String(val).replace(/\D/g,'')
+    return digits ? Number(digits).toLocaleString('id-ID') : ''
+  }
+
   function renderInlinePriceTable(d) {
     const profile = getProfile()
     const canEdit = profile?.role === 'owner' || profile?.role === 'cs'
@@ -556,10 +572,10 @@
         return [canEdit ? `<tr>
           <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
           <td><button onclick="addInlineVariant('${d}',${i})" style="background:none;border:1px dashed rgba(3,69,67,.2);border-radius:5px;padding:2px 7px;font-size:10px;cursor:pointer;color:rgba(3,69,67,.4)">+ varian</button></td>
-          <td><input class="inp-inline tier-normal" type="number" value="${p.priceNormal||''}" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
-          <td><input class="inp-inline tier-promo" type="number" value="${p.pricePromo||''}" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
-          <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
-          ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
+          <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(p.priceNormal)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
+          <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(p.pricePromo)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
+          <td><input class="inp-inline tier-admin" type="text" inputmode="numeric" value="${fmtPrice(p.priceAdmin)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
+          ${canEditModal ? `<td><input class="inp-inline tier-modal" type="text" inputmode="numeric" value="${fmtPrice(p.priceModal)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
           <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
           <td style="white-space:normal;min-width:120px"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
           <td style="white-space:nowrap">
@@ -611,10 +627,10 @@
       const variantRows = p.variants.map((v, vi) => canEdit ? `<tr class="${varClass}" style="${varDisplay}background:rgba(3,69,67,.012)">
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
         <td><input class="inp-inline" type="text" value="${escAttr(v.name||'')}" onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500"></td>
-        <td><input class="inp-inline tier-normal" type="number" value="${v.priceNormal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
-        <td><input class="inp-inline tier-promo" type="number" value="${v.pricePromo||''}" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
-        <td><input class="inp-inline tier-admin" type="number" value="${v.priceAdmin||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceAdmin',this.value)" placeholder="0"></td>
-        ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${v.priceModal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceModal',this.value)" placeholder="0"></td>` : ''}
+        <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
+        <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(v.pricePromo)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
+        <td><input class="inp-inline tier-admin" type="text" inputmode="numeric" value="${fmtPrice(v.priceAdmin)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceAdmin',this.value)" placeholder="0"></td>
+        ${canEditModal ? `<td><input class="inp-inline tier-modal" type="text" inputmode="numeric" value="${fmtPrice(v.priceModal)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceModal',this.value)" placeholder="0"></td>` : ''}
         <td></td><td></td>
         <td><button onclick="removeInlineVariant('${d}',${i},${vi})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.25);font-size:13px;padding:2px 4px" title="Hapus varian">✕</button></td>
       </tr>` : `<tr class="${varClass}" style="${varDisplay}">
@@ -653,7 +669,7 @@
   window.updateInlinePrice = function(division, index, field, value) {
     const item = priceDataStore[division]?.items?.[index]
     if (!item) return
-    item[field] = value
+    item[field] = _priceFields.includes(field) ? Number(String(value).replace(/\./g,''))||0 : value
     scheduleInlineSave(division)
   }
 
@@ -715,7 +731,7 @@
   window.updateInlineVariant = function(division, itemIdx, varIdx, field, value) {
     const item = priceDataStore[division]?.items?.[itemIdx]
     if (!item?.variants?.[varIdx]) return
-    item.variants[varIdx][field] = value
+    item.variants[varIdx][field] = _priceFields.includes(field) ? Number(String(value).replace(/\./g,''))||0 : value
     scheduleInlineSave(division)
   }
 
