@@ -102,6 +102,7 @@
   let priceDataStore = {}
   let _inlineSaveTimers = {}
   let _savedToast = null
+  const _expandedVariants = new Set()
 
   requireAuth(async (profile) => {
     await renderTabs(profile)
@@ -577,11 +578,19 @@
         </tr>`]
       }
 
-      // Item with variants — item header row + one row per variant
+      // Item with variants — collapsible
+      const isExpanded = _expandedVariants.has(`${d}-${i}`)
+      const toggleIcon = isExpanded ? '▼' : '▶'
+      const varDisplay = isExpanded ? '' : 'display:none;'
+      const varClass = `var-group-${d}-${i}`
+
       const itemRow = canEdit ? `<tr style="border-bottom:none">
-        <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk" style="font-weight:600"></td>
-        <td style="font-size:11px;color:rgba(3,69,67,.35);font-style:italic">${p.variants.length} varian</td>
-        <td colspan="${priceColCount}" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">harga per varian ↓</td>
+        <td>
+          <button id="vartoggle-${d}-${i}" onclick="toggleVariants('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.5);font-size:10px;padding:0 5px 0 0;vertical-align:middle">${toggleIcon}</button>
+          <input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk" style="font-weight:600">
+        </td>
+        <td><button onclick="toggleVariants('${d}',${i})" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0;font-style:italic">${p.variants.length} varian ${toggleIcon}</button></td>
+        <td colspan="${priceColCount}" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">harga per varian</td>
         <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
         <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
         <td style="white-space:nowrap">
@@ -589,23 +598,26 @@
           <button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 4px" title="Hapus baris">✕</button>
         </td>
       </tr>` : `<tr style="background:rgba(3,69,67,.02);border-bottom:none">
-        <td style="font-weight:700;white-space:normal">${escAttr(p.name||'')}</td>
-        <td style="font-size:11px;color:rgba(3,69,67,.35);font-style:italic">${p.variants.length} varian</td>
+        <td style="font-weight:700;white-space:normal">
+          <button id="vartoggle-${d}-${i}" onclick="toggleVariants('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.5);font-size:10px;padding:0 5px 0 0;vertical-align:middle">${toggleIcon}</button>
+          ${escAttr(p.name||'')}
+        </td>
+        <td><button onclick="toggleVariants('${d}',${i})" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0;font-style:italic">${p.variants.length} varian ${toggleIcon}</button></td>
         <td colspan="${priceColCount}" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">—</td>
         <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
         <td style="color:rgba(3,69,67,.4);font-size:12px;white-space:normal">${escAttr(p.note||'—')}</td>
       </tr>`
 
-      const variantRows = p.variants.map((v, vi) => canEdit ? `<tr style="background:rgba(3,69,67,.012)">
+      const variantRows = p.variants.map((v, vi) => canEdit ? `<tr class="${varClass}" style="${varDisplay}background:rgba(3,69,67,.012)">
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
-        <td style="border-left:none"><input class="inp-inline" type="text" value="${escAttr(v.name||'')}" onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500"></td>
+        <td><input class="inp-inline" type="text" value="${escAttr(v.name||'')}" onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500"></td>
         <td><input class="inp-inline tier-normal" type="number" value="${v.priceNormal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-promo" type="number" value="${v.pricePromo||''}" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-admin" type="number" value="${v.priceAdmin||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceAdmin',this.value)" placeholder="0"></td>
         ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${v.priceModal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceModal',this.value)" placeholder="0"></td>` : ''}
         <td></td><td></td>
         <td><button onclick="removeInlineVariant('${d}',${i},${vi})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.25);font-size:13px;padding:2px 4px" title="Hapus varian">✕</button></td>
-      </tr>` : `<tr>
+      </tr>` : `<tr class="${varClass}" style="${varDisplay}">
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
         <td style="font-size:12px;color:rgba(3,69,67,.7);font-weight:500">${escAttr(v.name||'')}</td>
         <td class="tier-normal">${v.priceNormal ? Number(v.priceNormal).toLocaleString('id-ID') : '—'}</td>
@@ -615,7 +627,7 @@
         <td></td><td></td>
       </tr>`)
 
-      const addVariantBtn = canEdit ? [`<tr><td></td><td colspan="${totalCols-1}" style="padding:2px 6px 8px">
+      const addVariantBtn = canEdit ? [`<tr class="${varClass}" style="${varDisplay}"><td></td><td colspan="${totalCols-1}" style="padding:2px 6px 8px">
         <button onclick="addInlineVariant('${d}',${i})" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0">+ tambah varian</button>
       </td></tr>`] : []
 
@@ -713,6 +725,15 @@
     item.variants.splice(varIdx, 1)
     rerenderPriceWrap(division)
     scheduleInlineSave(division)
+  }
+
+  window.toggleVariants = function(d, i) {
+    const key = `${d}-${i}`
+    const isNowExpanded = !_expandedVariants.has(key)
+    isNowExpanded ? _expandedVariants.add(key) : _expandedVariants.delete(key)
+    document.querySelectorAll(`.var-group-${d}-${i}`).forEach(r => r.style.display = isNowExpanded ? '' : 'none')
+    const btn = document.getElementById(`vartoggle-${d}-${i}`)
+    if (btn) btn.textContent = isNowExpanded ? '▼' : '▶'
   }
 
   window.addInlineVariant = function(division, itemIdx) {
