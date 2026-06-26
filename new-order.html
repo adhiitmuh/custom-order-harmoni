@@ -641,53 +641,66 @@
   }
 
   window.checkPriceTierLive = function() {
-    const price = parsePrice(document.getElementById('totalPrice').value)
+    const totalPrice = parsePrice(document.getElementById('totalPrice').value)
     const infoEl = document.getElementById('priceTierInfo')
     const msgEl = document.getElementById('priceTierMsg')
     const reasonWrap = document.getElementById('approvalReasonWrap')
 
-    if (!price || !currentPriceList?.items?.length) {
+    if (!totalPrice || !currentPriceList?.items?.length) {
       infoEl.style.display = 'none'; return
     }
 
-    // Find lowest prices across all items and variants for each tier
-    const items = currentPriceList.items
-    const allN = items.flatMap(i => [i.priceNormal, ...(i.variants||[]).map(v=>v.priceNormal)]).filter(x=>x>0)
-    const allP = items.flatMap(i => [i.pricePromo,  ...(i.variants||[]).map(v=>v.pricePromo)]).filter(x=>x>0)
-    const allA = items.flatMap(i => [i.priceAdmin,  ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
-    const minNormal = allN.length ? Math.min(...allN) : Infinity
-    const minPromo  = allP.length ? Math.min(...allP) : Infinity
-    const minAdmin  = allA.length ? Math.min(...allA) : Infinity
+    // Cek tier per item jika ada item yang cocok di katalog
+    // Tier order = tier terburuk di antara semua item (admin > promo > normal)
+    let effectiveTier = null
+    const itemRows = [...document.querySelectorAll('#itemRows tr')]
+    for (const tr of itemRows) {
+      const name   = tr.querySelector('[data-field="name"]')?.value.trim() || ''
+      const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
+      const p      = parsePrice(tr.querySelector('[data-field="price"]')?.value)
+      const t      = getItemTier(name, varian, p)
+      if (!t) continue
+      if (t === 'admin') { effectiveTier = 'admin'; break }
+      if (t === 'promo') effectiveTier = 'promo'
+      else if (!effectiveTier) effectiveTier = 'normal'
+    }
 
-    const profile = getProfile()
-    const isOwnerOrManager = profile?.role === 'owner' || profile?.role === 'manager'
+    // Fallback ke total harga vs minimum katalog (kalau item belum ada nama katalog)
+    if (!effectiveTier) {
+      const catItems = currentPriceList.items
+      const allN = catItems.flatMap(i => [i.priceNormal, ...(i.variants||[]).map(v=>v.priceNormal)]).filter(x=>x>0)
+      const allP = catItems.flatMap(i => [i.pricePromo,  ...(i.variants||[]).map(v=>v.pricePromo)]).filter(x=>x>0)
+      const allA = catItems.flatMap(i => [i.priceAdmin,  ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
+      const minN = allN.length ? Math.min(...allN) : Infinity
+      const minP = allP.length ? Math.min(...allP) : Infinity
+      const minA = allA.length ? Math.min(...allA) : Infinity
+      if (!isFinite(minN) || totalPrice >= minN) effectiveTier = 'normal'
+      else if (isFinite(minP) && totalPrice >= minP) effectiveTier = 'promo'
+      else if (isFinite(minA) && totalPrice >= minA) effectiveTier = 'admin'
+      else if (isFinite(minA) && totalPrice < minA) effectiveTier = 'blocked'
+      else effectiveTier = 'normal'
+    }
 
-    if (!isFinite(minNormal) || price >= minNormal) {
-      // Normal tier
-      currentPriceTier = 'normal'
+    currentPriceTier = effectiveTier
+
+    if (effectiveTier === 'normal') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#059669">✓ Harga Normal — Langsung disetujui</span>`
       reasonWrap.style.display = 'none'
-    } else if (isFinite(minPromo) && price >= minPromo) {
-      // Promo tier
-      currentPriceTier = 'promo'
+    } else if (effectiveTier === 'promo') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#d97706">⚠ Harga Promo — Perlu approval Kepala Cabang</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval sebelum diproses</span>`
       reasonWrap.style.display = ''
-    } else if (isFinite(minAdmin) && price >= minAdmin) {
-      // Admin tier
-      currentPriceTier = 'admin'
+    } else if (effectiveTier === 'admin') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f2;border:1px solid #fecdd3'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🔒 Harga Admin — Perlu approval Owner</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval Owner sebelum diproses</span>`
       reasonWrap.style.display = ''
-    } else if (isFinite(minAdmin) && price < minAdmin) {
-      // Blocked
-      currentPriceTier = 'blocked'
+    } else if (effectiveTier === 'blocked') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fee2e2;border:1px solid #fca5a5'
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${minAdmin.toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
+      const minA = currentPriceList.items.flatMap(i => [i.priceAdmin, ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${Math.min(...minA).toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
       reasonWrap.style.display = 'none'
     } else {
-      currentPriceTier = 'normal'
       infoEl.style.display = 'none'
     }
   }
