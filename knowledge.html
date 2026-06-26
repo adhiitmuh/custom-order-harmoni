@@ -28,6 +28,10 @@
     .tb-promo  { background:#fef3c7; color:#92400e; }
     .tb-admin  { background:#fee2e2; color:#991b1b; }
     .tier-modal { font-weight:700; color:#7c3aed; }
+    .drag-handle-icon { cursor:grab; color:rgba(3,69,67,.2); font-size:14px; vertical-align:middle; margin-right:4px; display:inline-block; user-select:none; }
+    .drag-handle-icon:hover { color:rgba(3,69,67,.5); }
+    .price-table tr.drag-over > td { background:rgba(3,69,67,.07) !important; outline:1px dashed rgba(3,69,67,.25); }
+    .price-table tr.drag-dragging { opacity:0.35; }
     .tb-modal  { background:#ede9fe; color:#4c1d95; }
     .inp-inline {
       border: none; background: transparent; font-size: 13px;
@@ -569,8 +573,8 @@
       const hasVariants = p.variants?.length > 0
 
       if (!hasVariants) {
-        return [canEdit ? `<tr>
-          <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
+        return [canEdit ? `<tr data-item-index="${i}" draggable="true">
+          <td><span class="drag-handle-icon" title="Seret untuk urutkan ulang">⠿</span><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
           <td><button onclick="addInlineVariant('${d}',${i})" style="background:none;border:1px dashed rgba(3,69,67,.2);border-radius:5px;padding:2px 7px;font-size:10px;cursor:pointer;color:rgba(3,69,67,.4)">+ varian</button></td>
           <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(p.priceNormal)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(p.pricePromo)}" oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
@@ -595,9 +599,9 @@
       }
 
       // Item with variants — always expanded
-      const itemRow = canEdit ? `<tr style="border-bottom:none">
+      const itemRow = canEdit ? `<tr data-item-index="${i}" draggable="true" style="border-bottom:none">
         <td>
-          <input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk" style="font-weight:600">
+          <span class="drag-handle-icon" title="Seret untuk urutkan ulang">⠿</span><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk" style="font-weight:600">
         </td>
         <td style="font-size:11px;color:rgba(3,69,67,.4);font-style:italic;white-space:nowrap">${p.variants.length} varian</td>
         <td colspan="${priceColCount}" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">harga per varian</td>
@@ -662,7 +666,49 @@
     const el = document.getElementById(`price-wrap-${division}`)
     if (!el) return
     el.innerHTML = renderInlinePriceTable(division)
-    initResizableTable(el.querySelector('.price-table'))
+    const tbl = el.querySelector('.price-table')
+    initResizableTable(tbl)
+    initDragSort(tbl, division)
+  }
+
+  function initDragSort(tbl, division) {
+    if (!tbl) return
+    let dragSrcIdx = null
+    tbl.querySelectorAll('tr[data-item-index]').forEach(tr => {
+      tr.addEventListener('dragstart', e => {
+        dragSrcIdx = parseInt(tr.dataset.itemIndex)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(dragSrcIdx))
+        setTimeout(() => tr.classList.add('drag-dragging'), 0)
+      })
+      tr.addEventListener('dragend', () => {
+        tr.classList.remove('drag-dragging')
+        tbl.querySelectorAll('tr.drag-over').forEach(r => r.classList.remove('drag-over'))
+        dragSrcIdx = null
+      })
+      tr.addEventListener('dragover', e => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        const toIdx = parseInt(tr.dataset.itemIndex)
+        if (toIdx === dragSrcIdx) return
+        tbl.querySelectorAll('tr.drag-over').forEach(r => r.classList.remove('drag-over'))
+        tr.classList.add('drag-over')
+      })
+      tr.addEventListener('drop', async e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const toIdx = parseInt(tr.dataset.itemIndex)
+        if (dragSrcIdx == null || dragSrcIdx === toIdx) return
+        const items = priceDataStore[division]?.items
+        if (!items) return
+        const [moved] = items.splice(dragSrcIdx, 1)
+        items.splice(toIdx, 0, moved)
+        rerenderPriceWrap(division)
+        try {
+          await setDoc(doc(db, 'price_list', division), { items, updatedAt: new Date() }, { merge: true })
+        } catch(err) { console.error(err) }
+      })
+    })
   }
 
   function initResizableTable(tbl) {
