@@ -417,6 +417,15 @@ function initNotifications(profile) {
       if (n.fromUid === profile.id) return false
       // @mention khusus untuk user ini
       if (n.type === 'mention') return n.targetUid === profile.id
+      // Price approval — owner lihat semua tier, manager lihat promo saja
+      if (n.type === 'price_approval') {
+        if (profile.role === 'owner') return true
+        if (profile.role === 'manager' && n.priceApprovalTier === 'promo') {
+          if (profile.divisions?.length) return profile.divisions.includes(n.division)
+          return !n.lokasiId || n.lokasiId === profile.lokasiId
+        }
+        return false
+      }
       // Order notifications: owner lihat semua, staff filter by divisi/lokasi
       if (profile.role !== 'owner') {
         if (profile.divisions?.length) return profile.divisions.includes(n.division)
@@ -477,11 +486,18 @@ function initNotifications(profile) {
         ? ts > lastReadAt
         : n._unreadCount > 0
 
+      const isApproval = n.type === 'price_approval'
+      const approvalBadge = isApproval
+        ? (n.priceApprovalTier === 'admin'
+            ? `<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;margin-right:4px">🔒 Admin</span>`
+            : `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">💰 Promo</span>`)
+        : ''
+
       const label = isMention
         ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
-        : (n.orderNumber || '—')
+        : `${approvalBadge}${n.orderNumber || '—'}`
 
-      const countBadge = (!isMention && n._unreadCount > 0)
+      const countBadge = (!isMention && !isApproval && n._unreadCount > 0)
         ? `<span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n._unreadCount} baru</span>`
         : ''
 
@@ -490,7 +506,7 @@ function initNotifications(profile) {
         onmouseover="this.style.background='rgba(3,69,67,.08)'"
         onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : '🔔'} ${label}${countBadge}</span>
+          <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : isApproval ? '🔔' : '🔔'} ${label}${countBadge}</span>
           <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
         </div>
         <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>

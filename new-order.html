@@ -211,7 +211,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, doc, setDoc, runTransaction, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
@@ -562,6 +562,21 @@
     }
   }
 
+  function getItemTier(name, varian, pricePerUnit) {
+    if (!currentPriceList?.items?.length || !pricePerUnit) return null
+    const nameLower = name.trim().toLowerCase()
+    const cat = currentPriceList.items.find(p => p.name.trim().toLowerCase() === nameLower)
+    if (!cat) return null
+    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian.trim().toLowerCase())
+      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
+    }
+    if (!pN || pricePerUnit >= pN) return 'normal'
+    if (pP && pricePerUnit >= pP) return 'promo'
+    return 'admin'
+  }
+
   function getItemRows() {
     return [...document.querySelectorAll('#itemRows tr')].map(tr => {
       const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
@@ -569,7 +584,8 @@
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
       const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
-      return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price }
+      const tier = getItemTier(name, varian, price)
+      return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
   }
   let currentPriceList = null
@@ -906,6 +922,31 @@
           createdAt: now,
           designFiles: designFiles || [],
         })
+
+        // Notifikasi approval harga ke owner/manager
+        if (currentPriceTier !== 'normal' && !isDraft) {
+          const savedItems = getItemRows()
+          const adminItems = savedItems.filter(i => i.tier === 'admin').map(i => i.name)
+          const promoItems = savedItems.filter(i => i.tier === 'promo').map(i => i.name)
+          const itemDesc = adminItems.length
+            ? `Item harga Admin: ${adminItems.join(', ')}`
+            : promoItems.length
+              ? `Item harga Promo: ${promoItems.join(', ')}`
+              : 'Harga di luar tier normal'
+          await addDoc(collection(db, 'notifications'), {
+            type: 'price_approval',
+            orderId,
+            orderNumber,
+            division: selectedDiv,
+            lokasiId: selectedLokasi?.id || '',
+            fromUid: profile.id,
+            fromName: profile.name,
+            fromRole: profile.role,
+            preview: itemDesc,
+            priceApprovalTier: currentPriceTier,
+            createdAt: now,
+          })
+        }
 
         clearTimeout(timeoutId)
         clearDraft()
