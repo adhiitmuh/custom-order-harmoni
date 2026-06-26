@@ -350,12 +350,69 @@
               <input type="text" value="${item.note||''}" oninput="updatePriceRow(${i},'note',this.value)" placeholder="cth: belum termasuk bahan">
             </div>
           </div>
+          <div style="margin-top:10px;border-top:1px dashed rgba(3,69,67,.15);padding-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:11px;font-weight:700;color:rgba(3,69,67,.45)">VARIAN <span style="font-weight:400;font-size:10px">(opsional — beda bahan/tipe dengan harga berbeda)</span></span>
+              <button type="button" onclick="addVariant(${i})" style="background:none;border:1.5px dashed rgba(3,69,67,.2);border-radius:6px;padding:2px 10px;font-size:11px;cursor:pointer;color:rgba(3,69,67,.55)">+ Tambah Varian</button>
+            </div>
+            <div id="modal-vwrap-${i}">
+              ${(item.variants||[]).map((v, vi) => variantModalRowHTML(i, vi, v, canModal)).join('')}
+            </div>
+            ${!(item.variants||[]).length ? `<p style="font-size:11px;color:rgba(3,69,67,.3);font-style:italic;margin:0">Kosong — harga pakai field di atas</p>` : `<p style="font-size:10px;color:rgba(3,69,67,.4);margin:4px 0 0">ℹ Jika ada varian, harga di atas diabaikan di katalog</p>`}
+          </div>
         </div>`).join('')}
     `
     window._priceItems = [...items]
   }
 
+  function variantModalRowHTML(itemIdx, varIdx, v, canModal) {
+    const e = s => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    return `<div style="background:rgba(3,69,67,.04);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:grid;grid-template-columns:1.5fr repeat(${canModal?4:3},1fr) 28px;gap:6px;align-items:end">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:rgba(3,69,67,.5);display:block;margin-bottom:3px">NAMA VARIAN</label>
+        <input type="text" value="${e(v.name)}" oninput="updateVariant(${itemIdx},${varIdx},'name',this.value)" placeholder="cth: Dryfit, Hyget" style="width:100%;border:1.5px solid rgba(3,69,67,.15);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#059669;display:block;margin-bottom:3px">NORMAL</label>
+        <input type="number" value="${v.priceNormal||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceNormal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(5,150,105,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#d97706;display:block;margin-bottom:3px">PROMO</label>
+        <input type="number" value="${v.pricePromo||''}" oninput="updateVariant(${itemIdx},${varIdx},'pricePromo',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(217,119,6,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#b91c1c;display:block;margin-bottom:3px">ADMIN</label>
+        <input type="number" value="${v.priceAdmin||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceAdmin',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(185,28,28,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>
+      ${canModal ? `<div>
+        <label style="font-size:10px;font-weight:700;color:#7c3aed;display:block;margin-bottom:3px">MODAL</label>
+        <input type="number" value="${v.priceModal||''}" oninput="updateVariant(${itemIdx},${varIdx},'priceModal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(124,58,237,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>` : ''}
+      <div style="display:flex;align-items:flex-end;padding-bottom:4px">
+        <button type="button" onclick="removeVariant(${itemIdx},${varIdx})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:3px;line-height:1" title="Hapus varian">✕</button>
+      </div>
+    </div>`
+  }
+
   window.updatePriceRow = (i, field, val) => { if (window._priceItems) window._priceItems[i][field] = val }
+
+  window.addVariant = function(itemIdx) {
+    if (!window._priceItems?.[itemIdx]) return
+    if (!window._priceItems[itemIdx].variants) window._priceItems[itemIdx].variants = []
+    window._priceItems[itemIdx].variants.push({ name: '', priceNormal: 0, pricePromo: 0, priceAdmin: 0, priceModal: 0 })
+    renderPriceRows(window._priceItems)
+  }
+
+  window.removeVariant = function(itemIdx, varIdx) {
+    if (!window._priceItems?.[itemIdx]?.variants) return
+    window._priceItems[itemIdx].variants.splice(varIdx, 1)
+    renderPriceRows(window._priceItems)
+  }
+
+  window.updateVariant = function(itemIdx, varIdx, field, val) {
+    const v = window._priceItems?.[itemIdx]?.variants?.[varIdx]
+    if (v) v[field] = val
+  }
 
   window.checkModalDupes = function() {
     const items = window._priceItems || []
@@ -391,6 +448,13 @@
       priceModal: Number(item.priceModal)||0,
       unit: item.unit||'',
       note: item.note||'',
+      variants: (item.variants||[]).filter(v => v.name).map(v => ({
+        name: String(v.name).trim(),
+        priceNormal: Number(v.priceNormal)||0,
+        pricePromo: Number(v.pricePromo)||0,
+        priceAdmin: Number(v.priceAdmin)||0,
+        priceModal: Number(v.priceModal)||0,
+      })),
     })).filter(item => item.name)
     const names = items.map(it => it.name.trim().toLowerCase())
     const dupes = names.filter((n, i) => names.indexOf(n) !== i)
@@ -427,24 +491,72 @@
         : `<p style="font-size:13px;color:rgba(3,69,67,.35)">Belum ada daftar harga.</p>`
     }
 
-    const rows = items.map((p, i) => canEdit ? `<tr>
-      <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
-      <td><input class="inp-inline tier-normal" type="number" value="${p.priceNormal||''}" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
-      <td><input class="inp-inline tier-promo" type="number" value="${p.pricePromo||''}" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
-      <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
-      ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
-      <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
-      <td style="white-space:normal;min-width:120px"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
-      <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
-    </tr>` : `<tr>
-      <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
-      <td class="tier-normal">${p.priceNormal ? Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
-      <td class="tier-promo">${p.pricePromo ? Number(p.pricePromo).toLocaleString('id-ID') : '—'}</td>
-      <td class="tier-admin">${p.priceAdmin ? Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
-      ${canEditModal ? `<td class="tier-modal">${p.priceModal ? Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
-      <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
-      <td style="color:rgba(3,69,67,.4);font-size:12px;white-space:normal">${escAttr(p.note||'—')}</td>
-    </tr>`).join('')
+    const colCount = canEditModal ? 8 : 7
+
+    const rows = items.flatMap((p, i) => {
+      const hasVariants = p.variants?.length > 0
+      if (!hasVariants) {
+        return [canEdit ? `<tr>
+          <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
+          <td><input class="inp-inline tier-normal" type="number" value="${p.priceNormal||''}" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
+          <td><input class="inp-inline tier-promo" type="number" value="${p.pricePromo||''}" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
+          <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
+          ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
+          <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
+          <td style="white-space:normal;min-width:120px"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
+          <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
+        </tr>` : `<tr>
+          <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
+          <td class="tier-normal">${p.priceNormal ? Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
+          <td class="tier-promo">${p.pricePromo ? Number(p.pricePromo).toLocaleString('id-ID') : '—'}</td>
+          <td class="tier-admin">${p.priceAdmin ? Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
+          ${canEditModal ? `<td class="tier-modal">${p.priceModal ? Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
+          <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
+          <td style="color:rgba(3,69,67,.4);font-size:12px;white-space:normal">${escAttr(p.note||'—')}</td>
+        </tr>`]
+      }
+      // Item with variants — header row + variant sub-rows
+      const headerRow = canEdit ? `<tr style="border-bottom:none">
+        <td>
+          <input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk" style="font-weight:600">
+          <span style="font-size:10px;color:rgba(3,69,67,.4);margin-left:4px">${p.variants.length} varian</span>
+        </td>
+        <td colspan="3" style="font-size:11px;color:rgba(3,69,67,.35);text-align:center;font-style:italic">harga per varian</td>
+        ${canEditModal ? `<td></td>` : ''}
+        <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
+        <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
+        <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
+      </tr>` : `<tr style="background:rgba(3,69,67,.02);border-bottom:none">
+        <td style="font-weight:700;white-space:normal">${escAttr(p.name||'')} <span style="font-weight:400;font-size:11px;color:rgba(3,69,67,.4)">(${p.variants.length} varian)</span></td>
+        <td colspan="3" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">harga per varian</td>
+        ${canEditModal ? `<td></td>` : ''}
+        <td style="color:rgba(3,69,67,.5)">${escAttr(p.unit||'—')}</td>
+        <td style="color:rgba(3,69,67,.4);font-size:12px;white-space:normal">${escAttr(p.note||'—')}</td>
+      </tr>`
+
+      const variantRows = p.variants.map((v, vi) => canEdit ? `<tr style="background:rgba(3,69,67,.015)">
+        <td style="padding-left:20px"><input class="inp-inline" type="text" value="${escAttr(v.name||'')}" onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75)"></td>
+        <td><input class="inp-inline tier-normal" type="number" value="${v.priceNormal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
+        <td><input class="inp-inline tier-promo" type="number" value="${v.pricePromo||''}" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
+        <td><input class="inp-inline tier-admin" type="number" value="${v.priceAdmin||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceAdmin',this.value)" placeholder="0"></td>
+        ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${v.priceModal||''}" onchange="updateInlineVariant('${d}',${i},${vi},'priceModal',this.value)" placeholder="0"></td>` : ''}
+        <td colspan="2" style="font-size:11px;color:rgba(3,69,67,.3)">${vi===0 ? escAttr(p.unit||'') : ''}</td>
+        <td><button onclick="removeInlineVariant('${d}',${i},${vi})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.25);font-size:13px;padding:2px 4px" title="Hapus varian">✕</button></td>
+      </tr>` : `<tr>
+        <td style="padding-left:20px;font-size:12px;color:rgba(3,69,67,.65)">↳ ${escAttr(v.name||'')}</td>
+        <td class="tier-normal">${v.priceNormal ? Number(v.priceNormal).toLocaleString('id-ID') : '—'}</td>
+        <td class="tier-promo">${v.pricePromo ? Number(v.pricePromo).toLocaleString('id-ID') : '—'}</td>
+        <td class="tier-admin">${v.priceAdmin ? Number(v.priceAdmin).toLocaleString('id-ID') : '—'}</td>
+        ${canEditModal ? `<td class="tier-modal">${v.priceModal ? Number(v.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
+        <td></td><td></td>
+      </tr>`)
+
+      const addVariantBtn = canEdit ? [`<tr><td colspan="${colCount}" style="padding:3px 6px 6px 20px">
+        <button onclick="addInlineVariant('${d}',${i})" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0">+ tambah varian</button>
+      </td></tr>`] : []
+
+      return [headerRow, ...variantRows, ...addVariantBtn]
+    }).join('')
 
     return `<div style="overflow-x:auto"><table class="price-table">
       <thead><tr>
@@ -485,6 +597,13 @@
         priceModal:  Number(item.priceModal)||0,
         unit: String(item.unit||'').trim(),
         note: String(item.note||'').trim(),
+        variants: (item.variants||[]).filter(v => v.name).map(v => ({
+          name: String(v.name).trim(),
+          priceNormal: Number(v.priceNormal)||0,
+          pricePromo: Number(v.pricePromo)||0,
+          priceAdmin: Number(v.priceAdmin)||0,
+          priceModal: Number(v.priceModal)||0,
+        })),
       }))
       .filter(item => item.name)
     const names = items.map(it => it.name.toLowerCase())
@@ -502,7 +621,7 @@
 
   window.addInlinePriceRow = function(division) {
     if (!priceDataStore[division]) priceDataStore[division] = { items: [] }
-    priceDataStore[division].items.push({ name:'', priceNormal:0, pricePromo:0, priceAdmin:0, priceModal:0, unit:'', note:'' })
+    priceDataStore[division].items.push({ name:'', priceNormal:0, pricePromo:0, priceAdmin:0, priceModal:0, unit:'', note:'', variants:[] })
     rerenderPriceWrap(division)
     setTimeout(() => {
       const tr = document.querySelector(`#price-wrap-${division} tbody tr:last-child`)
@@ -513,6 +632,30 @@
   window.removeInlinePriceRow = function(division, index) {
     if (!priceDataStore[division]?.items) return
     priceDataStore[division].items.splice(index, 1)
+    rerenderPriceWrap(division)
+    scheduleInlineSave(division)
+  }
+
+  window.updateInlineVariant = function(division, itemIdx, varIdx, field, value) {
+    const item = priceDataStore[division]?.items?.[itemIdx]
+    if (!item?.variants?.[varIdx]) return
+    item.variants[varIdx][field] = value
+    scheduleInlineSave(division)
+  }
+
+  window.removeInlineVariant = function(division, itemIdx, varIdx) {
+    const item = priceDataStore[division]?.items?.[itemIdx]
+    if (!item?.variants) return
+    item.variants.splice(varIdx, 1)
+    rerenderPriceWrap(division)
+    scheduleInlineSave(division)
+  }
+
+  window.addInlineVariant = function(division, itemIdx) {
+    const item = priceDataStore[division]?.items?.[itemIdx]
+    if (!item) return
+    if (!item.variants) item.variants = []
+    item.variants.push({ name: '', priceNormal: 0, pricePromo: 0, priceAdmin: 0, priceModal: 0 })
     rerenderPriceWrap(division)
     scheduleInlineSave(division)
   }

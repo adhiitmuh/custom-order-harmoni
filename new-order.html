@@ -578,21 +578,38 @@
     const pills  = document.getElementById('productPills')
     if (!items.length) { picker.style.display = 'none'; return }
 
+    const pillStyle = 'padding:6px 12px;border-radius:999px;border:1.5px solid rgba(3,69,67,.15);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
+    const varPillStyle = 'padding:5px 10px;border-radius:999px;border:1.5px solid rgba(3,69,67,.12);background:var(--beige-soft);font-size:11px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
+    const hover = `onmouseover="this.style.background='rgba(3,69,67,.1)'" onmouseout="this.style.background='var(--beige-soft)'"`
+
     picker.style.display = ''
     pills.innerHTML = items.map((p, i) => {
-      const price = p.priceNormal || 0
-      const label = price ? `${p.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : p.name
-      return `<button type="button" onclick="addFromCatalog(${i})"
-        style="padding:6px 12px;border-radius:999px;border:1.5px solid rgba(3,69,67,.15);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s"
-        onmouseover="this.style.background='rgba(3,69,67,.1)'" onmouseout="this.style.background='var(--beige-soft)'"
-        title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      const hasVariants = p.variants?.length > 0
+      if (!hasVariants) {
+        const price = p.priceNormal || 0
+        const label = price ? `${p.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : p.name
+        return `<button type="button" onclick="addFromCatalog(${i},-1)" style="${pillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      }
+      const varPills = p.variants.map((v, vi) => {
+        const price = v.priceNormal || 0
+        const label = price ? `${v.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : v.name
+        return `<button type="button" onclick="addFromCatalog(${i},${vi})" style="${varPillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      }).join('')
+      return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;padding:3px 0">
+        <span style="font-size:11px;font-weight:700;color:rgba(3,69,67,.55);flex-shrink:0">${p.name}:</span>${varPills}
+      </div>`
     }).join('')
   }
 
-  window.addFromCatalog = function(index) {
+  window.addFromCatalog = function(index, variantIndex = -1) {
     const p = currentPriceList?.items?.[index]
     if (!p) return
-    addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+    if (variantIndex >= 0 && p.variants?.[variantIndex]) {
+      const v = p.variants[variantIndex]
+      addItemRow({ name: p.name, varian: v.name, pricePerUnit: v.priceNormal || 0, qty: p.minQty || 1, priceModal: v.priceModal || 0 })
+    } else {
+      addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+    }
   }
 
   window.checkPriceTierLive = function() {
@@ -605,11 +622,14 @@
       infoEl.style.display = 'none'; return
     }
 
-    // Find lowest prices across all items for each tier
+    // Find lowest prices across all items and variants for each tier
     const items = currentPriceList.items
-    const minNormal = Math.min(...items.map(i=>i.priceNormal||Infinity).filter(x=>x!==Infinity))
-    const minPromo  = Math.min(...items.map(i=>i.pricePromo ||Infinity).filter(x=>x!==Infinity))
-    const minAdmin  = Math.min(...items.map(i=>i.priceAdmin ||Infinity).filter(x=>x!==Infinity))
+    const allN = items.flatMap(i => [i.priceNormal, ...(i.variants||[]).map(v=>v.priceNormal)]).filter(x=>x>0)
+    const allP = items.flatMap(i => [i.pricePromo,  ...(i.variants||[]).map(v=>v.pricePromo)]).filter(x=>x>0)
+    const allA = items.flatMap(i => [i.priceAdmin,  ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
+    const minNormal = allN.length ? Math.min(...allN) : Infinity
+    const minPromo  = allP.length ? Math.min(...allP) : Infinity
+    const minAdmin  = allA.length ? Math.min(...allA) : Infinity
 
     const profile = getProfile()
     const isOwnerOrManager = profile?.role === 'owner' || profile?.role === 'manager'
