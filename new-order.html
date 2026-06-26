@@ -82,8 +82,8 @@
         </div>
         <!-- Product picker (muncul setelah divisi dipilih) -->
         <div id="productPicker" style="display:none;margin-bottom:14px">
-          <p style="font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;margin-bottom:8px">DARI KATALOG — klik untuk tambahkan ke rincian</p>
-          <div id="productPills" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          <p style="font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;margin-bottom:6px">DARI KATALOG — klik harga untuk tambahkan ke rincian</p>
+          <div id="productPills" style="overflow-x:auto;max-height:260px;overflow-y:auto;border:1px solid rgba(3,69,67,.08);border-radius:10px;background:#fff"></div>
         </div>
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;font-size:13px" id="itemTable">
@@ -421,7 +421,8 @@
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
           data-field="varian" data-row="${id}"
           style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
-          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'">
+          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
+          onchange="showTierButtons(${id})">
       </td>
       <td style="padding:6px 4px">
         <input type="number" placeholder="0" min="1" value="${item.qty||''}"
@@ -435,7 +436,8 @@
           data-field="price" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="this.value=fmtInputPrice(this.value);calcRow(${id})">
+          oninput="this.value=fmtInputPrice(this.value);calcRow(${id});showTierButtons(${id})">
+        <div id="tier-btns-${id}" style="display:none;margin-top:3px;gap:3px;flex-wrap:wrap"></div>
       </td>
       <td style="padding:6px 4px;display:none" id="modalCell-${id}">
         <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.priceModal)}"
@@ -480,7 +482,59 @@
         showMatchHint(id)
       }
     }
+    showTierButtons(id)
     checkDuplicateNames()
+  }
+
+  window.showTierButtons = function(id) {
+    const wrap = document.getElementById(`tier-btns-${id}`)
+    if (!wrap) return
+    const name   = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const cat = currentPriceList?.items?.find(p => p.name.trim().toLowerCase() === name)
+    if (!cat) { wrap.style.display = 'none'; return }
+
+    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian)
+      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
+    }
+
+    const cur = parsePrice(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value)
+    const active = cur ? (pN && cur >= pN ? 'normal' : pP && cur >= pP ? 'promo' : 'admin') : null
+
+    const mkBtn = (tier, price, label, color) => !price ? '' :
+      `<button type="button" onclick="setItemTier(${id},'${tier}')"
+        style="border:1.5px solid ${color};color:${active===tier?'#fff':color};background:${active===tier?color:'transparent'};
+               border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;line-height:1.6">
+        ${label} ${Number(price).toLocaleString('id-ID')}</button>`
+
+    wrap.innerHTML = [
+      mkBtn('normal', pN, 'Normal', '#059669'),
+      mkBtn('promo',  pP, 'Promo',  '#d97706'),
+      mkBtn('admin',  pA, 'Admin',  '#b91c1c'),
+    ].join('')
+    wrap.style.display = wrap.innerHTML.trim() ? 'flex' : 'none'
+  }
+
+  window.setItemTier = function(id, tier) {
+    const name   = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
+    if (!priceEl) return
+    const cat = currentPriceList?.items?.find(p => p.name.trim().toLowerCase() === name)
+    if (!cat) return
+    const key = `price${tier.charAt(0).toUpperCase()}${tier.slice(1)}`
+    let price = 0
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian)
+      if (v) price = v[key] || 0
+    }
+    if (!price) price = cat[key] || 0
+    if (!price) return
+    priceEl.value = fmtPrice(price)
+    calcRow(id)
+    showTierButtons(id)
   }
 
   function showMatchHint(id) {
@@ -600,33 +654,91 @@
     renderProductPicker()
   }
 
+  function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
   function renderProductPicker() {
     const items = currentPriceList?.items || []
     const picker = document.getElementById('productPicker')
     const pills  = document.getElementById('productPills')
     if (!items.length) { picker.style.display = 'none'; return }
 
-    const pillStyle = 'padding:6px 12px;border-radius:999px;border:1.5px solid rgba(3,69,67,.15);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
-    const varPillStyle = 'padding:5px 10px;border-radius:999px;border:1.5px solid rgba(3,69,67,.12);background:var(--beige-soft);font-size:11px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
-    const hover = `onmouseover="this.style.background='rgba(3,69,67,.1)'" onmouseout="this.style.background='var(--beige-soft)'"`
+    const profile = getProfile()
+    const role = profile?.role
+    const showModal = role === 'owner'
 
-    picker.style.display = ''
-    pills.innerHTML = items.map((p, i) => {
+    const fmtP = n => n ? Number(n).toLocaleString('id-ID') : '—'
+    const priceColCount = showModal ? 4 : 3
+
+    const mkPriceCell = (tier, price, color, itemIdx, varIdx) => {
+      if (!price) return `<td style="padding:6px 8px;color:rgba(3,69,67,.15);font-size:12px;text-align:right">—</td>`
+      return `<td style="cursor:pointer;padding:5px 8px;font-size:12px;font-weight:600;color:${color};text-align:right;white-space:nowrap;border-radius:5px"
+        onmouseover="this.style.background='rgba(3,69,67,.07)'" onmouseout="this.style.background='transparent'"
+        onclick="addFromCatalogWithTier(${itemIdx},${varIdx},'${tier}')"
+        title="Tambah ke rincian — harga ${tier}">${fmtP(price)}</td>`
+    }
+
+    const hSt = 'padding:7px 8px;font-size:10px;font-weight:700;letter-spacing:.05em;border-bottom:2px solid rgba(3,69,67,.1);position:sticky;top:0;background:#fff;z-index:1;white-space:nowrap;text-align:right'
+
+    const rows = items.flatMap((p, i) => {
       const hasVariants = p.variants?.length > 0
       if (!hasVariants) {
-        const price = p.priceNormal || 0
-        const label = price ? `${p.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : p.name
-        return `<button type="button" onclick="addFromCatalog(${i},-1)" style="${pillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+        return `<tr style="border-bottom:1px solid rgba(3,69,67,.05)">
+          <td style="padding:7px 10px;font-size:12px;font-weight:500;white-space:normal">${escHtml(p.name)}</td>
+          <td style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.2)">—</td>
+          ${mkPriceCell('normal', p.priceNormal, '#059669', i, -1)}
+          ${mkPriceCell('promo',  p.pricePromo,  '#d97706', i, -1)}
+          ${mkPriceCell('admin',  p.priceAdmin,  '#b91c1c', i, -1)}
+          ${showModal ? mkPriceCell('modal', p.priceModal, '#7c3aed', i, -1) : ''}
+          <td style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.45)">${escHtml(p.unit||'')}</td>
+        </tr>`
       }
-      const varPills = p.variants.map((v, vi) => {
-        const price = v.priceNormal || 0
-        const label = price ? `${v.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : v.name
-        return `<button type="button" onclick="addFromCatalog(${i},${vi})" style="${varPillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
-      }).join('')
-      return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;padding:3px 0">
-        <span style="font-size:11px;font-weight:700;color:rgba(3,69,67,.55);flex-shrink:0">${p.name}:</span>${varPills}
-      </div>`
+      const mainRow = `<tr style="background:rgba(3,69,67,.015);border-bottom:none">
+        <td style="padding:7px 10px;font-size:12px;font-weight:700;white-space:normal">${escHtml(p.name)}</td>
+        <td style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.4);font-style:italic">${p.variants.length} varian</td>
+        <td colspan="${priceColCount}" style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.25);text-align:center;font-style:italic">—</td>
+        <td style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.45)">${escHtml(p.unit||'')}</td>
+      </tr>`
+      const varRows = p.variants.map((v, vi) =>
+        `<tr style="border-bottom:1px solid rgba(3,69,67,.04)">
+          <td style="padding:6px 10px 6px 20px;font-size:11px;border-left:2px solid rgba(3,69,67,.07)"></td>
+          <td style="padding:6px 8px;font-size:12px;color:rgba(3,69,67,.65);white-space:normal">${escHtml(v.name||'')}</td>
+          ${mkPriceCell('normal', v.priceNormal, '#059669', i, vi)}
+          ${mkPriceCell('promo',  v.pricePromo,  '#d97706', i, vi)}
+          ${mkPriceCell('admin',  v.priceAdmin,  '#b91c1c', i, vi)}
+          ${showModal ? mkPriceCell('modal', v.priceModal, '#7c3aed', i, vi) : ''}
+          <td></td>
+        </tr>`
+      ).join('')
+      return mainRow + varRows
     }).join('')
+
+    pills.innerHTML = `<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#fff">
+        <th style="${hSt};text-align:left;padding-left:10px">LAYANAN / PRODUK</th>
+        <th style="${hSt};text-align:left">VARIAN</th>
+        <th style="${hSt};color:#059669">NORMAL</th>
+        <th style="${hSt};color:#d97706">PROMO</th>
+        <th style="${hSt};color:#b91c1c">ADMIN</th>
+        ${showModal ? `<th style="${hSt};color:#7c3aed">MODAL</th>` : ''}
+        <th style="${hSt};text-align:left;color:rgba(3,69,67,.45)">SATUAN</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+
+    picker.style.display = ''
+  }
+
+  window.addFromCatalogWithTier = function(index, variantIndex, tier) {
+    const p = currentPriceList?.items?.[index]
+    if (!p) return
+    const key = `price${tier.charAt(0).toUpperCase()}${tier.slice(1)}`
+    if (variantIndex >= 0 && p.variants?.[variantIndex]) {
+      const v = p.variants[variantIndex]
+      addItemRow({ name: p.name, varian: v.name, pricePerUnit: v[key] || v.priceNormal || 0, qty: p.minQty || 1, priceModal: v.priceModal || 0 })
+    } else {
+      addItemRow({ name: p.name, pricePerUnit: p[key] || p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+    }
+    showTierButtons(itemRowCount)
   }
 
   window.addFromCatalog = function(index, variantIndex = -1) {
@@ -638,6 +750,7 @@
     } else {
       addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
     }
+    showTierButtons(itemRowCount)
   }
 
   window.checkPriceTierLive = function() {
