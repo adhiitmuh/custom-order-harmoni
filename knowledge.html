@@ -500,7 +500,7 @@
       if (!hasVariants) {
         return [canEdit ? `<tr>
           <td><input class="inp-inline" type="text" value="${escAttr(p.name||'')}" onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk"></td>
-          <td style="color:rgba(3,69,67,.2);font-size:11px;font-style:italic">—</td>
+          <td><button onclick="addInlineVariant('${d}',${i})" style="background:none;border:1px dashed rgba(3,69,67,.2);border-radius:5px;padding:2px 7px;font-size:10px;cursor:pointer;color:rgba(3,69,67,.4)">+ varian</button></td>
           <td><input class="inp-inline tier-normal" type="number" value="${p.priceNormal||''}" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-promo" type="number" value="${p.pricePromo||''}" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-admin" type="number" value="${p.priceAdmin||''}" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
