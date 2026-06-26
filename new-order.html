@@ -117,11 +117,11 @@
         <div class="grid-2">
           <div class="form-group" style="margin-bottom:0">
             <label>Total Harga (Rp)</label>
-            <input type="number" id="totalPrice" placeholder="0" min="0" oninput="checkPriceTierLive()">
+            <input type="text" inputmode="numeric" id="totalPrice" placeholder="0" oninput="this.value=fmtInputPrice(this.value);checkPriceTierLive()">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label>DP Sudah Dibayar (Rp)</label>
-            <input type="number" id="depositPaid" placeholder="0" min="0">
+            <input type="text" inputmode="numeric" id="depositPaid" placeholder="0" oninput="this.value=fmtInputPrice(this.value)">
           </div>
         </div>
         <div id="sisaInfo" style="font-size:13px;color:rgba(3,69,67,.6);margin-top:10px;display:none">
@@ -218,6 +218,18 @@
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon']
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+
+  function fmtPrice(n) {
+    const num = Number(String(n||'').replace(/\./g,''))
+    return num > 0 ? num.toLocaleString('id-ID') : ''
+  }
+  window.fmtInputPrice = function(val) {
+    const digits = String(val).replace(/\D/g,'')
+    return digits ? Number(digits).toLocaleString('id-ID') : ''
+  }
+  function parsePrice(val) {
+    return Number(String(val||'').replace(/\./g,'').replace(/[^\d]/g,''))||0
+  }
 
   let _autoHargaModal = 0
   const _rowModalPrice = {}
@@ -327,8 +339,8 @@
     if (draft.customerContact) document.getElementById('customerContact').value = draft.customerContact
     if (draft.orderDate)       document.getElementById('orderDate').value       = draft.orderDate
     if (draft.dueDate)         document.getElementById('dueDate').value         = draft.dueDate
-    if (draft.totalPrice)      document.getElementById('totalPrice').value      = draft.totalPrice
-    if (draft.depositPaid)     document.getElementById('depositPaid').value     = draft.depositPaid
+    if (draft.totalPrice)      document.getElementById('totalPrice').value      = fmtPrice(parsePrice(draft.totalPrice))
+    if (draft.depositPaid)     document.getElementById('depositPaid').value     = fmtPrice(parsePrice(draft.depositPaid))
     if (draft.notes)           document.getElementById('notes').value           = draft.notes
     if (draft.sumberOrder)     document.getElementById('sumberOrder').value     = draft.sumberOrder
     if (draft.approvalReason)  document.getElementById('approvalReason').value  = draft.approvalReason
@@ -419,18 +431,18 @@
           oninput="calcRow(${id})">
       </td>
       <td style="padding:6px 4px">
-        <input type="number" placeholder="0" min="0" value="${item.pricePerUnit||''}"
+        <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.pricePerUnit)}"
           data-field="price" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="calcRow(${id})">
+          oninput="this.value=fmtInputPrice(this.value);calcRow(${id})">
       </td>
       <td style="padding:6px 4px;display:none" id="modalCell-${id}">
-        <input type="number" placeholder="0" min="0" value="${item.priceModal||''}"
+        <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.priceModal)}"
           data-field="modal" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none;background:rgba(3,69,67,.02)"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="updateRowModal(${id})">
+          oninput="this.value=fmtInputPrice(this.value);updateRowModal(${id})">
       </td>
       <td style="padding:6px 4px;text-align:right;font-weight:700;font-size:13px;color:var(--green);white-space:nowrap;min-width:100px" id="sub-${id}">
         ${item.subtotal ? `Rp ${Number(item.subtotal).toLocaleString('id-ID')}` : '—'}
@@ -448,7 +460,7 @@
   }
 
   window.updateRowModal = function(id) {
-    _rowModalPrice[id] = Number(document.querySelector(`[data-field="modal"][data-row="${id}"]`)?.value) || 0
+    _rowModalPrice[id] = parsePrice(document.querySelector(`[data-field="modal"][data-row="${id}"]`)?.value)
     window.recalcAutoModal()
     debouncedSaveDraft()
   }
@@ -462,7 +474,7 @@
     if (match?.priceModal && getProfile()?.role === 'owner') {
       const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
       if (modalEl && !modalEl.value) {
-        modalEl.value = match.priceModal
+        modalEl.value = fmtPrice(match.priceModal)
         _rowModalPrice[id] = match.priceModal
         window.recalcAutoModal()
         showMatchHint(id)
@@ -511,7 +523,7 @@
 
   window.calcRow = function(id) {
     const qty   = Number(document.querySelector(`[data-field="qty"][data-row="${id}"]`)?.value) || 0
-    const price = Number(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value) || 0
+    const price = parsePrice(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value)
     const sub   = qty * price
     const el    = document.getElementById(`sub-${id}`)
     if (el) el.textContent = sub > 0 ? `Rp ${sub.toLocaleString('id-ID')}` : '—'
@@ -535,7 +547,7 @@
     rows.forEach(tr => {
       const rowId = tr.id.replace('row-','')
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
-      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
+      const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       grand += qty * price
     })
 
@@ -544,7 +556,7 @@
 
     // Auto-isi Total Harga jika ada item
     if (grand > 0) {
-      document.getElementById('totalPrice').value = grand
+      document.getElementById('totalPrice').value = fmtPrice(grand)
       checkPriceTierLive()
       updateSisa()
     }
@@ -555,8 +567,8 @@
       const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
       const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
-      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
-      const priceModal = Number(tr.querySelector('[data-field="modal"]')?.value) || 0
+      const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
+      const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
       return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
   }
@@ -613,7 +625,7 @@
   }
 
   window.checkPriceTierLive = function() {
-    const price = Number(document.getElementById('totalPrice').value) || 0
+    const price = parsePrice(document.getElementById('totalPrice').value)
     const infoEl = document.getElementById('priceTierInfo')
     const msgEl = document.getElementById('priceTierMsg')
     const reasonWrap = document.getElementById('approvalReasonWrap')
@@ -707,8 +719,8 @@
 
   // Sisa preview
   function updateSisa() {
-    const total = Number(document.getElementById('totalPrice').value)||0
-    const dp = Number(document.getElementById('depositPaid').value)||0
+    const total = parsePrice(document.getElementById('totalPrice').value)
+    const dp = parsePrice(document.getElementById('depositPaid').value)
     if (total>0) {
       document.getElementById('sisaInfo').style.display = ''
       document.getElementById('sisaVal').textContent = fmtCurrency(total-dp)
@@ -857,8 +869,8 @@
           status: isDraft ? 'draft' : (currentPriceTier==='normal' ? 'pending' : 'pending-approval'),
           originalDueDate: dueDate,
           progressPercentage: 0,
-          totalPrice: Number(document.getElementById('totalPrice').value)||0,
-          depositPaid: Number(document.getElementById('depositPaid').value)||0,
+          totalPrice: parsePrice(document.getElementById('totalPrice').value),
+          depositPaid: parsePrice(document.getElementById('depositPaid').value),
           notes: document.getElementById('notes').value.trim(),
           varian: getItemRows().map(i => i.varian).filter(Boolean).join(', ') || null,
           sizeBreakdown: getSizeBreakdown() || null,
