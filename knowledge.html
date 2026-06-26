@@ -11,13 +11,15 @@
   <title>Product Knowledge — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .price-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .price-table th { text-align:left; padding:8px 6px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; }
+    .price-table { table-layout:fixed; width:max-content; min-width:100%; border-collapse:collapse; font-size:13px; }
+    .price-table th { position:relative; text-align:left; padding:8px 6px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; overflow:hidden; user-select:none; }
     .price-table th:first-child { padding-left:10px; }
-    .price-table td { padding:9px 6px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; white-space:nowrap; }
-    .price-table td:first-child { white-space:normal; width:99%; padding-left:10px; }
+    .price-table td { padding:9px 6px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; white-space:nowrap; overflow:hidden; }
+    .price-table td:first-child { white-space:normal; padding-left:10px; }
     .price-table tr:last-child td { border-bottom:none; }
     .price-table tr:hover td { background:rgba(3,69,67,.02); }
+    .col-resize { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:2; background:transparent; border-radius:3px; transition:background .15s; }
+    .col-resize:hover, .col-resize.active { background:rgba(3,69,67,.25); }
     .tier-normal { font-weight:700; color:#059669; }
     .tier-promo  { font-weight:700; color:#d97706; }
     .tier-admin  { font-weight:700; color:#b91c1c; }
@@ -30,7 +32,7 @@
     .inp-inline {
       border: none; background: transparent; font-size: 13px;
       font-weight: inherit; color: inherit; width: 100%; outline: none;
-      padding: 2px 0; cursor: pointer; min-width: 60px;
+      padding: 2px 0; cursor: pointer;
       border-bottom: 1.5px dashed transparent; transition: border-color .15s;
     }
     .inp-inline:hover { border-bottom-color: rgba(3,69,67,.25); }
@@ -641,9 +643,15 @@
 
     return `<div style="overflow-x:auto"><table class="price-table">
       <thead><tr>
-        <th>LAYANAN / PRODUK</th><th>VARIAN</th><th>NORMAL</th><th>PROMO</th><th>ADMIN</th>
-        ${canEditModal ? '<th>MODAL</th>' : ''}
-        <th>SATUAN</th><th>KETERANGAN</th>${canEdit ? '<th></th>' : ''}
+        <th style="width:200px;min-width:80px">LAYANAN / PRODUK</th>
+        <th style="width:90px;min-width:55px">VARIAN</th>
+        <th style="width:85px;min-width:55px">NORMAL</th>
+        <th style="width:85px;min-width:55px">PROMO</th>
+        <th style="width:85px;min-width:55px">ADMIN</th>
+        ${canEditModal ? '<th style="width:85px;min-width:55px">MODAL</th>' : ''}
+        <th style="width:70px;min-width:45px">SATUAN</th>
+        <th style="width:150px;min-width:70px">KETERANGAN</th>
+        ${canEdit ? '<th style="width:58px;min-width:42px"></th>' : ''}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
@@ -652,7 +660,36 @@
 
   function rerenderPriceWrap(division) {
     const el = document.getElementById(`price-wrap-${division}`)
-    if (el) el.innerHTML = renderInlinePriceTable(division)
+    if (!el) return
+    el.innerHTML = renderInlinePriceTable(division)
+    initResizableTable(el.querySelector('.price-table'))
+  }
+
+  function initResizableTable(tbl) {
+    if (!tbl) return
+    tbl.querySelectorAll('thead th').forEach(th => {
+      const h = document.createElement('div')
+      h.className = 'col-resize'
+      h.title = 'Seret untuk ubah lebar kolom'
+      th.appendChild(h)
+      let x0, w0
+      h.addEventListener('mousedown', e => {
+        x0 = e.clientX; w0 = th.offsetWidth
+        h.classList.add('active')
+        e.preventDefault(); e.stopPropagation()
+        const mv = e => {
+          const minW = parseInt(th.style.minWidth) || 40
+          th.style.width = Math.max(minW, w0 + e.clientX - x0) + 'px'
+        }
+        const up = () => {
+          h.classList.remove('active')
+          document.removeEventListener('mousemove', mv)
+          document.removeEventListener('mouseup', up)
+        }
+        document.addEventListener('mousemove', mv)
+        document.addEventListener('mouseup', up)
+      })
+    })
   }
 
   window.updateInlinePrice = function(division, index, field, value) {
