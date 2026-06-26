@@ -205,7 +205,7 @@
               <div style="display:flex;gap:8px;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
                 <span class="tier-badge tb-normal">● Normal — Staff langsung pakai</span>
                 <span class="tier-badge tb-promo">● Promo — Perlu approval Kepala Cabang</span>
-                <span class="tier-badge tb-admin">● Admin — Perlu approval Owner (batas bawah)</span>
+                <span class="tier-badge tb-admin">● Owner — Perlu approval Owner (batas bawah)</span>
                 ${canEditModal ? `<span class="tier-badge tb-modal">● Modal — Internal</span>` : ''}
               </div>
               <div id="price-wrap-${d}"></div>
@@ -314,7 +314,7 @@
       <div style="display:grid;grid-template-columns:repeat(${canModal?4:3},1fr);gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(3,69,67,.04);border-radius:8px;font-size:11px;font-weight:700">
         <span class="tier-normal">● Harga Normal<br><span style="font-weight:400;font-size:10px">Staff bisa langsung pakai</span></span>
         <span class="tier-promo">● Harga Promo<br><span style="font-weight:400;font-size:10px">Perlu approval Kepala Cabang</span></span>
-        <span class="tier-admin">● Harga Admin<br><span style="font-weight:400;font-size:10px">Batas bawah, perlu approval Owner</span></span>
+        <span class="tier-admin">● Harga Owner<br><span style="font-weight:400;font-size:10px">Batas bawah, perlu approval Owner</span></span>
         ${canModal ? `<span class="tier-modal">● Harga Modal<br><span style="font-weight:400;font-size:10px">Internal — tidak ditampilkan ke staff</span></span>` : ''}
       </div>
       ${items.length === 0 ? '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:8px">Belum ada item. Klik "Tambah Baris".</p>' :
@@ -336,7 +336,7 @@
               <input type="text" inputmode="numeric" value="${fmtPrice(item.pricePromo)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'pricePromo',this.value)" placeholder="misal: 20.000" style="border-color:rgba(217,119,6,.3)">
             </div>
             <div>
-              <label style="font-size:11px;color:#b91c1c;font-weight:700">Harga Admin (Rp)</label>
+              <label style="font-size:11px;color:#b91c1c;font-weight:700">Harga Owner (Rp)</label>
               <input type="text" inputmode="numeric" value="${fmtPrice(item.priceAdmin)}" oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceAdmin',this.value)" placeholder="misal: 15.000" style="border-color:rgba(185,28,28,.3)">
             </div>
           </div>
