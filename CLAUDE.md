@@ -174,8 +174,27 @@ division, description, items[{name, priceNormal, pricePromo, priceAdmin, unit, m
 
 ### Collection `price_list/{division}`
 ```
-division, items[{name, priceNormal, pricePromo, priceAdmin, unit}]
+division
+items[{
+  name          string   — nama layanan / produk
+  priceNormal   number
+  pricePromo    number
+  priceAdmin    number
+  priceModal    number   — internal, hanya owner/data
+  unit          string   — cth: pcs, set, lembar
+  note          string
+  variants      array    — opsional, untuk beda bahan/tipe dengan harga berbeda
+    [{
+      name        string   — nama varian (cth: Dryfit, Hyget, Paragon)
+      priceNormal number
+      pricePromo  number
+      priceAdmin  number
+      priceModal  number
+    }]
+}]
+updatedAt     timestamp
 ```
+Jika item punya `variants`, harga pada level item diabaikan — harga diambil dari varian yang dipilih.
 
 ### Collection `public_order_info/{chatToken}`
 Dibuat saat order baru, key = chatToken. Untuk akses customer chat publik.
@@ -277,6 +296,7 @@ cancelled         → Dibatalkan
 - ✅ @mention staff di chat internal & inbox (autocomplete, highlight, notifikasi)
 - ✅ Cross-lokasi inbox — staff di-@mention dapat akses thread cabang lain (guest mode, tidak bisa buat order)
 - ✅ Inline edit Harga/Pcs per item di tabel Rincian Item (auto-update subtotal & totalPrice)
+- ✅ Sistem Varian di price list — tiap item bisa punya varian bahan/tipe (cth: Celana Jersey → Dryfit/Hyget/Paragon) masing-masing dengan harga berbeda. Edit via tombol ✏ per baris (modal per-item) atau "+ tambah varian" inline di tabel. Di `new-order.html` product picker tampil sebagai sub-pill per varian.
 
 ---
 
