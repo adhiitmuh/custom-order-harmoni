@@ -58,8 +58,8 @@
     <div class="form-group"><label>Nama Pemesan</label><input type="text" id="editName"></div>
     <div class="form-group"><label>Target Selesai</label><input type="date" id="editDueDate"></div>
     <div class="grid-2">
-      <div class="form-group"><label>Total Harga (Rp)</label><input type="number" id="editTotalPrice" min="0"></div>
-      <div class="form-group"><label>DP Dibayar (Rp)</label><input type="number" id="editDeposit" min="0"></div>
+      <div class="form-group"><label>Total Harga (Rp)</label><input type="text" inputmode="numeric" id="editTotalPrice" oninput="this.value=fmtInputPrice(this.value)"></div>
+      <div class="form-group"><label>DP Dibayar (Rp)</label><input type="text" inputmode="numeric" id="editDeposit" oninput="this.value=fmtInputPrice(this.value)"></div>
     </div>
     <div class="form-group"><label>Varian / Spesifikasi</label><input type="text" id="editVarian" placeholder="Contoh: Bordir 3D benang emas"></div>
     <div class="form-group" style="margin-bottom:20px"><label>Catatan</label><textarea id="editNotes" rows="3"></textarea></div>
@@ -80,16 +80,30 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
+  import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
   if (!orderId) { location.href = 'orders.html' }
 
+  function fmtPrice(n) {
+    const num = Number(String(n||'').replace(/\./g,''))
+    return num > 0 ? num.toLocaleString('id-ID') : ''
+  }
+  window.fmtInputPrice = function(val) {
+    const digits = String(val).replace(/\D/g,'')
+    return digits ? Number(digits).toLocaleString('id-ID') : ''
+  }
+  function parsePrice(val) {
+    return Number(String(val||'').replace(/\./g,'').replace(/[^\d]/g,''))||0
+  }
+
   let order = null
   let paymentInfo = null
+  let staffList = []
 
   async function loadPaymentInfo() {
     try {
@@ -101,10 +115,18 @@
 
   requireAuth((profile) => {
     loadPaymentInfo()
-    loadOrder(profile)
+    loadStaff().then(l => { staffList = l }).catch(() => {})
+    // Timeout fallback — kalau 10 detik masih loading, minta refresh
+    const loadTimeout = setTimeout(() => {
+      const el = document.getElementById('pageContent')
+      if (el && el.querySelector('.loading')) {
+        el.innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Koneksi lambat atau perlu refresh.<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Refresh halaman</a></p></div>`
+      }
+    }, 10000)
+    loadOrder(profile, loadTimeout)
   })
 
-  async function loadOrder(profile) {
+  async function loadOrder(profile, loadTimeout) {
     try {
     await dataAuthReady
     const snap = await getDoc(doc(db,'orders',orderId))
@@ -126,11 +148,22 @@
     const updSnap = await getDocs(query(collection(db,'orders',orderId,'progress_updates'), orderBy('createdAt','desc')))
     order.progressUpdates = updSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
+    clearTimeout(loadTimeout)
     renderPage(profile)
+    // Attach mention autocomplete to internal chat textarea (programmatic, not via oninput attr)
+    ;(function() {
+      const ta = document.getElementById('internalChatInput')
+      if (!ta || ta._mcReady) return
+      ta._mcReady = true
+      const doAttach = () => attachMentionAutocomplete(ta, staffList)
+      if (staffList.length) { doAttach() }
+      else { loadStaff().then(l => { staffList = l; doAttach() }).catch(() => {}) }
+    })()
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
     setTimeout(() => { initChat(); initInternalChat() }, 200)
     } catch(err) {
+      clearTimeout(loadTimeout)
       document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
     }
   }
@@ -139,6 +172,7 @@
     const meta = DIVISION_META[order.division] || {}
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
+    const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
     const canEditModal   = profile.role === 'owner'
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
@@ -223,6 +257,23 @@
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
+              <div>
+                <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Lokasi Harmoni</p>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-weight:600;flex:1" id="lokasiDisplay">${order.lokasiNama || '—'}</span>
+                  ${canEditLokasi ? `<button onclick="editLokasi()" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" id="lokasiEditBtn">Edit</button>` : ''}
+                </div>
+                ${canEditLokasi ? `
+                <div id="lokasiEditWrap" style="display:none;margin-top:6px">
+                  <select id="lokasiSelect" style="font-size:13px;width:100%;padding:6px 8px;border:1.5px solid rgba(3,69,67,.2);border-radius:8px;outline:none;background:white">
+                    <option value="">Memuat…</option>
+                  </select>
+                  <div style="display:flex;gap:6px;margin-top:6px">
+                    <button onclick="cancelLokasi()" class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;font-size:12px">Batal</button>
+                    <button onclick="saveLokasi()" class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-size:12px" id="lokasiSaveBtn">Simpan</button>
+                  </div>
+                </div>` : ''}
+              </div>
             </div>
             ${order.sizeBreakdown && Object.keys(order.sizeBreakdown).length ? `
               <hr class="sep">
@@ -306,20 +357,25 @@
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
                   </td>
                   <td style="padding:9px 0;text-align:center;color:rgba(3,69,67,.6)">${it.qty||0}</td>
-                  <td style="padding:9px 0;text-align:right;color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</td>
+                  <td style="padding:9px 0;text-align:right">
+                    <span style="color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</span>
+                    ${it.tier === 'promo' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;vertical-align:middle">PROMO</span>` : ''}
+                    ${it.tier === 'admin' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;vertical-align:middle">ADMIN</span>` : ''}
+                  </td>
                   ${canEditModal ? `
                   <td style="padding:9px 0;text-align:right">
                     <span id="mval-${i}" style="font-size:12px;color:rgba(3,69,67,.45);cursor:pointer;padding:2px 5px;border-radius:4px" onclick="editItemModal(${i})" title="Klik untuk edit">
                       ${it.priceModal ? fmtCurrency(it.priceModal) : '<span style="color:rgba(3,69,67,.2)">— edit</span>'}
                     </span>
-                    <input id="minp-${i}" type="number" value="${it.priceModal||''}"
+                    <input id="minp-${i}" type="text" inputmode="numeric" value="${fmtPrice(it.priceModal)}"
                       style="display:none;width:90px;text-align:right;font-size:12px;border:1.5px solid #034543;border-radius:6px;padding:3px 8px;outline:none"
+                      oninput="this.value=fmtInputPrice(this.value)"
                       onblur="saveItemModal(${i}, this.value)"
                       onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')cancelItemModal(${i})">
                   </td>` : canSubmitModal ? `
                   <td style="padding:9px 0;text-align:right;font-size:12px">
-                    ${order.pendingOrderItems?.[${i}]?.priceModal
-                      ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[${i}].priceModal)}</span>`
+                    ${order.pendingOrderItems?.[i]?.priceModal
+                      ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[i].priceModal)}</span>`
                       : `<span style="color:rgba(3,69,67,.2)">—</span>`}
                   </td>` : ''}
                   <td style="padding:9px 0;text-align:right;font-weight:600">${fmtCurrency(it.subtotal)}</td>
@@ -371,8 +427,9 @@
                   <td style="padding:8px 0;font-weight:500">${it.name||'-'}${it.varian?`<br><span style="font-size:11px;color:rgba(3,69,67,.45)">${it.varian}</span>`:''}</td>
                   <td style="padding:8px 0;text-align:center;color:rgba(3,69,67,.5);font-size:12px">${it.qty||0}</td>
                   <td style="padding:8px 0;text-align:right">
-                    <input type="number" id="pm-${i}" value="${it.priceModal||''}" placeholder="0"
+                    <input type="text" inputmode="numeric" id="pm-${i}" value="${fmtPrice(it.priceModal)}" placeholder="0"
                       style="width:90px;text-align:right;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:5px 8px;font-size:12px;outline:none"
+                      oninput="this.value=fmtInputPrice(this.value)"
                       onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'">
                   </td>
                 </tr>`).join('')}
@@ -503,11 +560,11 @@
             <div id="paymentEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
                 <label style="font-size:12px">Total Harga (Rp)</label>
-                <input type="number" id="editTotal" value="${order.totalPrice||0}" min="0">
+                <input type="text" inputmode="numeric" id="editTotal" value="${fmtPrice(order.totalPrice)}" oninput="this.value=fmtInputPrice(this.value)">
               </div>
               <div class="form-group" style="margin-bottom:10px">
                 <label style="font-size:12px">DP Masuk (Rp)</label>
-                <input type="number" id="editDp" value="${order.depositPaid||0}" min="0">
+                <input type="text" inputmode="numeric" id="editDp" value="${fmtPrice(order.depositPaid)}" oninput="this.value=fmtInputPrice(this.value)">
               </div>
               <button onclick="savePayment()" class="btn btn-primary" style="width:100%;justify-content:center" id="savePayBtn">Simpan</button>
             </div>
@@ -542,7 +599,7 @@
             <div id="modalEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
                 <label style="font-size:12px">Harga Modal (Rp)</label>
-                <input type="number" id="inputHargaModal" value="${order.hargaModal||''}" min="0" placeholder="0">
+                <input type="text" inputmode="numeric" id="inputHargaModal" value="${fmtPrice(order.hargaModal)}" placeholder="0" oninput="this.value=fmtInputPrice(this.value)">
               </div>
               <button onclick="saveModal()" class="btn btn-primary" style="width:100%;justify-content:center">Simpan</button>
             </div>
@@ -711,6 +768,7 @@
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
               <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
               ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
+              ${order.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
@@ -863,8 +921,8 @@
   function openEditModal(approvedBy) {
     document.getElementById('editName').value = order.customerName || ''
     document.getElementById('editDueDate').value = order.dueDate || ''
-    document.getElementById('editTotalPrice').value = order.totalPrice || ''
-    document.getElementById('editDeposit').value = order.depositPaid || ''
+    document.getElementById('editTotalPrice').value = fmtPrice(order.totalPrice)
+    document.getElementById('editDeposit').value = fmtPrice(order.depositPaid)
     document.getElementById('editVarian').value = order.varian || ''
     document.getElementById('editNotes').value = order.notes || ''
 
@@ -902,8 +960,8 @@
       const editUpdates = {
         customerName: document.getElementById('editName').value.trim(),
         dueDate: document.getElementById('editDueDate').value,
-        totalPrice: Number(document.getElementById('editTotalPrice').value) || 0,
-        depositPaid: Number(document.getElementById('editDeposit').value) || 0,
+        totalPrice: parsePrice(document.getElementById('editTotalPrice').value),
+        depositPaid: parsePrice(document.getElementById('editDeposit').value),
         varian: document.getElementById('editVarian').value.trim() || null,
         notes: document.getElementById('editNotes').value.trim(),
         updatedAt: now,
@@ -997,6 +1055,15 @@
         status: pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status),
         updatedAt: now,
       })
+      // Kirim progress ke chat customer + update public info
+      if (order.chatToken) {
+        addDoc(collection(db,'chat_messages',order.chatToken,'messages'), {
+          type:'progress', percentage:pct, note, photos,
+          senderName: profile.name, senderRole: profile.role,
+          createdAt: now,
+        }).catch(() => {})
+        updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
+      }
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -1109,7 +1176,7 @@
 
   window.saveItemModal = async function(i, val) {
     cancelItemModal(i)
-    const newModal = Number(val) || 0
+    const newModal = parsePrice(val)
     const items = (order.orderItems||[]).map((it, idx) => idx === i ? {...it, priceModal: newModal || undefined} : it)
     const hargaModal = items.reduce((s, it) => s + (it.qty||0) * (it.priceModal||0), 0)
     const now = Timestamp.now()
@@ -1132,7 +1199,7 @@
   window.submitPendingModal = async function() {
     const pendingItems = (order.orderItems||[]).map((it, i) => ({
       ...it,
-      priceModal: Number(document.getElementById(`pm-${i}`)?.value) || it.priceModal || 0
+      priceModal: parsePrice(document.getElementById(`pm-${i}`)?.value) || it.priceModal || 0
     }))
     const pendingHargaModal = pendingItems.reduce((s, it) => s + (it.qty||0) * (it.priceModal||0), 0)
     const btn = document.querySelector('[onclick="submitPendingModal()"]')
@@ -1199,7 +1266,7 @@
     try {
       const now = Timestamp.now()
       await updateDoc(doc(db, 'orders', orderId), {
-        hargaModal: Number(document.getElementById('inputHargaModal').value) || 0,
+        hargaModal: parsePrice(document.getElementById('inputHargaModal').value),
         updatedAt: now,
         hargaModalEditBy: getProfile().name,
         hargaModalEditAt: now,
@@ -1236,9 +1303,9 @@
     btn.disabled=true; btn.textContent='Menyimpan…'
     try {
       const now = Timestamp.now()
-      const newDp = Number(document.getElementById('editDp').value)||0
+      const newDp = parsePrice(document.getElementById('editDp').value)
       const updates = {
-        totalPrice: Number(document.getElementById('editTotal').value)||0,
+        totalPrice: parsePrice(document.getElementById('editTotal').value),
         depositPaid: newDp,
         updatedAt: now,
         paymentEditBy: getProfile().name,
@@ -1426,6 +1493,56 @@
     } finally { btn.disabled=false; btn.textContent='Simpan Ukuran' }
   }
 
+  window.editLokasi = async function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (!wrap) return
+    wrap.style.display = ''
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = 'none'
+    const sel = document.getElementById('lokasiSelect')
+    if (sel.options.length > 1 && sel.options[0].value !== '') return
+    try {
+      await dataAuthReady
+      const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('nama')))
+      sel.innerHTML = '<option value="">— Tidak ada / kosongkan —</option>'
+      snap.docs.filter(d => d.data().aktif !== false).forEach(d => {
+        const opt = document.createElement('option')
+        opt.value = d.id
+        opt.textContent = d.data().nama
+        if (d.id === order.lokasiId) opt.selected = true
+        sel.appendChild(opt)
+      })
+    } catch(e) {
+      sel.innerHTML = `<option value="">Gagal memuat: ${e.message}</option>`
+    }
+  }
+
+  window.cancelLokasi = function() {
+    const wrap = document.getElementById('lokasiEditWrap')
+    if (wrap) wrap.style.display = 'none'
+    const btn = document.getElementById('lokasiEditBtn')
+    if (btn) btn.style.display = ''
+  }
+
+  window.saveLokasi = async function() {
+    const sel = document.getElementById('lokasiSelect')
+    const lokasiId = sel.value || null
+    const lokasiNama = lokasiId ? sel.options[sel.selectedIndex].textContent : null
+    const btn = document.getElementById('lokasiSaveBtn')
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        lokasiId,
+        lokasiNama,
+        updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(e) {
+      alert('Gagal simpan: ' + e.message)
+      btn.disabled = false; btn.textContent = 'Simpan'
+    }
+  }
+
   window.showInvoice = function() {
     // Switch to invoice view for printing
     document.querySelectorAll('.no-print').forEach(el => el.style.display='none')
@@ -1451,6 +1568,7 @@
 
   function initChat() {
     if (!order.chatToken) return
+    updateDoc(doc(db, 'orders', orderId), { unreadCustomerChat: 0 }).catch(() => {})
     const chatCol = collection(db, 'chat_messages', order.chatToken, 'messages')
     const chatQ = query(chatCol, orderBy('createdAt'))
     chatUnsub = onSnapshot(chatQ, (snap) => {
@@ -1587,7 +1705,12 @@
     production: { bg: '#1d4ed8', text: '#dbeafe', label: 'Tim Produksi' },
   }
 
-  function initInternalChat() {
+  async function initInternalChat() {
+    const profile = getProfile()
+    if (profile) updateDoc(doc(db, 'orders', orderId), {
+      [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: order.internalChatCount || 0,
+    }).catch(() => {})
     const q = query(collection(db, 'orders', orderId, 'internal_chat'), orderBy('createdAt'))
     internalChatUnsub = onSnapshot(q, snap => {
       const el = document.getElementById('internalChatMessages')
@@ -1605,6 +1728,9 @@
         const bubbleBg = isMe ? rc.bg : '#fff'
         const bubbleColor = isMe ? rc.text : '#282828'
         const bubbleBorder = isMe ? 'none' : '1px solid rgba(3,69,67,.1)'
+        const escaped = (m.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+        const rendered = highlightMentions(escaped, staffList, profile?.id)
+        const isMentioned = staffList.some(s => s.id === profile?.id && (m.content||'').includes('@'+s.name))
         return `
           <div style="display:flex;flex-direction:column;align-items:${align}">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
@@ -1612,8 +1738,8 @@
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
             </div>
-            <div style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-              ${(m.content || '').replace(/\n/g, '<br>')}
+            <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              ${rendered}
             </div>
           </div>`
       }).join('')
@@ -1626,6 +1752,9 @@
     const content = input?.value.trim()
     if (!content || !order) return
     const profile = getProfile()
+    const staffList = await loadStaff().catch(() => [])
+    const mentioned = parseMentions(content, staffList)
+
     input.value = ''
     input.style.height = 'auto'
     await addDoc(collection(db, 'orders', orderId, 'internal_chat'), {
@@ -1633,21 +1762,33 @@
       senderId:   profile.id,
       senderName: profile.name,
       senderRole: profile.role,
+      mentions:   mentioned.map(s => ({ id: s.id, name: s.name })),
       createdAt:  Timestamp.now(),
     })
-    // Tulis notifikasi untuk staff lain
-    addDoc(collection(db, 'notifications'), {
-      type:        'internal_chat',
-      orderId,
-      orderNumber: order.orderNumber || '',
-      division:    order.division || '',
-      lokasiId:    order.lokasiId || null,
-      fromUid:     profile.id,
-      fromName:    profile.name,
-      fromRole:    profile.role,
-      preview:     content.substring(0, 80),
-      createdAt:   Timestamp.now(),
-    }).catch(err => console.error('Notification write failed:', err))
+    updateDoc(doc(db, 'orders', orderId), {
+      internalChatLastAt: Timestamp.now(),
+      internalChatCount: increment(1),
+      [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
+      [`lastReadInternalChatCount.${profile.id}`]: increment(1),
+    }).catch(() => {})
+
+    if (mentioned.length) {
+      // Ada @mention: kirim mention notif saja (tidak double dengan internal_chat notif)
+      writeMentionNotifs(mentioned, profile.id, profile.name, content, orderId, order.orderNumber).catch(() => {})
+    } else {
+      addDoc(collection(db, 'notifications'), {
+        type:        'internal_chat',
+        orderId,
+        orderNumber: order.orderNumber || '',
+        division:    order.division || '',
+        lokasiId:    order.lokasiId || null,
+        fromUid:     profile.id,
+        fromName:    profile.name,
+        fromRole:    profile.role,
+        preview:     content.substring(0, 80),
+        createdAt:   Timestamp.now(),
+      }).catch(() => {})
+    }
   }
 
   window.copyChatLink = function(token) {

@@ -117,11 +117,11 @@
         <div class="grid-2">
           <div class="form-group" style="margin-bottom:0">
             <label>Total Harga (Rp)</label>
-            <input type="number" id="totalPrice" placeholder="0" min="0" oninput="checkPriceTierLive()">
+            <input type="text" inputmode="numeric" id="totalPrice" placeholder="0" oninput="this.value=fmtInputPrice(this.value);checkPriceTierLive()">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label>DP Sudah Dibayar (Rp)</label>
-            <input type="number" id="depositPaid" placeholder="0" min="0">
+            <input type="text" inputmode="numeric" id="depositPaid" placeholder="0" oninput="this.value=fmtInputPrice(this.value)">
           </div>
         </div>
         <div id="sisaInfo" style="font-size:13px;color:rgba(3,69,67,.6);margin-top:10px;display:none">
@@ -211,13 +211,25 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, doc, setDoc, runTransaction, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon']
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+
+  function fmtPrice(n) {
+    const num = Number(String(n||'').replace(/\./g,''))
+    return num > 0 ? num.toLocaleString('id-ID') : ''
+  }
+  window.fmtInputPrice = function(val) {
+    const digits = String(val).replace(/\D/g,'')
+    return digits ? Number(digits).toLocaleString('id-ID') : ''
+  }
+  function parsePrice(val) {
+    return Number(String(val||'').replace(/\./g,'').replace(/[^\d]/g,''))||0
+  }
 
   let _autoHargaModal = 0
   const _rowModalPrice = {}
@@ -327,8 +339,8 @@
     if (draft.customerContact) document.getElementById('customerContact').value = draft.customerContact
     if (draft.orderDate)       document.getElementById('orderDate').value       = draft.orderDate
     if (draft.dueDate)         document.getElementById('dueDate').value         = draft.dueDate
-    if (draft.totalPrice)      document.getElementById('totalPrice').value      = draft.totalPrice
-    if (draft.depositPaid)     document.getElementById('depositPaid').value     = draft.depositPaid
+    if (draft.totalPrice)      document.getElementById('totalPrice').value      = fmtPrice(parsePrice(draft.totalPrice))
+    if (draft.depositPaid)     document.getElementById('depositPaid').value     = fmtPrice(parsePrice(draft.depositPaid))
     if (draft.notes)           document.getElementById('notes').value           = draft.notes
     if (draft.sumberOrder)     document.getElementById('sumberOrder').value     = draft.sumberOrder
     if (draft.approvalReason)  document.getElementById('approvalReason').value  = draft.approvalReason
@@ -385,7 +397,9 @@
         o.textContent = `🏦 Transfer ${b.bankName} — ${b.accountNumber}`
         sel.appendChild(o)
       })
-      if (info.qrisActive && info.qrisImageUrl) {
+      const qrisList = Array.isArray(info.qris) ? info.qris : (info.qrisActive && info.qrisImageUrl ? [{ imageUrl: info.qrisImageUrl, division: '', isActive: true }] : [])
+      const hasQris = qrisList.some(q => q.isActive !== false && (!q.division || !division || q.division === division))
+      if (hasQris) {
         const o = document.createElement('option'); o.value = 'qris'; o.textContent = '📱 QRIS'; sel.appendChild(o)
       }
     } catch(e) { console.error(e) }
@@ -407,7 +421,8 @@
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
           data-field="varian" data-row="${id}"
           style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
-          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'">
+          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
+          onchange="showTierButtons(${id})">
       </td>
       <td style="padding:6px 4px">
         <input type="number" placeholder="0" min="1" value="${item.qty||''}"
@@ -417,18 +432,19 @@
           oninput="calcRow(${id})">
       </td>
       <td style="padding:6px 4px">
-        <input type="number" placeholder="0" min="0" value="${item.pricePerUnit||''}"
+        <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.pricePerUnit)}"
           data-field="price" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="calcRow(${id})">
+          oninput="this.value=fmtInputPrice(this.value);calcRow(${id});showTierButtons(${id})">
+        <div id="tier-btns-${id}" style="display:none;margin-top:3px;gap:3px;flex-wrap:wrap"></div>
       </td>
       <td style="padding:6px 4px;display:none" id="modalCell-${id}">
-        <input type="number" placeholder="0" min="0" value="${item.priceModal||''}"
+        <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.priceModal)}"
           data-field="modal" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:right;outline:none;background:rgba(3,69,67,.02)"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="updateRowModal(${id})">
+          oninput="this.value=fmtInputPrice(this.value);updateRowModal(${id})">
       </td>
       <td style="padding:6px 4px;text-align:right;font-weight:700;font-size:13px;color:var(--green);white-space:nowrap;min-width:100px" id="sub-${id}">
         ${item.subtotal ? `Rp ${Number(item.subtotal).toLocaleString('id-ID')}` : '—'}
@@ -446,7 +462,7 @@
   }
 
   window.updateRowModal = function(id) {
-    _rowModalPrice[id] = Number(document.querySelector(`[data-field="modal"][data-row="${id}"]`)?.value) || 0
+    _rowModalPrice[id] = parsePrice(document.querySelector(`[data-field="modal"][data-row="${id}"]`)?.value)
     window.recalcAutoModal()
     debouncedSaveDraft()
   }
@@ -460,13 +476,65 @@
     if (match?.priceModal && getProfile()?.role === 'owner') {
       const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
       if (modalEl && !modalEl.value) {
-        modalEl.value = match.priceModal
+        modalEl.value = fmtPrice(match.priceModal)
         _rowModalPrice[id] = match.priceModal
         window.recalcAutoModal()
         showMatchHint(id)
       }
     }
+    showTierButtons(id)
     checkDuplicateNames()
+  }
+
+  window.showTierButtons = function(id) {
+    const wrap = document.getElementById(`tier-btns-${id}`)
+    if (!wrap) return
+    const name   = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const cat = currentPriceList?.items?.find(p => p.name.trim().toLowerCase() === name)
+    if (!cat) { wrap.style.display = 'none'; return }
+
+    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian)
+      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
+    }
+
+    const cur = parsePrice(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value)
+    const active = cur ? (pN && cur >= pN ? 'normal' : pP && cur >= pP ? 'promo' : 'admin') : null
+
+    const mkBtn = (tier, price, label, color) => !price ? '' :
+      `<button type="button" onclick="setItemTier(${id},'${tier}')"
+        style="border:1.5px solid ${color};color:${active===tier?'#fff':color};background:${active===tier?color:'transparent'};
+               border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;line-height:1.6">
+        ${label} ${Number(price).toLocaleString('id-ID')}</button>`
+
+    wrap.innerHTML = [
+      mkBtn('normal', pN, 'Normal', '#059669'),
+      mkBtn('promo',  pP, 'Promo',  '#d97706'),
+      mkBtn('admin',  pA, 'Admin',  '#b91c1c'),
+    ].join('')
+    wrap.style.display = wrap.innerHTML.trim() ? 'flex' : 'none'
+  }
+
+  window.setItemTier = function(id, tier) {
+    const name   = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value.trim().toLowerCase() || ''
+    const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
+    if (!priceEl) return
+    const cat = currentPriceList?.items?.find(p => p.name.trim().toLowerCase() === name)
+    if (!cat) return
+    const key = `price${tier.charAt(0).toUpperCase()}${tier.slice(1)}`
+    let price = 0
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian)
+      if (v) price = v[key] || 0
+    }
+    if (!price) price = cat[key] || 0
+    if (!price) return
+    priceEl.value = fmtPrice(price)
+    calcRow(id)
+    showTierButtons(id)
   }
 
   function showMatchHint(id) {
@@ -509,7 +577,7 @@
 
   window.calcRow = function(id) {
     const qty   = Number(document.querySelector(`[data-field="qty"][data-row="${id}"]`)?.value) || 0
-    const price = Number(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value) || 0
+    const price = parsePrice(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value)
     const sub   = qty * price
     const el    = document.getElementById(`sub-${id}`)
     if (el) el.textContent = sub > 0 ? `Rp ${sub.toLocaleString('id-ID')}` : '—'
@@ -533,7 +601,7 @@
     rows.forEach(tr => {
       const rowId = tr.id.replace('row-','')
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
-      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
+      const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       grand += qty * price
     })
 
@@ -542,10 +610,25 @@
 
     // Auto-isi Total Harga jika ada item
     if (grand > 0) {
-      document.getElementById('totalPrice').value = grand
+      document.getElementById('totalPrice').value = fmtPrice(grand)
       checkPriceTierLive()
       updateSisa()
     }
+  }
+
+  function getItemTier(name, varian, pricePerUnit) {
+    if (!currentPriceList?.items?.length || !pricePerUnit) return null
+    const nameLower = name.trim().toLowerCase()
+    const cat = currentPriceList.items.find(p => p.name.trim().toLowerCase() === nameLower)
+    if (!cat) return null
+    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
+    if (cat.variants?.length && varian) {
+      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian.trim().toLowerCase())
+      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
+    }
+    if (!pN || pricePerUnit >= pN) return 'normal'
+    if (pP && pricePerUnit >= pP) return 'promo'
+    return 'admin'
   }
 
   function getItemRows() {
@@ -553,9 +636,10 @@
       const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
       const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
-      const price = Number(tr.querySelector('[data-field="price"]')?.value) || 0
-      const priceModal = Number(tr.querySelector('[data-field="modal"]')?.value) || 0
-      return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || undefined, subtotal: qty * price }
+      const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
+      const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
+      const tier = getItemTier(name, varian, price)
+      return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
   }
   let currentPriceList = null
@@ -576,68 +660,102 @@
     const pills  = document.getElementById('productPills')
     if (!items.length) { picker.style.display = 'none'; return }
 
+    const pillStyle = 'padding:6px 12px;border-radius:999px;border:1.5px solid rgba(3,69,67,.15);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
+    const varPillStyle = 'padding:5px 10px;border-radius:999px;border:1.5px solid rgba(3,69,67,.12);background:var(--beige-soft);font-size:11px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s'
+    const hover = `onmouseover="this.style.background='rgba(3,69,67,.1)'" onmouseout="this.style.background='var(--beige-soft)'"`
+
     picker.style.display = ''
     pills.innerHTML = items.map((p, i) => {
-      const price = p.priceNormal || 0
-      const label = price ? `${p.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : p.name
-      return `<button type="button" onclick="addFromCatalog(${i})"
-        style="padding:6px 12px;border-radius:999px;border:1.5px solid rgba(3,69,67,.15);background:var(--beige-soft);font-size:12px;cursor:pointer;color:var(--green);font-weight:500;transition:background .1s"
-        onmouseover="this.style.background='rgba(3,69,67,.1)'" onmouseout="this.style.background='var(--beige-soft)'"
-        title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      const hasVariants = p.variants?.length > 0
+      if (!hasVariants) {
+        const price = p.priceNormal || 0
+        const label = price ? `${p.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : p.name
+        return `<button type="button" onclick="addFromCatalog(${i},-1)" style="${pillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      }
+      const varPills = p.variants.map((v, vi) => {
+        const price = v.priceNormal || 0
+        const label = price ? `${v.name} — Rp ${Number(price).toLocaleString('id-ID')}${p.unit ? '/' + p.unit : ''}` : v.name
+        return `<button type="button" onclick="addFromCatalog(${i},${vi})" style="${varPillStyle}" ${hover} title="Qty dan harga bisa diedit setelahnya">${label}</button>`
+      }).join('')
+      return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;padding:3px 0">
+        <span style="font-size:11px;font-weight:700;color:rgba(3,69,67,.55);flex-shrink:0">${p.name}:</span>${varPills}
+      </div>`
     }).join('')
   }
 
-  window.addFromCatalog = function(index) {
+  window.addFromCatalog = function(index, variantIndex = -1) {
     const p = currentPriceList?.items?.[index]
     if (!p) return
-    addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+    if (variantIndex >= 0 && p.variants?.[variantIndex]) {
+      const v = p.variants[variantIndex]
+      addItemRow({ name: p.name, varian: v.name, pricePerUnit: v.priceNormal || 0, qty: p.minQty || 1, priceModal: v.priceModal || 0 })
+    } else {
+      addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+    }
+    showTierButtons(itemRowCount)
   }
 
   window.checkPriceTierLive = function() {
-    const price = Number(document.getElementById('totalPrice').value) || 0
+    const totalPrice = parsePrice(document.getElementById('totalPrice').value)
     const infoEl = document.getElementById('priceTierInfo')
     const msgEl = document.getElementById('priceTierMsg')
     const reasonWrap = document.getElementById('approvalReasonWrap')
 
-    if (!price || !currentPriceList?.items?.length) {
+    if (!totalPrice || !currentPriceList?.items?.length) {
       infoEl.style.display = 'none'; return
     }
 
-    // Find lowest prices across all items for each tier
-    const items = currentPriceList.items
-    const minNormal = Math.min(...items.map(i=>i.priceNormal||Infinity).filter(x=>x!==Infinity))
-    const minPromo  = Math.min(...items.map(i=>i.pricePromo ||Infinity).filter(x=>x!==Infinity))
-    const minAdmin  = Math.min(...items.map(i=>i.priceAdmin ||Infinity).filter(x=>x!==Infinity))
+    // Cek tier per item jika ada item yang cocok di katalog
+    // Tier order = tier terburuk di antara semua item (admin > promo > normal)
+    let effectiveTier = null
+    const itemRows = [...document.querySelectorAll('#itemRows tr')]
+    for (const tr of itemRows) {
+      const name   = tr.querySelector('[data-field="name"]')?.value.trim() || ''
+      const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
+      const p      = parsePrice(tr.querySelector('[data-field="price"]')?.value)
+      const t      = getItemTier(name, varian, p)
+      if (!t) continue
+      if (t === 'admin') { effectiveTier = 'admin'; break }
+      if (t === 'promo') effectiveTier = 'promo'
+      else if (!effectiveTier) effectiveTier = 'normal'
+    }
 
-    const profile = getProfile()
-    const isOwnerOrManager = profile?.role === 'owner' || profile?.role === 'manager'
+    // Fallback ke total harga vs minimum katalog (kalau item belum ada nama katalog)
+    if (!effectiveTier) {
+      const catItems = currentPriceList.items
+      const allN = catItems.flatMap(i => [i.priceNormal, ...(i.variants||[]).map(v=>v.priceNormal)]).filter(x=>x>0)
+      const allP = catItems.flatMap(i => [i.pricePromo,  ...(i.variants||[]).map(v=>v.pricePromo)]).filter(x=>x>0)
+      const allA = catItems.flatMap(i => [i.priceAdmin,  ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
+      const minN = allN.length ? Math.min(...allN) : Infinity
+      const minP = allP.length ? Math.min(...allP) : Infinity
+      const minA = allA.length ? Math.min(...allA) : Infinity
+      if (!isFinite(minN) || totalPrice >= minN) effectiveTier = 'normal'
+      else if (isFinite(minP) && totalPrice >= minP) effectiveTier = 'promo'
+      else if (isFinite(minA) && totalPrice >= minA) effectiveTier = 'admin'
+      else if (isFinite(minA) && totalPrice < minA) effectiveTier = 'blocked'
+      else effectiveTier = 'normal'
+    }
 
-    if (!isFinite(minNormal) || price >= minNormal) {
-      // Normal tier
-      currentPriceTier = 'normal'
+    currentPriceTier = effectiveTier
+
+    if (effectiveTier === 'normal') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#059669">✓ Harga Normal — Langsung disetujui</span>`
       reasonWrap.style.display = 'none'
-    } else if (isFinite(minPromo) && price >= minPromo) {
-      // Promo tier
-      currentPriceTier = 'promo'
+    } else if (effectiveTier === 'promo') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#d97706">⚠ Harga Promo — Perlu approval Kepala Cabang</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval sebelum diproses</span>`
       reasonWrap.style.display = ''
-    } else if (isFinite(minAdmin) && price >= minAdmin) {
-      // Admin tier
-      currentPriceTier = 'admin'
+    } else if (effectiveTier === 'admin') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f2;border:1px solid #fecdd3'
       msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🔒 Harga Admin — Perlu approval Owner</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval Owner sebelum diproses</span>`
       reasonWrap.style.display = ''
-    } else if (isFinite(minAdmin) && price < minAdmin) {
-      // Blocked
-      currentPriceTier = 'blocked'
+    } else if (effectiveTier === 'blocked') {
       infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fee2e2;border:1px solid #fca5a5'
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${minAdmin.toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
+      const minA = currentPriceList.items.flatMap(i => [i.priceAdmin, ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${Math.min(...minA).toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
       reasonWrap.style.display = 'none'
     } else {
-      currentPriceTier = 'normal'
       infoEl.style.display = 'none'
     }
   }
@@ -685,8 +803,8 @@
 
   // Sisa preview
   function updateSisa() {
-    const total = Number(document.getElementById('totalPrice').value)||0
-    const dp = Number(document.getElementById('depositPaid').value)||0
+    const total = parsePrice(document.getElementById('totalPrice').value)
+    const dp = parsePrice(document.getElementById('depositPaid').value)
     if (total>0) {
       document.getElementById('sisaInfo').style.display = ''
       document.getElementById('sisaVal').textContent = fmtCurrency(total-dp)
@@ -835,8 +953,8 @@
           status: isDraft ? 'draft' : (currentPriceTier==='normal' ? 'pending' : 'pending-approval'),
           originalDueDate: dueDate,
           progressPercentage: 0,
-          totalPrice: Number(document.getElementById('totalPrice').value)||0,
-          depositPaid: Number(document.getElementById('depositPaid').value)||0,
+          totalPrice: parsePrice(document.getElementById('totalPrice').value),
+          depositPaid: parsePrice(document.getElementById('depositPaid').value),
           notes: document.getElementById('notes').value.trim(),
           varian: getItemRows().map(i => i.varian).filter(Boolean).join(', ') || null,
           sizeBreakdown: getSizeBreakdown() || null,
@@ -870,7 +988,33 @@
           status: 'pending',
           chatToken,
           createdAt: now,
+          designFiles: designFiles || [],
         })
+
+        // Notifikasi approval harga ke owner/manager
+        if (currentPriceTier !== 'normal' && !isDraft) {
+          const savedItems = getItemRows()
+          const adminItems = savedItems.filter(i => i.tier === 'admin').map(i => i.name)
+          const promoItems = savedItems.filter(i => i.tier === 'promo').map(i => i.name)
+          const itemDesc = adminItems.length
+            ? `Item harga Admin: ${adminItems.join(', ')}`
+            : promoItems.length
+              ? `Item harga Promo: ${promoItems.join(', ')}`
+              : 'Harga di luar tier normal'
+          await addDoc(collection(db, 'notifications'), {
+            type: 'price_approval',
+            orderId,
+            orderNumber,
+            division: selectedDiv,
+            lokasiId: selectedLokasi?.id || '',
+            fromUid: profile.id,
+            fromName: profile.name,
+            fromRole: profile.role,
+            preview: itemDesc,
+            priceApprovalTier: currentPriceTier,
+            createdAt: now,
+          })
+        }
 
         clearTimeout(timeoutId)
         clearDraft()
