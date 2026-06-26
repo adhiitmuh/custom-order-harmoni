@@ -79,10 +79,9 @@
   <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:680px;max-height:85vh;overflow-y:auto">
     <h3 style="font-size:15px;font-weight:700;margin-bottom:16px" id="priceModalTitle">Edit Daftar Harga</h3>
     <div id="priceRows" style="margin-bottom:14px"></div>
-    <button onclick="addPriceRow()" class="btn btn-ghost btn-sm" style="margin-bottom:14px;width:100%;justify-content:center">＋ Tambah Baris</button>
     <div style="display:flex;gap:8px">
       <button onclick="closePriceModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
-      <button onclick="savePriceList()" class="btn btn-primary" style="flex:1;justify-content:center" id="priceSaveBtn">Simpan</button>
+      <button onclick="saveSingleItem()" class="btn btn-primary" style="flex:1;justify-content:center" id="priceSaveBtn">Simpan</button>
     </div>
   </div>
 </div>
@@ -97,6 +96,7 @@
   let activeDiv = params.get('div') || ''
   let editingDocId = null
   let editingPriceDiv = null
+  let editingItemIndex = -1
   let sections = []
   const contentCache = {}
   let priceDataStore = {}
@@ -195,7 +195,7 @@
             <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
                 <h3 style="font-size:14px;font-weight:700;color:var(--green)">💰 Daftar Harga</h3>
-                ${canEdit ? `<button onclick="openPriceEdit('${d}')" class="btn btn-ghost btn-sm">Edit Harga</button>` : ''}
+                ${canEdit ? `<button onclick="openSingleItemEdit('${d}',-1)" class="btn btn-ghost btn-sm">＋ Tambah Item</button>` : ''}
               </div>
               <div style="display:flex;gap:8px;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
                 <span class="tier-badge tb-normal">● Normal — Staff langsung pakai</span>
@@ -438,6 +438,60 @@
 
   window.closePriceModal = () => { document.getElementById('priceModal').style.display = 'none' }
 
+  window.openSingleItemEdit = async function(division, itemIndex) {
+    editingPriceDiv = division
+    editingItemIndex = itemIndex
+    const items = priceDataStore[division]?.items || []
+    const item = itemIndex >= 0
+      ? JSON.parse(JSON.stringify(items[itemIndex]))
+      : { name:'', priceNormal:0, pricePromo:0, priceAdmin:0, priceModal:0, unit:'', note:'', variants:[] }
+    const divMeta = (await getActiveDivisions()).find(d => d.key === division) || DIVISION_META[division]
+    document.getElementById('priceModalTitle').textContent = itemIndex >= 0
+      ? `Edit Item — ${item.name || divMeta?.label || division}`
+      : `Tambah Item — ${divMeta?.label || division}`
+    renderPriceRows([item])
+    document.getElementById('priceModal').style.display = 'flex'
+  }
+
+  window.saveSingleItem = async function() {
+    const btn = document.getElementById('priceSaveBtn')
+    const edited = window._priceItems?.[0]
+    if (!edited?.name?.trim()) { alert('Nama item harus diisi'); return }
+    const newItem = {
+      name: edited.name.trim(),
+      priceNormal: Number(edited.priceNormal)||0,
+      pricePromo: Number(edited.pricePromo)||0,
+      priceAdmin: Number(edited.priceAdmin)||0,
+      priceModal: Number(edited.priceModal)||0,
+      unit: String(edited.unit||'').trim(),
+      note: String(edited.note||'').trim(),
+      variants: (edited.variants||[]).filter(v=>v.name).map(v=>({
+        name: String(v.name).trim(),
+        priceNormal: Number(v.priceNormal)||0,
+        pricePromo: Number(v.pricePromo)||0,
+        priceAdmin: Number(v.priceAdmin)||0,
+        priceModal: Number(v.priceModal)||0,
+      })),
+    }
+    if (!priceDataStore[editingPriceDiv]) priceDataStore[editingPriceDiv] = { items: [] }
+    const items = [...(priceDataStore[editingPriceDiv].items || [])]
+    if (editingItemIndex >= 0) {
+      items[editingItemIndex] = newItem
+    } else {
+      items.push(newItem)
+    }
+    btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      await setDoc(doc(db,'price_list',editingPriceDiv), { division: editingPriceDiv, items, updatedAt: Timestamp.now() })
+      priceDataStore[editingPriceDiv].items = items
+      closePriceModal()
+      delete contentCache[editingPriceDiv]
+      delete contentCache['__all__']
+      rerenderPriceWrap(editingPriceDiv)
+      showSavedToast(`✓ Item "${newItem.name}" tersimpan`)
+    } finally { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+
   window.savePriceList = async function() {
     const btn = document.getElementById('priceSaveBtn')
     const items = (window._priceItems||[]).map(item => ({
@@ -507,7 +561,10 @@
           ${canEditModal ? `<td><input class="inp-inline tier-modal" type="number" value="${p.priceModal||''}" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
           <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
           <td style="white-space:normal;min-width:120px"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
-          <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
+          <td style="white-space:nowrap">
+            <button onclick="openSingleItemEdit('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.45);font-size:13px;padding:2px 4px" title="Edit item">✏</button>
+            <button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 4px" title="Hapus baris">✕</button>
+          </td>
         </tr>` : `<tr>
           <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
           <td style="color:rgba(3,69,67,.2);font-size:11px">—</td>
@@ -527,7 +584,10 @@
         <td colspan="${priceColCount}" style="font-size:11px;color:rgba(3,69,67,.3);text-align:center;font-style:italic">harga per varian ↓</td>
         <td><input class="inp-inline" type="text" value="${escAttr(p.unit||'')}" onchange="updateInlinePrice('${d}',${i},'unit',this.value)" placeholder="—" style="color:rgba(3,69,67,.5);max-width:70px"></td>
         <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(p.note||'')}" onchange="updateInlinePrice('${d}',${i},'note',this.value)" placeholder="—" style="color:rgba(3,69,67,.45);font-size:12px"></td>
-        <td><button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 6px" title="Hapus baris">✕</button></td>
+        <td style="white-space:nowrap">
+          <button onclick="openSingleItemEdit('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.45);font-size:13px;padding:2px 4px" title="Edit item">✏</button>
+          <button onclick="removeInlinePriceRow('${d}',${i})" style="background:none;border:none;cursor:pointer;color:rgba(3,69,67,.3);font-size:14px;padding:2px 4px" title="Hapus baris">✕</button>
+        </td>
       </tr>` : `<tr style="background:rgba(3,69,67,.02);border-bottom:none">
         <td style="font-weight:700;white-space:normal">${escAttr(p.name||'')}</td>
         <td style="font-size:11px;color:rgba(3,69,67,.35);font-style:italic">${p.variants.length} varian</td>
