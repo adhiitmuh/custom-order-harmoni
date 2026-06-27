@@ -392,7 +392,7 @@ async function handleNotifyCustomer(request, env) {
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid JSON' }, 400)
 
-  const { orderId, customerContact, customerName, orderNumber, chatToken, type, statusLabel, percentage } = body
+  const { orderId, customerContact, customerName, orderNumber, chatToken, type, statusLabel, percentage, lokasiNama } = body
   if (!customerContact || !orderId || !type) {
     return json({ error: 'customerContact, orderId, dan type wajib diisi' }, 400)
   }
@@ -417,15 +417,16 @@ async function handleNotifyCustomer(request, env) {
   }
 
   // Build pesan WA berdasarkan tipe
-  const name = customerName || 'Pelanggan'
-  const no   = orderNumber || ''
-  const link = chatUrl ? `\n\n💬 Buka chat: ${chatUrl}` : ''
+  const name   = customerName || 'Pelanggan'
+  const no     = orderNumber || ''
+  const link   = chatUrl ? `\n\n💬 Buka chat: ${chatUrl}` : ''
+  const footer = `_Harmoni${lokasiNama ? ` · ${lokasiNama}` : ' · Makassar'}_`
 
   const messages = {
-    status_change: `Halo *${name}* 👋\n\nUpdate pesanan *${no}*:\n\nStatus sekarang: *${statusLabel || ''}*${link}\n\n_Harmoni · Makassar_`,
-    progress:      `Halo *${name}* 👋\n\n📊 Progress pesanan *${no}* sudah *${percentage || 0}%*!\n\nLihat foto update terbaru di chat:${link || ''}\n\n_Harmoni · Makassar_`,
-    chat:          `Halo *${name}* 👋\n\nTim Harmoni sudah membalas pesan Anda di pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n_Harmoni · Makassar_`,
-    manual:        `Halo *${name}* 👋\n\nAda pesan penting dari tim Harmoni untuk pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n_Harmoni · Makassar_`,
+    status_change: `Halo *${name}* 👋\n\nUpdate pesanan *${no}*:\n\nStatus sekarang: *${statusLabel || ''}*${link}\n\n${footer}`,
+    progress:      `Halo *${name}* 👋\n\n📊 Progress pesanan *${no}* sudah *${percentage || 0}%*!\n\nLihat foto update terbaru di chat:${link || ''}\n\n${footer}`,
+    chat:          `Halo *${name}* 👋\n\nTim Harmoni sudah membalas pesan Anda di pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n${footer}`,
+    manual:        `Halo *${name}* 👋\n\nAda pesan penting dari tim Harmoni untuk pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n${footer}`,
   }
 
   const msg = messages[type]

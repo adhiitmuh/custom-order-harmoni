@@ -104,6 +104,7 @@
         customerName: order.customerName,
         orderNumber: order.orderNumber,
         chatToken: order.chatToken || null,
+        lokasiNama: order.lokasiNama || order.branch || '',
         type,
         ...extra,
       }),
@@ -126,6 +127,7 @@
           customerName: order.customerName,
           orderNumber: order.orderNumber,
           chatToken: order.chatToken || null,
+          lokasiNama: order.lokasiNama || order.branch || '',
           type: 'manual',
         }),
       })
