@@ -1839,6 +1839,11 @@
       `*Pemesan:* ${order.customerName}`,
       `*Tanggal Pesan:* ${fmtDate(order.orderDate)}`,
       `*Target Selesai:* ${fmtDate(order.dueDate)}`, ``,
+      ...(order.orderItems?.length ? [
+        `*RINCIAN ITEM*`,
+        ...order.orderItems.map(it => `• ${it.name} ${it.qty}pcs × ${fmtCurrency(it.pricePerPcs)} = ${fmtCurrency(it.subtotal)}`),
+        ``,
+      ] : []),
       `*RINCIAN PEMBAYARAN*`,
       `Total Harga: ${fmtCurrency(order.totalPrice)}`,
       `DP Dibayar: ${fmtCurrency(order.depositPaid)}`,
