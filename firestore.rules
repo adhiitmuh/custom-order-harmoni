@@ -113,5 +113,13 @@ service cloud.firestore {
     match /chat_sessions/{waNumber} {
       allow read, write: if false;
     }
+
+    // Customer feedback — public write (token = password), staff read only
+    match /feedback/{token} {
+      allow read: if isAuth();
+      allow create: if true; // Anyone with token can submit feedback
+      allow update: if false; // No editing after submit
+      allow delete: if isOwner();
+    }
   }
 }

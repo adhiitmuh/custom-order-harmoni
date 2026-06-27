@@ -60,6 +60,13 @@
     .loading{ text-align:center; padding:40px; color:rgba(3,69,67,.4); font-size:14px; }
     .error-page{ text-align:center; padding:60px 24px; }
 
+    /* Feedback */
+    .feedback-wrap{ max-width:700px; margin:0 auto; padding:20px 16px; background:white; min-height:calc(100vh - 160px); overflow-y:auto; }
+    .star-btn{ font-size:32px; background:none; border:none; cursor:pointer; padding:4px; line-height:1; transition:transform .1s; filter:grayscale(1) opacity(.4); }
+    .star-btn.lit{ filter:none; transform:scale(1.1); }
+    .fb-type-btn{ padding:8px 16px; border-radius:999px; font-size:13px; font-weight:600; cursor:pointer; border:1.5px solid rgba(3,69,67,.2); background:transparent; color:rgba(3,69,67,.7); font-family:inherit; transition:all .12s; }
+    .fb-type-btn.active{ border-color:#034543; background:#034543; color:#FFFBD5; }
+
     /* Bubbles */
     .bubble-wrap{ display:flex; flex-direction:column; }
     .bubble-wrap.me{ align-items:flex-end; }
@@ -86,7 +93,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-  import { getFirestore, collection, doc, getDoc, addDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getFirestore, collection, doc, getDoc, addDoc, setDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
   const firebaseConfig = {
@@ -174,8 +181,11 @@
 
   let activeTab = 'chat'
   let activeDivInfo = null
+  let _orderInfo = null
+  const _fb = { rating: 0, type: '' }
 
   function renderApp(orderInfo, allKnowledge, allPrices) {
+    _orderInfo = orderInfo
     const isConsultation = orderInfo.isConsultation === true
     const divLabel = DIV_LABEL[orderInfo.division] || orderInfo.division
     activeDivInfo = orderInfo.division || DIVISIONS_ALL[0]
@@ -195,7 +205,8 @@
       <!-- Tabs -->
       <div class="tabs">
         <div class="tab active" id="tabChat" onclick="switchTab('chat')">💬 Chat</div>
-        <div class="tab" id="tabInfo" onclick="switchTab('info')">📋 Info Produk & Harga</div>
+        <div class="tab" id="tabInfo" onclick="switchTab('info')">📋 Info Produk</div>
+        <div class="tab" id="tabFeedback" onclick="switchTab('feedback')">⭐ Feedback</div>
       </div>
 
       <!-- Chat view -->
@@ -240,6 +251,11 @@
             </button>`).join('')}
         </div>
         <div id="divInfoContent"></div>
+      </div>
+
+      <!-- Feedback view -->
+      <div id="viewFeedback" class="feedback-wrap" style="display:none">
+        <div id="feedbackContent"><div class="loading">Memuat…</div></div>
       </div>`
 
     // Render info for initial division
@@ -284,13 +300,155 @@
 
     window.switchTab = function(tab) {
       activeTab = tab
-      document.getElementById('tabChat').className = `tab ${tab==='chat'?'active':''}`
-      document.getElementById('tabInfo').className  = `tab ${tab==='info'?'active':''}`
-      document.getElementById('viewChat').style.display = tab==='chat' ? 'flex' : 'none'
-      document.getElementById('viewInfo').style.display = tab==='info' ? 'block' : 'none'
+      document.getElementById('tabChat').className     = `tab ${tab==='chat'?'active':''}`
+      document.getElementById('tabInfo').className     = `tab ${tab==='info'?'active':''}`
+      document.getElementById('tabFeedback').className = `tab ${tab==='feedback'?'active':''}`
+      document.getElementById('viewChat').style.display     = tab==='chat'     ? 'flex'  : 'none'
+      document.getElementById('viewInfo').style.display     = tab==='info'     ? 'block' : 'none'
+      document.getElementById('viewFeedback').style.display = tab==='feedback' ? 'block' : 'none'
     }
 
     initChatListener(orderInfo)
+    initFeedback(orderInfo)
+  }
+
+  async function initFeedback(orderInfo) {
+    const container = document.getElementById('feedbackContent')
+    if (!container) return
+    try {
+      const fbSnap = await getDoc(doc(db, 'feedback', token))
+      if (fbSnap.exists()) {
+        const fb = fbSnap.data()
+        const stars = Array.from({length:5},(_,i)=>i<fb.rating?'⭐':'☆').join('')
+        const typeLabel = {pujian:'👍 Pujian', saran:'💡 Saran', kritik:'🗣 Kritik'}[fb.type]||fb.type
+        container.innerHTML = `
+          <div style="text-align:center;padding:32px 16px">
+            <div style="font-size:48px;margin-bottom:12px">🙏</div>
+            <p style="font-size:16px;font-weight:800;color:#034543;margin-bottom:6px">Terima kasih atas feedbacknya!</p>
+            <p style="font-size:13px;color:rgba(3,69,67,.5)">Masukan Anda sangat berarti bagi kami untuk terus berkembang.</p>
+            <div style="margin-top:16px;padding:16px;background:#f8faf8;border-radius:14px;border:1px solid rgba(3,69,67,.08);text-align:left">
+              <div style="font-size:24px;margin-bottom:6px">${stars}</div>
+              ${typeLabel?`<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(3,69,67,.08);color:#034543">${typeLabel}</span>`:''}
+              ${fb.message?`<p style="font-size:13px;color:#282828;margin-top:8px;line-height:1.6;font-style:italic">"${fb.message}"</p>`:''}
+            </div>
+          </div>`
+        return
+      }
+    } catch(_) {}
+    renderFeedbackForm(container, orderInfo)
+  }
+
+  function renderFeedbackForm(container, orderInfo) {
+    _fb.rating = 0; _fb.type = ''
+    const RATING_LABEL = ['','😞 Sangat Buruk','😕 Kurang Memuaskan','😐 Cukup','😊 Baik','🤩 Luar Biasa!']
+    container.innerHTML = `
+      <div style="text-align:center;padding:8px 0 20px">
+        <div style="font-size:36px;margin-bottom:10px">💌</div>
+        <p style="font-size:17px;font-weight:800;color:#034543;margin-bottom:6px">Ceritakan Pengalaman Anda</p>
+        <p style="font-size:13px;color:rgba(3,69,67,.6);line-height:1.6;max-width:300px;margin:0 auto">
+          Satu menit waktu Anda sangat berarti bagi kami.<br>
+          Feedback Anda langsung dibaca oleh tim dan owner — dan jadi bahan kami untuk terus membaik. 🙌
+        </p>
+      </div>
+      <div style="background:#fafafa;border-radius:14px;border:1px solid rgba(3,69,67,.08);padding:20px">
+        <p style="font-size:13px;font-weight:700;color:#282828;text-align:center;margin-bottom:10px">Seberapa puas dengan layanan kami?</p>
+        <div style="display:flex;gap:4px;justify-content:center;margin-bottom:4px" id="starRow">
+          ${[1,2,3,4,5].map(i=>`<button class="star-btn" data-star="${i}" onclick="rateStar(${i})">⭐</button>`).join('')}
+        </div>
+        <p id="ratingLabel" style="text-align:center;font-size:12px;color:rgba(3,69,67,.45);min-height:18px;margin-bottom:16px"></p>
+
+        <p style="font-size:13px;font-weight:700;color:#282828;text-align:center;margin-bottom:8px">Jenis Feedback</p>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">
+          <button class="fb-type-btn" data-type="pujian" onclick="selectFbType('pujian')">👍 Pujian</button>
+          <button class="fb-type-btn" data-type="saran" onclick="selectFbType('saran')">💡 Saran</button>
+          <button class="fb-type-btn" data-type="kritik" onclick="selectFbType('kritik')">🗣 Kritik</button>
+        </div>
+
+        <p style="font-size:13px;font-weight:700;color:#282828;margin-bottom:6px">
+          Pesan / Komentar <span style="font-weight:400;color:rgba(3,69,67,.4)">(opsional)</span>
+        </p>
+        <p style="font-size:11px;color:rgba(3,69,67,.4);margin-bottom:6px">
+          Apa yang paling Anda sukai? Atau apa yang bisa kami perbaiki? Saran sekecil apapun sangat membantu kami.
+        </p>
+        <textarea id="fbMessage" rows="4"
+          placeholder="Tulis di sini ya… jangan sungkan, kami senang mendengarnya 😊"
+          style="width:100%;border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;outline:none;line-height:1.5"
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.15)'"></textarea>
+
+        <button id="fbSubmitBtn" onclick="submitFeedback()"
+          style="margin-top:14px;width:100%;background:#034543;color:#FFFBD5;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;opacity:.4;transition:opacity .15s"
+          disabled>Kirim Feedback</button>
+        <p style="text-align:center;font-size:11px;color:rgba(3,69,67,.35);margin-top:8px">
+          Feedback bersifat anonim dan hanya dibaca oleh tim internal Harmoni.
+        </p>
+        <p id="fbError" style="text-align:center;font-size:12px;color:#dc2626;margin-top:4px;display:none"></p>
+      </div>`
+  }
+
+  window.rateStar = function(n) {
+    _fb.rating = n
+    const labels = ['','😞 Sangat Buruk','😕 Kurang Memuaskan','😐 Cukup','😊 Baik','🤩 Luar Biasa!']
+    document.getElementById('ratingLabel').textContent = labels[n]
+    document.querySelectorAll('.star-btn').forEach(b => {
+      const on = parseInt(b.dataset.star) <= n
+      b.className = 'star-btn' + (on ? ' lit' : '')
+    })
+    checkFbReady()
+  }
+
+  window.selectFbType = function(t) {
+    _fb.type = t
+    document.querySelectorAll('.fb-type-btn').forEach(b => {
+      b.className = 'fb-type-btn' + (b.dataset.type === t ? ' active' : '')
+    })
+    checkFbReady()
+  }
+
+  function checkFbReady() {
+    const btn = document.getElementById('fbSubmitBtn')
+    if (!btn) return
+    const ok = _fb.rating > 0 && _fb.type
+    btn.disabled = !ok
+    btn.style.opacity = ok ? '1' : '.4'
+  }
+
+  window.submitFeedback = async function() {
+    const message = (document.getElementById('fbMessage')?.value || '').trim()
+    const btn = document.getElementById('fbSubmitBtn')
+    const errEl = document.getElementById('fbError')
+    if (!_fb.rating || !_fb.type) return
+    btn.disabled = true; btn.textContent = 'Mengirim…'
+    if (errEl) errEl.style.display = 'none'
+    try {
+      await setDoc(doc(db, 'feedback', token), {
+        token,
+        orderId: _orderInfo?.orderId || null,
+        orderNumber: _orderInfo?.orderNumber || null,
+        customerName: _orderInfo?.customerName || null,
+        division: _orderInfo?.division || null,
+        rating: _fb.rating,
+        type: _fb.type,
+        message: message || null,
+        createdAt: Timestamp.now(),
+      })
+      const container = document.getElementById('feedbackContent')
+      if (container) {
+        const stars = Array.from({length:5},(_,i)=>i<_fb.rating?'⭐':'☆').join('')
+        container.innerHTML = `
+          <div style="text-align:center;padding:40px 16px">
+            <div style="font-size:56px;margin-bottom:14px">🙏</div>
+            <p style="font-size:18px;font-weight:800;color:#034543;margin-bottom:8px">Terima kasih banyak!</p>
+            <p style="font-size:14px;color:rgba(3,69,67,.65);line-height:1.7;max-width:280px;margin:0 auto">
+              Feedback Anda sudah kami terima dan akan kami baca dengan sungguh-sungguh. Ini adalah bentuk kepercayaan yang kami jaga.
+            </p>
+            <div style="margin-top:20px;font-size:26px">${stars}</div>
+            ${message?`<div style="margin-top:14px;padding:14px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;font-size:13px;color:#166534;font-style:italic;max-width:300px;margin:14px auto 0">"${message}"</div>`:''}
+          </div>`
+      }
+    } catch(e) {
+      btn.disabled = false; btn.textContent = 'Kirim Feedback'; btn.style.opacity = '1'
+      if (errEl) { errEl.textContent = 'Gagal mengirim. Coba lagi.'; errEl.style.display = '' }
+    }
   }
 
   function renderMD(t) {
