@@ -465,6 +465,50 @@ Perlu daftarkan template di Meta Business Manager dulu (approval ~24 jam).
 Bot berjalan langsung di Cloudflare Worker (`/incoming-chat`).
 WA Cloud API webhook (atau Fonnte sementara) → Worker → proses background via `ctx.waitUntil()` → balas via WA Cloud API.
 
+### Menu Dinamis — Nomor Generate Otomatis
+
+Menu bot **tidak hardcoded** — nomor di-generate saat runtime berdasarkan:
+1. Divisi aktif dari Firestore `divisions` (hanya yang `aktif: true`)
+2. Kategori produk dari Olsera API (cache 1 jam)
+
+Contoh output menu:
+```
+Halo! Selamat datang di Harmoni 👋
+
+🎨 *CUSTOM ORDER*
+1. Bordir
+2. Jersey & Batik
+3. Konveksi
+4. Kaos & Sablon
+5. Medali & Pin Logam
+6. Papan Nama
+
+🛍 *READY STOCK*
+7. Kaos Polos
+8. Topi
+9. Celana Training
+
+💬 10. Bicara dengan CS
+
+Balas dengan angka pilihan ya 😊
+```
+
+Mapping angka → tujuan disimpan di session:
+```json
+{
+  "menuMap": {
+    "1": { "type": "custom_order", "division": "bordir" },
+    "2": { "type": "custom_order", "division": "jersey" },
+    "7": { "type": "ready_stock", "categoryId": "kaos-polos", "categoryName": "Kaos Polos" },
+    "10": { "type": "cs" }
+  }
+}
+```
+
+Ketika customer balas angka → lookup `session.menuMap[angka]` → routing ke flow yang sesuai.
+
+### Alur Bot
+
 ```
 Customer WA
     │
@@ -473,33 +517,31 @@ WA Cloud API Webhook → POST /incoming-chat (Cloudflare Worker)
     │
     ├─ Load session chat_sessions/{waNumber}
     │
-    ├─ [Pesan pertama / idle 12 jam] → kirim GREETING MENU
-    │       🎨 CUSTOM ORDER (1–11, per divisi)
-    │       🛍 READY STOCK  (12)
-    │       💬 BICARA CS    (13)
+    ├─ [Pesan pertama / idle 12 jam] → build & kirim GREETING MENU
+    │       ├─ Fetch divisi aktif dari Firestore `divisions` (aktif: true)
+    │       ├─ Fetch kategori Olsera API (cache 1 jam di settings/olsera_cache)
+    │       ├─ Generate nomor urut + simpan menuMap di session
+    │       └─ Kirim menu ke customer
     │
-    ├─ [Pilih 1–11: Custom Order]
+    ├─ [Balas angka → custom_order]
     │       ├─ Load product_knowledge/{division} ← Firestore
     │       ├─ Load price_list/{division} ← Firestore
     │       ├─ Claude Haiku (cached knowledge) — kumpulkan info order
     │       ├─ Customer konfirmasi → POST /create-order → Firestore
     │       └─ Notif owner via WA Cloud API
     │
-    ├─ [Pilih 12: Ready Stock]
-    │       ├─ Fetch kategori dari Olsera API (cache 1 jam di Firestore settings/olsera_cache)
-    │       ├─ Customer pilih kategori → tanya produk spesifik
-    │       ├─ Query stok semua cabang PARALEL (Promise.all)
-    │       │       Branch Pusat  (Olsera API Key 1)
-    │       │       Branch Cabang (Olsera API Key 2..N)
-    │       ├─ Tampilkan cabang yang ada stok + jumlah (stok 0 disembunyikan)
+    ├─ [Balas angka → ready_stock]
+    │       ├─ Tanya nama produk spesifik
+    │       ├─ Query stok semua cabang PARALEL (Promise.all via Olsera API)
+    │       ├─ Tampilkan cabang yang ada stok (stok 0 disembunyikan)
     │       ├─ Customer pilih cabang
-    │       └─ [Reservasi] → instruksikan full payment dulu
+    │       └─ [Reservasi] → full payment dulu
     │               ├─ Bot kirim info rekening transfer
     │               ├─ Customer kirim bukti bayar
     │               ├─ Bot forward notif ke CS/owner
-    │               └─ CS verifikasi → konfirmasi ke customer → update Olsera manual
+    │               └─ CS verifikasi → konfirmasi → update Olsera manual
     │
-    ├─ [Pilih 13 / kompleks / tidak tahu]
+    ├─ [Balas angka → cs / pesan kompleks]
     │       └─ Eskalasi ke CS → buat consultations/{token} → notif CS
     │
     └─ [FAQ hardcoded] → balas langsung, 0 Claude token
@@ -511,6 +553,11 @@ WA Cloud API Webhook → POST /incoming-chat (Cloudflare Worker)
 {
   "mode": "menu | custom_order | ready_stock | cs_escalated",
   "division": "jersey | bordir | ... | null",
+  "menuMap": {
+    "1": { "type": "custom_order", "division": "bordir" },
+    "7": { "type": "ready_stock", "categoryId": "kaos-polos" },
+    "10": { "type": "cs" }
+  },
   "history": ["...8 pesan terakhir..."],
   "lastActive": 1234567890,
   "customerName": "Ahmad",
@@ -524,7 +571,7 @@ Session reset setelah idle 12 jam.
 
 | Mode | Knowledge Source | Claude | WA Cloud API |
 |---|---|---|---|
-| Greeting / FAQ | Hardcoded | 0 token | 1 conv/24 jam |
+| Greeting / FAQ | Firestore divisions + Olsera cache | 0 token | 1 conv/24 jam |
 | Custom Order | Firestore product_knowledge + price_list | Haiku (cached) | 1 conv/24 jam |
 | Ready Stock | Olsera API real-time | Haiku (data inject) | 1 conv/24 jam |
 | Eskalasi CS | — | 0 token | 1 conv/24 jam |
@@ -596,8 +643,9 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 - [ ] **Set `CLAUDE_API_KEY`** — `npx wrangler secret put CLAUDE_API_KEY`
 - [ ] **Deploy Firestore rules** — `firebase deploy --only firestore:rules` (ada perubahan: `feedback` collection)
 - [ ] Setup WA webhook → arahkan ke `/incoming-chat` (setelah WA Cloud API aktif)
-- [ ] Update `GREETING_MSG` di Worker → format menu bernomor (1–13)
-- [ ] Tambah handler angka 1–11 → set session.mode + session.division + load knowledge
+- [ ] Fungsi `buildMenu(env)` di Worker — fetch divisi aktif (Firestore) + kategori Olsera (cache), generate nomor urut, simpan `menuMap` di session
+- [ ] Handler angka masuk → lookup `session.menuMap[angka]` → routing ke custom_order / ready_stock / cs
+- [ ] Handler flow `custom_order` — load knowledge dari Firestore, percakapan via Claude Haiku, POST /create-order
 - [ ] Isi product knowledge + price list semua 11 divisi di Firestore
 
 ### Phase 2 — Integrasi Olsera Ready Stock
