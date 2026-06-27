@@ -89,6 +89,54 @@
   const orderId = params.get('id')
   if (!orderId) { location.href = 'orders.html' }
 
+  const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
+  const NOTIFY_KEY = ''
+
+  // Notifikasi WA otomatis ke customer via Worker
+  function notifyCustomer(type, extra = {}) {
+    if (!order?.customerContact || !WORKER_URL) return
+    fetch(`${WORKER_URL}/notify-customer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
+      body: JSON.stringify({
+        orderId,
+        customerContact: order.customerContact,
+        customerName: order.customerName,
+        orderNumber: order.orderNumber,
+        chatToken: order.chatToken || null,
+        type,
+        ...extra,
+      }),
+    }).catch(() => {})
+  }
+
+  // Tombol manual — bypass cooldown, force-send notif
+  window.notifyCustomerManual = async function() {
+    const btn = document.getElementById('notifCustomerBtn')
+    if (!btn || !WORKER_URL) return
+    const orig = btn.innerHTML
+    btn.disabled = true; btn.innerHTML = '⏳'
+    try {
+      await fetch(`${WORKER_URL}/notify-customer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
+        body: JSON.stringify({
+          orderId,
+          customerContact: order.customerContact,
+          customerName: order.customerName,
+          orderNumber: order.orderNumber,
+          chatToken: order.chatToken || null,
+          type: 'manual',
+        }),
+      })
+      btn.innerHTML = '✅ Terkirim'
+      setTimeout(() => { btn.disabled = false; btn.innerHTML = orig }, 3000)
+    } catch {
+      btn.disabled = false; btn.innerHTML = orig
+      alert('Gagal mengirim notifikasi. Coba lagi.')
+    }
+  }
+
   function fmtPrice(n) {
     const num = Number(String(n||'').replace(/\./g,''))
     return num > 0 ? num.toLocaleString('id-ID') : ''
@@ -646,6 +694,10 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             ${order.chatToken ? `
+            ${(profile.role === 'owner' || profile.role === 'cs') && order.customerContact ? `
+            <button onclick="notifyCustomerManual()" id="notifCustomerBtn" class="btn btn-ghost btn-sm" title="Kirim notifikasi WA ke customer sekarang">
+              🔔 Notif
+            </button>` : ''}
             <button onclick="copyChatLink('${order.chatToken}')" class="btn btn-ghost btn-sm" id="copyLinkBtn">
               🔗 Copy Link
             </button>
@@ -1064,6 +1116,8 @@
         }).catch(() => {})
         updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
       }
+      // Auto-notif customer via WA
+      notifyCustomer('progress', { percentage: pct })
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -1409,45 +1463,25 @@
         updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
       }
       await loadOrder(getProfile())
-      showWAToast(status)
+      // Auto-notif customer via WA untuk status penting
+      if (['in-progress','quality-check','done','delivered'].includes(status)) {
+        notifyCustomer('status_change', { statusLabel: STATUS_LABEL[status] })
+        showNotifToast(`📱 Notifikasi WA terkirim ke ${order.customerName}`, STATUS_LABEL[status])
+      }
     } catch(e) { alert('Gagal mengubah status: ' + e.message) }
   }
 
-  function showWAToast(status) {
-    const chatUrl = order.chatToken
-      ? `\n\n📱 Pantau progress & diskusi desain:\n${location.origin}${location.pathname.replace('order.html','chat.html')}?t=${order.chatToken}`
-      : ''
-    const msgs = {
-      'in-progress': `Pesanan *${order.orderNumber}* sudah mulai dikerjakan ✂️\nEstimasi selesai: ${fmtDate(order.dueDate)}\n\nTerima kasih atas kepercayaan Anda kepada *Harmoni* 🙏${chatUrl}`,
-      'quality-check': `Pesanan *${order.orderNumber}* selesai diproduksi dan sedang quality check 🔍\nKami pastikan sempurna sebelum diserahkan.${chatUrl}`,
-      'done': `Pesanan *${order.orderNumber}* sudah selesai! ✅\n\n${(order.totalPrice||0)-(order.depositPaid||0)>0?`Sisa pembayaran: *${fmtCurrency((order.totalPrice||0)-(order.depositPaid||0))}*\n\n`:''}Silakan hubungi kami untuk pengambilan. Terima kasih 🙏${chatUrl}`,
-      'delivered': `Pesanan *${order.orderNumber}* sudah dikirim/diserahkan 📦\n\nTerima kasih telah berbelanja di *Harmoni*! Semoga puas dengan hasilnya 😊`,
-      'cancelled': `Pesanan *${order.orderNumber}* telah dibatalkan.\nMohon maaf atas ketidaknyamanannya. Hubungi kami untuk info lebih lanjut 🙏`,
-    }
-    const msg = msgs[status]
-    if (!msg || !order.customerContact) return
-
-    // Remove existing toast
+  function showNotifToast(title, subtitle = '') {
     document.getElementById('waToast')?.remove()
-
-    const contact = order.customerContact.replace(/\D/g,'').replace(/^0/,'62')
-    const fullMsg = `Halo *${order.customerName}*,\n\n` + msg + `\n\n_Harmoni · Makassar_`
-    const waUrl = contact.startsWith('62')
-      ? `https://wa.me/${contact}?text=${encodeURIComponent(fullMsg)}`
-      : `https://wa.me/?text=${encodeURIComponent(fullMsg)}`
-
     const toast = document.createElement('div')
     toast.id = 'waToast'
-    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--white);border:1.5px solid #bbf7d0;border-radius:14px;padding:14px 18px;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:999;max-width:300px;animation:slideUp .3s ease'
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--white);border:1.5px solid #bbf7d0;border-radius:14px;padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:999;animation:slideUp .3s ease;max-width:280px'
     toast.innerHTML = `
-      <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px">💬 Kirim notifikasi ke customer?</div>
-      <div style="font-size:11px;color:rgba(3,69,67,.6);margin-bottom:10px;line-height:1.5">${STATUS_LABEL[status]}</div>
-      <div style="display:flex;gap:8px">
-        <button onclick="document.getElementById('waToast').remove()" style="flex:1;padding:7px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);background:none;cursor:pointer;font-size:12px">Nanti</button>
-        <a href="${waUrl}" target="_blank" onclick="setTimeout(()=>document.getElementById('waToast')?.remove(),1000)" style="flex:1;padding:7px;border-radius:8px;background:#25D366;color:white;font-size:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:4px">📱 Kirim WA</a>
-      </div>`
+      <div style="font-size:13px;font-weight:700;color:#059669">${title}</div>
+      ${subtitle ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${subtitle}</div>` : ''}
+    `
     document.body.appendChild(toast)
-    setTimeout(() => toast?.remove(), 12000)
+    setTimeout(() => toast?.remove(), 4000)
   }
 
   // UKURAN
@@ -1655,6 +1689,9 @@
       senderBranch: profile.branch || '',
       createdAt: Timestamp.now(),
     })
+
+    // Auto-notif customer via WA (Worker cek cooldown 4 jam sendiri)
+    notifyCustomer('chat')
 
     if (flagged) {
       addDoc(collection(db,'chat_flags'), {

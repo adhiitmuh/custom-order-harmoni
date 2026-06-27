@@ -126,6 +126,11 @@ export default {
       return handleNotifyCS(request, env)
     }
 
+    // /notify-customer: notif WA otomatis ke customer (status, progress, chat, manual)
+    if (request.method === 'POST' && url.pathname === '/notify-customer') {
+      return handleNotifyCustomer(request, env)
+    }
+
     // /incoming-chat: proses di background (ctx.waitUntil) — balas 200 segera
     // agar Fonnte/n8n tidak timeout menunggu Claude API
     if (request.method === 'POST' && url.pathname === '/incoming-chat') {
@@ -373,6 +378,76 @@ async function handleNotifyCS(request, env) {
   }
 
   return json({ success: true }, 200)
+}
+
+async function handleNotifyCustomer(request, env) {
+  const notifyKey = request.headers.get('X-Notify-Key')
+  if (env.NOTIFY_KEY && notifyKey !== env.NOTIFY_KEY) {
+    return json({ error: 'Unauthorized' }, 401)
+  }
+  if (!env.FONNTE_API_KEY) {
+    return json({ error: 'Fonnte belum dikonfigurasi' }, 503)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body) return json({ error: 'Invalid JSON' }, 400)
+
+  const { orderId, customerContact, customerName, orderNumber, chatToken, type, statusLabel, percentage } = body
+  if (!customerContact || !orderId || !type) {
+    return json({ error: 'customerContact, orderId, dan type wajib diisi' }, 400)
+  }
+
+  const COOLDOWN_MS = 4 * 60 * 60 * 1000 // 4 jam cooldown untuk tipe 'chat'
+  const projectId = env.FIREBASE_PROJECT_ID
+  const chatUrl = chatToken
+    ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${chatToken}`
+    : null
+
+  // Cek cooldown untuk tipe 'chat' saja
+  if (type === 'chat') {
+    const token = await getFirebaseToken(env)
+    const orderDoc = await firestoreGet(projectId, token, `orders/${orderId}`)
+    const lastNotifAt = orderDoc?.fields?.lastCustomerNotifAt?.timestampValue
+    if (lastNotifAt) {
+      const elapsed = Date.now() - new Date(lastNotifAt).getTime()
+      if (elapsed < COOLDOWN_MS) {
+        return json({ success: true, skipped: true, reason: 'cooldown', nextNotifIn: Math.ceil((COOLDOWN_MS - elapsed) / 60000) + ' menit' }, 200)
+      }
+    }
+  }
+
+  // Build pesan WA berdasarkan tipe
+  const name = customerName || 'Pelanggan'
+  const no   = orderNumber || ''
+  const link = chatUrl ? `\n\n💬 Buka chat: ${chatUrl}` : ''
+
+  const messages = {
+    status_change: `Halo *${name}* 👋\n\nUpdate pesanan *${no}*:\n\nStatus sekarang: *${statusLabel || ''}*${link}\n\n_Harmoni · Makassar_`,
+    progress:      `Halo *${name}* 👋\n\n📊 Progress pesanan *${no}* sudah *${percentage || 0}%*!\n\nLihat foto update terbaru di chat:${link || ''}\n\n_Harmoni · Makassar_`,
+    chat:          `Halo *${name}* 👋\n\nTim Harmoni sudah membalas pesan Anda di pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n_Harmoni · Makassar_`,
+    manual:        `Halo *${name}* 👋\n\nAda pesan penting dari tim Harmoni untuk pesanan *${no}*.\n\nBuka chat di sini:${link || ''}\n\n_Harmoni · Makassar_`,
+  }
+
+  const msg = messages[type]
+  if (!msg) return json({ error: `type tidak valid: ${type}` }, 400)
+
+  const contact = customerContact.replace(/\D/g,'').replace(/^0/,'62')
+  await fonnteSend(env.FONNTE_API_KEY, contact, msg).catch(() => {})
+
+  // Update lastCustomerNotifAt di Firestore (untuk cooldown tracking)
+  getFirebaseToken(env).then(token => {
+    const now = new Date().toISOString()
+    return fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/orders/${orderId}?updateMask.fieldPaths=lastCustomerNotifAt`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { lastCustomerNotifAt: { timestampValue: now } } }),
+      }
+    )
+  }).catch(() => {})
+
+  return json({ success: true, skipped: false }, 200)
 }
 
 async function handleGetKnowledge(url, env, token) {
