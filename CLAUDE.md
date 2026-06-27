@@ -28,24 +28,29 @@ Web app manajemen custom order untuk **PT Citra Harmonis** (Makassar, Indonesia)
 custom-order-harmoni/
 ├── index.html          — Login (Firebase Auth)
 ├── dashboard.html      — Stats + omzet + order terbaru
-├── orders.html         — List order + filter + search
+├── orders.html         — List order + filter + search + tab divisi
 ├── new-order.html      — Form order baru + upload file ke Storage
-├── order.html          — Detail order + progress update + approval harga
+├── order.html          — Detail order + progress update + approval harga + auto-notif WA
 ├── laporan.html        — Laporan keuangan per periode
 ├── crm.html            — CRM Pelanggan (derived dari orders)
 ├── kalender.html       — Kalender produksi (by dueDate)
-├── knowledge.html      — Product knowledge per divisi + price list
+├── knowledge.html      — Product knowledge per divisi + price list (inline edit)
 ├── users.html          — Kelola pengguna (owner only)
+├── settings.html       — Pengaturan rekening bank, QRIS, target omzet
 ├── chat.html           — Chat publik pelanggan (token-based, standalone, no auth)
+│                         Termasuk: tab Info Produk, tab Feedback ⭐, emoji picker, edit pesan
 ├── inbox.html          — Chat Inbox staff: kelola thread WA bot, balas customer, buat order dari chat
+├── audit-chat.html     — Audit chat WA Bot
+├── divisi.html         — Kelola divisi
+├── lokasi.html         — Kelola lokasi (pusat/cabang/titik)
 ├── css/style.css
 ├── js/
 │   ├── config.js       — Firebase init (auth, db, storage) — di-import semua halaman
-│   ├── auth.js         — requireAuth() + renderSidebar() + role helpers
+│   ├── auth.js         — requireAuth() + renderSidebar() + role helpers + inboxBadge
 │   ├── utils.js        — Konstanta + helper functions
 │   └── mentions.js     — @mention autocomplete, parseMentions, writeMentionNotifs, loadStaff
 ├── api/
-│   ├── create-order.js — Cloudflare Worker: API untuk WA Bot
+│   ├── create-order.js — Cloudflare Worker: API untuk WA Bot + /notify-customer
 │   └── wrangler.toml   — Config deploy Cloudflare
 ├── firestore.rules     — Firestore Security Rules (RLS)
 └── SETUP.md            — Panduan setup Firebase + deploy
@@ -67,35 +72,37 @@ Config ada di `js/config.js` — hardcoded, ini aman untuk repo publik (anon key
 ### Collection `orders`
 
 ```
-orderNumber         string    — "HRM-JRS-2025-0001" (auto dari counter)
-division            string    — lihat DIVISIONS di utils.js
-customerName        string
-customerContact     string    — WA / email (hanya owner & CS yang lihat)
-orderDate           string    — YYYY-MM-DD
-dueDate             string    — target selesai YYYY-MM-DD
-status              string    — lihat STATUS_LABEL di utils.js
-progressPercentage  number    — 0-100
-totalPrice          number
-depositPaid         number
-notes               string
-designFiles         string[]  — array URL Firebase Storage
-chatToken           string    — token unik untuk customer chat (24 chars)
-sumberOrder         string    — 'staff' | 'wa_bot' | 'walk_in' | 'shopee' | 'instagram'
-agentSessionId      string    — ID sesi WA bot (kosong kalau dari staff)
-lokasiId            string    — FK ke collection `lokasi`
-lokasiNama          string    — denormalized nama lokasi
-lokasiTipe          string    — 'pusat' | 'cabang' | 'titik'
-produksiUnit        string    — unit produksi yang handle (dari PRODUKSI_UNIT di utils.js)
-priceApprovalStatus string    — 'approved' | 'pending'
-priceApprovalTier   string    — null | 'promo' | 'admin'
-priceApprovalReason string
-priceApprovalBy     string    — uid approver
-priceApprovalAt     timestamp
-unreadCustomerChat  number    — counter pesan customer belum dibaca staff (reset saat staff balas)
-unreadInternalChat  number    — counter pesan internal belum dibaca (reset saat staff buka order)
-createdBy           string    — uid user / 'wa_bot'
-createdAt           timestamp
-updatedAt           timestamp
+orderNumber             string    — "HRM-JRS-2025-0001" (auto dari counter)
+division                string    — lihat DIVISIONS di utils.js
+customerName            string
+customerContact         string    — WA / email (hanya owner & CS yang lihat)
+orderDate               string    — YYYY-MM-DD
+dueDate                 string    — target selesai YYYY-MM-DD
+status                  string    — lihat STATUS_LABEL di utils.js
+progressPercentage      number    — 0-100
+totalPrice              number
+depositPaid             number
+notes                   string
+designFiles             string[]  — array URL Firebase Storage
+chatToken               string    — token unik untuk customer chat (24 chars)
+sumberOrder             string    — 'staff' | 'wa_bot' | 'walk_in' | 'shopee' | 'instagram'
+agentSessionId          string    — ID sesi WA bot (kosong kalau dari staff)
+lokasiId                string    — FK ke collection `lokasi`
+lokasiNama              string    — denormalized nama lokasi
+lokasiTipe              string    — 'pusat' | 'cabang' | 'titik'
+produksiUnit            string    — unit produksi yang handle (dari PRODUKSI_UNIT di utils.js)
+priceApprovalStatus     string    — 'approved' | 'pending'
+priceApprovalTier       string    — null | 'promo' | 'admin'
+priceApprovalReason     string
+priceApprovalBy         string    — uid approver
+priceApprovalAt         timestamp
+unreadCustomerChat      number    — counter pesan customer belum dibaca staff (reset saat staff buka tab chat)
+internalChatLastAt      timestamp — diupdate setiap ada pesan internal baru (untuk per-user unread detection)
+lastReadInternalChat    map       — { [uid]: timestamp } — kapan tiap staff terakhir buka internal chat
+lastCustomerNotifAt     timestamp — kapan terakhir notif WA dikirim ke customer (cooldown 4 jam untuk type 'chat')
+createdBy               string    — uid user / 'wa_bot'
+createdAt               timestamp
+updatedAt               timestamp
 ```
 
 ### Subcollection `orders/{orderId}/internal_chat/{msgId}`
@@ -105,6 +112,15 @@ content     string
 senderId    string
 senderName  string
 senderRole  string
+createdAt   timestamp
+```
+
+### Subcollection `orders/{orderId}/progress_updates/{id}`
+```
+percentage  number
+notes       string
+photos      string[]  — URL Firebase Storage
+createdBy   string
 createdAt   timestamp
 ```
 
@@ -196,11 +212,34 @@ updatedAt     timestamp
 ```
 Jika item punya `variants`, harga pada level item diabaikan — harga diambil dari varian yang dipilih.
 
+**PENTING:** `flushInlineSave` di knowledge.html memfilter `.filter(item => item.name)` — item tanpa Nama dibuang sebelum disimpan. Selalu isi kolom Nama sebelum simpan harga.
+
 ### Collection `public_order_info/{chatToken}`
 Dibuat saat order baru, key = chatToken. Untuk akses customer chat publik.
 
 ### Collection `chat_messages/{chatToken}/messages/{msgId}`
 Chat realtime. Public read + create (siapapun dengan token bisa kirim pesan).
+```
+text        string
+type        string    — 'customer' | 'staff' | 'system' | 'progress'
+senderId    string    — uid staff / 'customer'
+senderName  string
+edited      boolean   — true jika pesan diedit customer
+editedAt    timestamp
+createdAt   timestamp
+```
+
+### Collection `feedback/{chatToken}`
+Feedback customer per order. Key = chatToken (satu feedback per order, tidak bisa diubah setelah submit).
+```
+token       string
+orderId     string
+orderNumber string
+rating      number    — 1-5
+type        string    — 'pujian' | 'saran' | 'kritik'
+message     string
+createdAt   timestamp
+```
 
 ### Collection `lokasi/{id}`
 ```
@@ -216,6 +255,7 @@ updatedAt       timestamp
 
 ### Collection `settings/{id}`
 - `monthly_target`: `{ amount: number }` — target omzet bulanan
+- `payment_info`: `{ banks: [{bankName, accountNumber, accountHolder, isActive, division}], qris: [{imageUrl, division, isActive}], cashActive: boolean }` — rekening bank & QRIS per divisi
 
 ---
 
@@ -289,14 +329,28 @@ cancelled         → Dibatalkan
 - ✅ Product knowledge per divisi
 - ✅ Field `sumberOrder` (staff/wa_bot/walk_in/shopee/instagram)
 - ✅ Firestore Security Rules (RLS)
-- ✅ Cloudflare Worker API untuk WA Bot (`api/create-order.js`)
+- ✅ Cloudflare Worker API untuk WA Bot (`api/create-order.js`) — sudah deployed
 - ✅ Chat Inbox staff (`inbox.html`) — kelola thread WA bot, balas via Worker, buat order dari chat
 - ✅ Internal chat per order (tim internal, tidak terlihat customer)
-- ✅ Unread badge notifikasi — customer chat & internal chat di card order dan dashboard
+- ✅ Per-user unread tracking internal chat — badge `🔒 N` per staff, tidak saling mempengaruhi (via `internalChatLastAt` + `lastReadInternalChat` map)
+- ✅ Badge `💬 N` customer chat di card order — increment via Worker saat customer kirim pesan teks
+- ✅ Badge 🔔 sidebar — hitung `chat_threads` + `consultations` unread
 - ✅ @mention staff di chat internal & inbox (autocomplete, highlight, notifikasi)
 - ✅ Cross-lokasi inbox — staff di-@mention dapat akses thread cabang lain (guest mode, tidak bisa buat order)
 - ✅ Inline edit Harga/Pcs per item di tabel Rincian Item (auto-update subtotal & totalPrice)
-- ✅ Sistem Varian di price list — tiap item bisa punya varian bahan/tipe (cth: Celana Jersey → Dryfit/Hyget/Paragon) masing-masing dengan harga berbeda. Edit via tombol ✏ per baris (modal per-item) atau "+ tambah varian" inline di tabel. Di `new-order.html` product picker tampil sebagai sub-pill per varian.
+- ✅ Sistem Varian di price list — tiap item bisa punya varian bahan/tipe masing-masing dengan harga berbeda
+- ✅ **Tab filter divisi di orders.html** — pill button klik langsung (Semua / per divisi), sinkron dengan dropdown
+- ✅ **Tab Feedback ⭐ di chat.html** — rating bintang 1–5, tipe (Pujian/Saran/Kritik), pesan teks, satu submit per order, data ke `feedback/{token}`
+- ✅ **Emoji picker di chat.html** — tombol 😊, 80+ emoji, insert di posisi cursor
+- ✅ **Edit pesan customer di chat.html** — tombol ✏ Edit, edit in-place, label "diedit", onSnapshot pause saat edit aktif
+- ✅ **Auto-notif WA ke customer** — via `/notify-customer` Worker endpoint (sementara pakai Fonnte, target migrasi ke WA Cloud API Meta)
+  - Status berubah → langsung notif (in-progress, quality-check, done, delivered)
+  - Progress update → langsung notif
+  - Staff reply chat design → notif dengan cooldown 4 jam (cek `lastCustomerNotifAt`)
+  - Tombol 🔔 manual force-send (owner/cs)
+  - Footer: `[Nama Lokasi] by Harmoni Indonesia` atau `Harmoni Indonesia · Makassar`
+- ✅ **Invoice selalu tampilkan rekening bank** — semua bank aktif tampil di invoice meski metode bayar belum dipilih, difilter per divisi (bank universal + bank khusus divisi order)
+- ✅ Progress update tampil di chat customer (`type: 'progress'` di `chat_messages`)
 
 ---
 
@@ -304,6 +358,7 @@ cancelled         → Dibatalkan
 
 File: `api/create-order.js`
 Deploy: `cd api && npx wrangler deploy`
+Live: `https://harmoni-order-api.adhiitmuh.workers.dev`
 
 ### Endpoints
 
@@ -338,27 +393,83 @@ Response:
 
 **PATCH /update-status** `{ "orderId": "uuid", "status": "in-progress" }`
 
-### Env vars yang dibutuhkan di Cloudflare (wrangler secret put):
+**POST /notify-customer** — Kirim notif WA ke customer
+```json
+Header: X-Notify-Key: {NOTIFY_KEY}
+{
+  "orderId": "uuid",
+  "customerContact": "628xxx",
+  "customerName": "Ahmad",
+  "orderNumber": "HRM-JRS-2025-0042",
+  "chatToken": "abc123",
+  "type": "status_change" | "progress" | "chat" | "manual",
+  "statusLabel": "Sedang Dikerjakan",   // untuk type status_change
+  "percentage": 60,                      // untuk type progress
+  "lokasiNama": "Titik Harmoni Manggala" // opsional, untuk footer
+}
 ```
-FIREBASE_PROJECT_ID       = harmoni-custom-order
-FIREBASE_SERVICE_ACCOUNT_KEY = {JSON service account dari Firebase Console}
-FONNTE_API_KEY            = {API key dari fonnte.com}
-OWNER_WA_NUMBER           = 628xxx (nomor WA owner, format 62xxx)
-API_SECRET_KEY            = {random secret, sama dengan yang di n8n}
+- Cooldown 4 jam untuk `type: 'chat'` — dicek via `lastCustomerNotifAt` di Firestore
+- Footer: `_[lokasiNama] by Harmoni Indonesia_` atau `_Harmoni Indonesia · Makassar_`
+- Sementara pakai Fonnte API — **akan dimigrasi ke WA Cloud API (Meta)**
+
+**POST /notify-cs** — Notif CS saat ada pesan masuk (dari chat publik)
+Increment `unreadCustomerChat` di order dokumen.
+
+**GET /knowledge?division=jersey** — Data product knowledge untuk WA Bot
 ```
+Header: X-API-Key: {API_SECRET_KEY}
+Response: { "success": true, "division": "jersey", "knowledge": "...(markdown)..." }
+```
+
+---
+
+## WhatsApp Cloud API (Meta) — Rencana Migrasi dari Fonnte
+
+**Keputusan:** Migrasi dari Fonnte ke **WA Cloud API resmi (Meta)** untuk WA Bot dan notif customer.
+
+**Alasan:**
+- Tidak bergantung third-party (Fonnte) — lebih stabil
+- Pricing lebih predictable
+- Bisa kirim template message (notif ke customer tanpa harus customer chat dulu)
+- Fitur lebih lengkap (read receipts, media, interactive buttons)
+
+### Pricing WA Cloud API (Indonesia, per conversation = 24 jam window)
+
+| Kategori | Kapan | Harga/conv |
+|---|---|---|
+| **Utility** | Notif order: status, progress, invoice | ~$0.021 |
+| **Service** | Customer balas dalam 24 jam | Gratis s/d 1.000/bln |
+| **Marketing** | Promo, broadcast | ~$0.052 |
+
+**Estimasi biaya notif customer:**
+- 30 order/bulan × 3 notif/order = 90 conversation → ~$1.89/bln
+- Hemat vs Fonnte (Fonnte per pesan, WA Cloud per conversation 24 jam)
+
+### Setup WA Cloud API
+
+1. Buat **Meta Business Account** di business.facebook.com
+2. Buat **WhatsApp Business App** di developers.facebook.com
+3. Tambah nomor WA dedicated (bukan nomor personal)
+4. Generate `WA_CLOUD_API_TOKEN` (permanent token via System User)
+5. Catat `WA_PHONE_NUMBER_ID` (ID nomor WA Business di Meta)
+6. Update Worker — ganti `fonnteSend()` dengan `waSend()` ke `graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages`
+7. Daftarkan **webhook** Meta → arahkan ke `/incoming-chat` di Worker
+
+### Template Message (untuk notif ke customer — di luar 24 jam window)
+Perlu daftarkan template di Meta Business Manager dulu (approval ~24 jam).
 
 ---
 
 ## Arsitektur Unified WA Bot (Custom Order + Ready Stock)
 
-Bot berjalan langsung di Cloudflare Worker (`/incoming-chat`) — tidak pakai n8n.
-Fonnte webhook → Worker → proses background via `ctx.waitUntil()` → balas via Fonnte API.
+Bot berjalan langsung di Cloudflare Worker (`/incoming-chat`).
+WA Cloud API webhook (atau Fonnte sementara) → Worker → proses background via `ctx.waitUntil()` → balas via WA Cloud API.
 
 ```
 Customer WA
     │
     ▼
-Fonnte Webhook → POST /incoming-chat (Cloudflare Worker)
+WA Cloud API Webhook → POST /incoming-chat (Cloudflare Worker)
     │
     ├─ Load session chat_sessions/{waNumber}
     │
@@ -372,7 +483,7 @@ Fonnte Webhook → POST /incoming-chat (Cloudflare Worker)
     │       ├─ Load price_list/{division} ← Firestore
     │       ├─ Claude Haiku (cached knowledge) — kumpulkan info order
     │       ├─ Customer konfirmasi → POST /create-order → Firestore
-    │       └─ Notif owner via Fonnte
+    │       └─ Notif owner via WA Cloud API
     │
     ├─ [Pilih 12: Ready Stock]
     │       ├─ Fetch kategori dari Olsera API (cache 1 jam di Firestore settings/olsera_cache)
@@ -411,58 +522,37 @@ Session reset setelah idle 12 jam.
 
 ### Biaya per Mode
 
-| Mode | Knowledge Source | Claude | Fonnte |
+| Mode | Knowledge Source | Claude | WA Cloud API |
 |---|---|---|---|
-| Greeting / FAQ | Hardcoded | 0 token | 1 pesan |
-| Custom Order | Firestore product_knowledge + price_list | Haiku (cached) | 1/balas |
-| Ready Stock | Olsera API real-time | Haiku (data inject) | 1/balas |
-| Eskalasi CS | — | 0 token | 2 pesan |
-
-### Endpoint `GET /knowledge`
-
-```
-GET /knowledge?division=jersey
-Header: X-API-Key: {API_SECRET_KEY}
-Response: { "success": true, "division": "jersey", "knowledge": "...(markdown)..." }
-```
+| Greeting / FAQ | Hardcoded | 0 token | 1 conv/24 jam |
+| Custom Order | Firestore product_knowledge + price_list | Haiku (cached) | 1 conv/24 jam |
+| Ready Stock | Olsera API real-time | Haiku (data inject) | 1 conv/24 jam |
+| Eskalasi CS | — | 0 token | 1 conv/24 jam |
 
 ---
 
-## Strategi Hemat Token (untuk n8n + Claude API)
+## Strategi Hemat Token (Claude API)
 
 ### 1. Prompt Caching — hemat 90% untuk konten statis
 
 ```javascript
-// System prompt dengan cache_control
 {
   system: [
-    {
-      type: "text",
-      text: BASE_PROMPT,        // instruksi CS agent
-      cache_control: { type: "ephemeral" }
-    },
-    {
-      type: "text",
-      text: knowledge_divisi,   // dari GET /knowledge
-      cache_control: { type: "ephemeral" }
-    }
+    { type: "text", text: BASE_PROMPT, cache_control: { type: "ephemeral" } },
+    { type: "text", text: knowledge_divisi, cache_control: { type: "ephemeral" } }
   ],
-  messages: conversation_history  // tidak di-cache (dinamis)
+  messages: conversation_history
 }
 ```
 
-Cache TTL 5 menit. Selama percakapan aktif, input statis tidak dihitung ulang.
-Cache read = $0.30/1M token (vs $3.00 normal) → **hemat 90%**.
+Cache TTL 5 menit. Cache read = $0.30/1M token (vs $3.00 normal) → hemat 90%.
 
-### 2. Haiku untuk Routing — hemat 73% untuk pesan simpel
+### 2. Haiku untuk Routing — hemat 73%
 
 ```
-Pesan masuk
-    ↓
-Haiku ($0.80/1M): "Ini order baru, cek status, atau FAQ?"
-    ↓
-FAQ / cek status → Haiku selesai (tanpa Sonnet)
-Order baru       → escalate ke Sonnet ($3.00/1M)
+Pesan masuk → Haiku: "FAQ / cek status / order baru?"
+FAQ / cek status → Haiku selesai
+Order baru       → escalate ke Sonnet
 ```
 
 ### 3. FAQ Hardcoded — 0 token
@@ -472,48 +562,46 @@ const FAQ = {
   "jam buka":        "Kami buka Senin–Sabtu 08.00–17.00 WITA",
   "lokasi":          "Jl. [alamat] Makassar",
   "lama pengerjaan": "Tergantung divisi, estimasi 3–7 hari kerja",
-  "ready stock":     "Ready stock dihandle di Olsera. Untuk custom order, silakan lanjutkan di sini.",
 }
 ```
 
 ### 4. Potong History — hemat 35%
 
 ```javascript
-const MAX_HISTORY = 8  // hanya 8 pesan terakhir dikirim ke Claude
+const MAX_HISTORY = 8
 const messages = conversationHistory.slice(-MAX_HISTORY)
 ```
 
 ### 5. Knowledge Ringkas — target < 500 token per divisi
 
-```
-❌ Verbose: "Untuk pemesanan jersey, pelanggan perlu mengetahui bahwa minimum order..."
-✅ Ringkas:  "- Min order: 10 pcs\n- Harga: <50pcs=85rb, 50-100=75rb, >100=65rb"
-```
-
-**Estimasi budget:** ~Rp 200–250rb/bulan (10–30 order) dengan semua optimasi aktif.
+**Estimasi budget Claude:** ~Rp 200–250rb/bulan (10–30 order) dengan semua optimasi aktif.
 
 ---
 
 ## Fase Pengembangan Agent
 
-### Phase 1 — Bot Custom Order (Sudah/Segera)
+### Phase 1 — Bot Custom Order
+
 - [x] Cloudflare Worker API (`api/create-order.js`)
 - [x] Field `sumberOrder` di app
 - [x] Tag lokasi per order (lokasiId, lokasiNama, lokasiTipe, produksiUnit)
 - [x] Halaman `lokasi.html` — CRUD kelola lokasi (owner only)
 - [x] `laporan.html` — section per lokasi + komisi mitra
-- [x] `orders.html` — filter per lokasi + badge
+- [x] `orders.html` — filter per lokasi + badge + tab divisi
 - [x] Bot flow lengkap di Worker (`/incoming-chat` dengan `ctx.waitUntil`)
 - [x] `WORKER_URL` diisi di `inbox.html` dan `chat.html`
-- [ ] **Deploy Worker** — `cd api && npx wrangler deploy`
+- [x] **Worker sudah deployed** ke `https://harmoni-order-api.adhiitmuh.workers.dev`
+- [x] Endpoint `/notify-customer` — auto-notif WA ke customer (sementara Fonnte)
+- [ ] **Migrasi Fonnte → WA Cloud API (Meta)** — setup Meta Business, update `fonnteSend()` → `waSend()`
 - [ ] **Set `CLAUDE_API_KEY`** — `npx wrangler secret put CLAUDE_API_KEY`
-- [ ] **Deploy Firestore rules** — `firebase deploy --only firestore:rules`
-- [ ] Setup Fonnte webhook → arahkan ke `https://harmoni-order-api.adhiitmuh.workers.dev/incoming-chat`
+- [ ] **Deploy Firestore rules** — `firebase deploy --only firestore:rules` (ada perubahan: `feedback` collection)
+- [ ] Setup WA webhook → arahkan ke `/incoming-chat` (setelah WA Cloud API aktif)
 - [ ] Update `GREETING_MSG` di Worker → format menu bernomor (1–13)
 - [ ] Tambah handler angka 1–11 → set session.mode + session.division + load knowledge
-- [ ] Knowledge files semua 11 divisi diisi di Firestore `product_knowledge`
+- [ ] Isi product knowledge + price list semua 11 divisi di Firestore
 
 ### Phase 2 — Integrasi Olsera Ready Stock
+
 - [ ] Buat Cloudflare KV namespace `OLSERA_KV` — tambah ke `wrangler.toml`
 - [ ] Isi daftar cabang di Firestore `settings/olsera_branches`
 - [ ] Isi API key per cabang di KV — `npx wrangler kv:key put --binding=OLSERA_KV`
@@ -524,10 +612,17 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 - [ ] **Cek dulu di Olsera API**: apakah ada field `available_stock` / `reserved`?
 
 ### Phase 3 — Notifikasi & Owner Query
-- [ ] Status Update Agent → notif otomatis ke customer saat status order berubah
-- [ ] Daily WA summary ke owner (cron Worker jam 08.00 WITA / 00:00 UTC — sudah ada di wrangler.toml)
+
+- [x] Notif WA ke customer: status berubah, progress update, staff reply (cooldown 4 jam)
+- [ ] Daily WA summary ke owner (cron Worker jam 08.00 WITA / 00:00 UTC — cron sudah ada di wrangler.toml, handler belum)
 - [ ] Owner Query Agent — owner tanya via WA, agent jawab dari Firestore
-- [ ] Deadline reminder H-2 otomatis
+- [ ] Deadline reminder H-2 otomatis ke customer
+
+---
+
+## Bug / Pending Fix
+
+- [ ] **Badge 💬 tidak naik saat customer kirim foto** — `sendFile` di `chat.html` tidak memanggil Worker, hanya `sendMsg` yang increment `unreadCustomerChat`. Perlu tambah fetch ke `/notify-cs` di dalam `sendFile`.
 
 ---
 
@@ -537,20 +632,11 @@ Olsera = ready stock, app ini = custom order. Keduanya dihandle oleh 1 WA Bot ya
 
 ### API Key per Cabang — simpan di Cloudflare KV
 
-Jangan pakai env vars untuk banyak cabang. Pakai **Cloudflare KV**:
-
 `wrangler.toml` perlu tambah:
 ```toml
 [[kv_namespaces]]
 binding = "OLSERA_KV"
 id = "xxx"  # buat via: npx wrangler kv:namespace create OLSERA_KV
-```
-
-Setup key per cabang:
-```bash
-npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_PUSAT" "api_key_xxx"
-npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_CABANG_A" "api_key_yyy"
-# dst untuk tiap cabang
 ```
 
 Daftar cabang + mapping KV key disimpan di Firestore `settings/olsera_branches`:
@@ -561,8 +647,6 @@ Daftar cabang + mapping KV key disimpan di Firestore `settings/olsera_branches`:
 ]
 ```
 
-Mudah tambah/hapus cabang tanpa redeploy Worker — cukup update Firestore + tambah KV key.
-
 ### Data yang Diambil dari Olsera
 
 | Data | Metode | Cache |
@@ -571,14 +655,11 @@ Mudah tambah/hapus cabang tanpa redeploy Worker — cukup update Firestore + tam
 | Stok per produk per cabang | GET /products?q=xxx | Real-time (selalu fetch) |
 | Pending/reserved stock | Field available_stock (cek dulu di API response) | Real-time |
 
-**Stok selalu real-time** — otomatis update setiap transaksi kasir di Olsera POS.
-
 ### Aturan Reservasi Ready Stock
 
-- **Tidak ada soft reservation** — stok tidak di-hold tanpa pembayaran
-- **Full payment dulu** → CS konfirmasi → stok dikonfirmasi
-- Flow: bot kirim info rekening → customer transfer → kirim bukti → CS verifikasi manual → update Olsera
-- Payment gateway (Midtrans/Xendit) bisa ditambah belakangan kalau volume tinggi
+- Tidak ada soft reservation — stok tidak di-hold tanpa pembayaran
+- Full payment dulu → CS konfirmasi → stok dikonfirmasi
+- Payment gateway (Midtrans/Xendit) bisa ditambah belakangan
 
 ---
 
@@ -586,14 +667,18 @@ Mudah tambah/hapus cabang tanpa redeploy Worker — cukup update Firestore + tam
 
 ```bash
 # Secrets (wrangler secret put):
-npx wrangler secret put FIREBASE_PROJECT_ID        # harmoni-custom-order
+npx wrangler secret put FIREBASE_PROJECT_ID           # harmoni-custom-order
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_KEY  # JSON service account
-npx wrangler secret put FONNTE_API_KEY             # dari fonnte.com
-npx wrangler secret put OWNER_WA_NUMBER            # 628xxx
-npx wrangler secret put API_SECRET_KEY             # random secret
-npx wrangler secret put NOTIFY_KEY                 # key untuk /incoming-chat + /notify-cs
-npx wrangler secret put CLAUDE_API_KEY             # Anthropic API key
-npx wrangler secret put FIREBASE_AUTH_API_KEY      # opsional
+npx wrangler secret put FONNTE_API_KEY                # dari fonnte.com (sementara, akan diganti WA Cloud API)
+npx wrangler secret put OWNER_WA_NUMBER               # 628xxx
+npx wrangler secret put API_SECRET_KEY                # random secret
+npx wrangler secret put NOTIFY_KEY                    # key untuk /notify-customer + /notify-cs
+npx wrangler secret put CLAUDE_API_KEY                # Anthropic API key (belum di-set)
+npx wrangler secret put FIREBASE_AUTH_API_KEY         # opsional
+
+# Setelah migrasi ke WA Cloud API (Meta):
+npx wrangler secret put WA_CLOUD_API_TOKEN            # permanent token dari Meta System User
+npx wrangler secret put WA_PHONE_NUMBER_ID            # ID nomor WA Business di Meta
 
 # KV (setelah buat namespace):
 npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_PUSAT" "api_key"
@@ -608,6 +693,7 @@ npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_CABANG_A" "api_key"
 - Owner: Adhitya (Makassar)
 - Peak season jersey: Agustus (karnaval)
 - Volume custom order: bervariasi per divisi — 10–30 estimasi awal, bisa lebih
-- Target: 1 WA Bot menangani semua inquiry (custom order + ready stock) 24 jam via Fonnte
-- Fonnte cocok untuk volume sekarang — pertimbangkan WA Business API resmi kalau >200–300 percakapan/hari
+- **Target WA:** Migrasi dari Fonnte ke **WA Cloud API resmi (Meta)** — lebih stabil, template message, pricing per conversation bukan per pesan
+- Notif customer sudah jalan via Fonnte (sementara) — migrasi ke WA Cloud API sebelum bot aktif penuh
 - Reservasi ready stock: full payment dulu (transfer manual, CS verifikasi) — payment gateway bisa ditambah belakangan
+- Lokasi: Pusat + Cabang + Titik (mitra) — tiap lokasi pakai nama sendiri di footer notif WA: "[Nama Lokasi] by Harmoni Indonesia"
