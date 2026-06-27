@@ -93,7 +93,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-  import { getFirestore, collection, doc, getDoc, addDoc, setDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getFirestore, collection, doc, getDoc, addDoc, setDoc, updateDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
   const firebaseConfig = {
@@ -183,6 +183,20 @@
   let activeDivInfo = null
   let _orderInfo = null
   const _fb = { rating: 0, type: '' }
+  let _editingMsgId = null
+  let _lastSnap = null
+  const _msgCache = {}
+
+  const EMOJIS = [
+    '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰','😘','😋','😎','🤩','🥳','😏',
+    '😒','😞','😔','😟','😕','🙁','😣','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🤗','🤔',
+    '🤭','🤫','😶','😐','😬','🙄','😮','😲','🥱','😴','😵','🤢','🤮','🤧','😷','🥴',
+    '👋','🤚','✋','👌','✌','🤞','👆','👇','👍','👎','✊','👊','🤝','👏','🙌','🙏','💪',
+    '❤️','🧡','💛','💚','💙','💜','🖤','💔','💕','💞','💓','💗','💖','💘','💝',
+    '🎉','🎊','🎈','🎁','🏆','🥇','⭐','✨','🔥','💯','✅','❌','⚠️','💡','📌','📝',
+    '🌟','🌈','☀️','🌧','❄️','🌊','🌸','🌺','🌻','🌹','🍀','🌿',
+    '🍕','🍔','🍜','🍣','🍰','🎂','☕','🧋','🥤','⚽','🏀','🎮','🎯','🎨','🎵','🎶',
+  ]
 
   function renderApp(orderInfo, allKnowledge, allPrices) {
     _orderInfo = orderInfo
@@ -225,14 +239,18 @@
           </p>
           <p style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">Riwayat chat di atas tetap bisa dibaca.</p>
         </div>` : `
-        <div class="input-area">
-          <textarea class="msg-input" id="chatInput" placeholder="Tulis pesan soal desain…" rows="1"
-            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
-          <label class="attach-btn" title="Kirim foto desain">
-            📎 <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="sendFile(this)">
-          </label>
-          <button class="send-btn" onclick="sendMsg()" id="sendBtn">➤</button>
+        <div style="position:relative">
+          <div id="emojiPicker" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:white;border:1px solid rgba(3,69,67,.1);border-radius:16px 16px 0 0;padding:10px 8px;box-shadow:0 -6px 24px rgba(0,0,0,.1);z-index:20;max-height:220px;overflow-y:auto"></div>
+          <div class="input-area">
+            <button class="attach-btn" onclick="toggleEmojiPicker(event)" id="emojiBtn" title="Emoji">😊</button>
+            <textarea class="msg-input" id="chatInput" placeholder="Tulis pesan soal desain…" rows="1"
+              oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+            <label class="attach-btn" title="Kirim foto desain">
+              📎 <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="sendFile(this)">
+            </label>
+            <button class="send-btn" onclick="sendMsg()" id="sendBtn">➤</button>
+          </div>
         </div>`}
       </div>
 
@@ -257,6 +275,19 @@
       <div id="viewFeedback" class="feedback-wrap" style="display:none">
         <div id="feedbackContent"><div class="loading">Memuat…</div></div>
       </div>`
+
+    // Populate emoji picker
+    const emojiPicker = document.getElementById('emojiPicker')
+    if (emojiPicker) {
+      emojiPicker.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:1px">${EMOJIS.map(e=>`<button onclick="insertEmoji('${e}')" style="font-size:22px;background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;line-height:1">${e}</button>`).join('')}</div>`
+    }
+    document.addEventListener('click', e => {
+      const picker = document.getElementById('emojiPicker')
+      const btn = document.getElementById('emojiBtn')
+      if (picker && picker.style.display !== 'none' && !picker.contains(e.target) && e.target !== btn) {
+        picker.style.display = 'none'
+      }
+    })
 
     // Render info for initial division
     window.showDivInfo = function(div) {
@@ -479,13 +510,16 @@
 
   function initChatListener(orderInfo) {
     const q = query(collection(db,'chat_messages',token,'messages'), orderBy('createdAt'))
-    onSnapshot(q, snap => {
+
+    window._renderChatMessages = function(snap) {
+      if (_editingMsgId) return
       const el = document.getElementById('chatMessages')
       if (!el) return
+      snap.docs.forEach(d => { _msgCache[d.id] = d.data() })
       const msgEls = snap.docs.map(d => {
         const m = d.data()
 
-        // Progress update card — dikirim otomatis saat staff update progress
+        // Progress update card
         if (m.type === 'progress') {
           const safeNote = (m.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
           const photosHtml = m.photos?.length
@@ -513,21 +547,32 @@
           : m.senderRole === 'production'
             ? `🎨 Tim Desain — ${staffName}`
             : `💬 CS Harmoni — ${staffName}`
-        return `<div class="bubble-wrap ${isMe?'me':'other'}">
-          <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}</span>
-          <div class="bubble ${bubbleCls}">
+        const editedLabel = m.edited ? ` · <em style="opacity:.5;font-style:italic;font-size:10px">diedit</em>` : ''
+        const canEdit = isMe && !m.imageUrl && m.type !== 'file' && m.type !== 'image'
+        const editBtn = canEdit
+          ? `<div style="margin-top:5px"><button onclick="startEditMsg('${d.id}')" style="font-size:10px;opacity:.55;background:rgba(255,255,255,.2);border:none;border-radius:4px;padding:2px 8px;cursor:pointer;color:inherit;font-family:inherit">✏ Edit</button></div>`
+          : ''
+        return `<div class="bubble-wrap ${isMe?'me':'other'}" data-msgid="${d.id}">
+          <span class="bubble-name">${senderLabel} · ${timeAgo(m.createdAt)}${editedLabel}</span>
+          <div class="bubble ${bubbleCls}" id="bubble-${d.id}">
             ${m.type==='file'&&m.imageUrl
               ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
               : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}"></a>` : ''}
             ${m.text?m.text.replace(/\n/g,'<br>'):''}
+            ${editBtn}
           </div>
         </div>`
       })
-      // Keep welcome message if empty
       if (msgEls.length > 0) {
         el.innerHTML = msgEls.join('')
       }
       el.scrollTop = el.scrollHeight
+    }
+
+    onSnapshot(q, snap => {
+      _lastSnap = snap
+      snap.docs.forEach(d => { _msgCache[d.id] = d.data() })
+      window._renderChatMessages(snap)
     })
   }
 
@@ -578,6 +623,71 @@
         }).catch(() => {})
       }
     } finally { btn.disabled = false }
+  }
+
+  window.toggleEmojiPicker = function(e) {
+    e.stopPropagation()
+    const picker = document.getElementById('emojiPicker')
+    if (!picker) return
+    picker.style.display = picker.style.display === 'none' ? 'block' : 'none'
+  }
+
+  window.insertEmoji = function(emoji) {
+    const input = document.getElementById('chatInput')
+    if (!input) return
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    input.value = input.value.slice(0, start) + emoji + input.value.slice(end)
+    input.selectionStart = input.selectionEnd = start + emoji.length
+    input.style.height = 'auto'
+    input.style.height = input.scrollHeight + 'px'
+    input.focus()
+    const picker = document.getElementById('emojiPicker')
+    if (picker) picker.style.display = 'none'
+  }
+
+  window.startEditMsg = function(msgId) {
+    const m = _msgCache[msgId]
+    if (!m) return
+    _editingMsgId = msgId
+    const bubble = document.getElementById('bubble-' + msgId)
+    if (!bubble) return
+    const safeText = (m.text || '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    bubble.innerHTML = `
+      <textarea id="editTA" style="width:100%;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 10px;font:inherit;color:inherit;resize:none;outline:none;line-height:1.5;min-height:36px">${safeText}</textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button onclick="saveEditMsg('${msgId}')" style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:rgba(255,255,255,.3);color:inherit;cursor:pointer;font-family:inherit;font-weight:700">✓ Simpan</button>
+        <button onclick="cancelEditMsg()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:none;background:rgba(255,255,255,.1);color:inherit;cursor:pointer;font-family:inherit">✕ Batal</button>
+      </div>`
+    const ta = document.getElementById('editTA')
+    if (ta) {
+      ta.style.height = ta.scrollHeight + 'px'
+      ta.focus()
+      ta.selectionStart = ta.selectionEnd = ta.value.length
+    }
+  }
+
+  window.saveEditMsg = async function(msgId) {
+    const ta = document.getElementById('editTA')
+    const newText = ta?.value.trim()
+    if (!newText) return
+    if (hasContact(newText)) { alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan di sini.'); return }
+    ta.disabled = true
+    try {
+      await updateDoc(doc(db, 'chat_messages', token, 'messages', msgId), {
+        text: newText, edited: true, editedAt: Timestamp.now()
+      })
+      _editingMsgId = null
+      // updateDoc triggers onSnapshot which re-renders
+    } catch(_) {
+      ta.disabled = false
+      alert('Gagal menyimpan. Coba lagi.')
+    }
+  }
+
+  window.cancelEditMsg = function() {
+    _editingMsgId = null
+    if (_lastSnap && window._renderChatMessages) window._renderChatMessages(_lastSnap)
   }
 
   async function compressImage(file) {
