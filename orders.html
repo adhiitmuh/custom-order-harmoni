@@ -58,6 +58,9 @@
       </div>
     </div>
 
+    <!-- Division filter tabs -->
+    <div id="divTabs" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+
     <div id="orderList"><div class="loading">Memuat…</div></div>
   </main>
 </div>
@@ -70,6 +73,7 @@
 
   let allOrders = []
   let _activeDivsMeta = null
+  let activeDivTab = ''
   let lockedDivision = null
   let lockedDivisions = null
   let lockedBranch = null
@@ -105,6 +109,10 @@
       }
     }
 
+    if (profile.role !== 'production') {
+      document.getElementById('divTabs').style.display = 'flex'
+    }
+
     if ((profile.role === 'manager' || profile.role === 'cs') && profile.lokasiId) {
       lockedLokasiId = profile.lokasiId
       const badge = document.getElementById('branchLockBadge')
@@ -120,12 +128,17 @@
     if (profile.role === 'owner') document.getElementById('branchFilter').style.display = ''
 
     // Wire up filters immediately (allOrders starts empty, fills when fetch returns)
-    ;['searchInput','divFilter','branchFilter','lokasiFilter','statusFilter','payFilter'].forEach(id =>
+    ;['searchInput','branchFilter','lokasiFilter','statusFilter','payFilter'].forEach(id =>
       document.getElementById(id).addEventListener('input', render)
     )
+    document.getElementById('divFilter').addEventListener('input', () => {
+      activeDivTab = document.getElementById('divFilter').value
+      buildDivTabs()
+      render()
+    })
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
-      if (!lockedDivision && !lockedDivisions) document.getElementById('divFilter').value = ''
+      if (!lockedDivision && !lockedDivisions) { document.getElementById('divFilter').value = ''; activeDivTab = ''; buildDivTabs() }
       if (!lockedBranch) document.getElementById('branchFilter').value = ''
       document.getElementById('lokasiFilter').value = ''
       document.getElementById('statusFilter').value = ''
@@ -149,6 +162,7 @@
         (snap) => {
           clearTimeout(loadTimeout)
           allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          buildDivTabs()
           if (!_filtersBuilt && profile.role === 'owner') {
             _filtersBuilt = true
             const branches = [...new Set(allOrders.map(o => o.branch).filter(Boolean))].sort()
@@ -177,6 +191,28 @@
       )
     })
   })
+
+  function buildDivTabs() {
+    const container = document.getElementById('divTabs')
+    if (!container || container.style.display === 'none') return
+    const usedDivs = [...new Set(allOrders.map(o => o.division).filter(Boolean))].sort()
+    const chips = [{ key: '', label: 'Semua' }, ...usedDivs.map(d => {
+      const m = (_activeDivsMeta?.[d]) || DIVISION_META[d] || {}
+      return { key: d, label: `${m.icon||''} ${m.label||d}`.trim() }
+    })]
+    container.innerHTML = chips.map(c => `
+      <button onclick="setDivTab('${c.key}')"
+        style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${activeDivTab===c.key?'var(--green)':'rgba(3,69,67,.15)'};background:${activeDivTab===c.key?'var(--green)':'transparent'};color:${activeDivTab===c.key?'var(--beige)':'var(--green)'};font-family:inherit;transition:all .12s">
+        ${c.label}
+      </button>`).join('')
+  }
+
+  window.setDivTab = function(div) {
+    activeDivTab = div
+    document.getElementById('divFilter').value = div
+    buildDivTabs()
+    render()
+  }
 
   function render() {
     const search = document.getElementById('searchInput').value.toLowerCase()
