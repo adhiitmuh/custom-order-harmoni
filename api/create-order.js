@@ -420,7 +420,9 @@ async function handleNotifyCustomer(request, env) {
   const name   = customerName || 'Pelanggan'
   const no     = orderNumber || ''
   const link   = chatUrl ? `\n\n💬 Buka chat: ${chatUrl}` : ''
-  const footer = `_Harmoni${lokasiNama ? ` · ${lokasiNama}` : ' · Makassar'}_`
+  const footer = lokasiNama
+    ? `_${lokasiNama} by Harmoni Indonesia_`
+    : `_Harmoni Indonesia · Makassar_`
 
   const messages = {
     status_change: `Halo *${name}* 👋\n\nUpdate pesanan *${no}*:\n\nStatus sekarang: *${statusLabel || ''}*${link}\n\n${footer}`,
