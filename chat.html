@@ -727,6 +727,7 @@
         task.on('state_changed',null,rej,()=>res(task.snapshot))
       })
       const fileUrl = await getDownloadURL(uploadSnap.ref)
+      const info = _orderInfo || {}
       await addDoc(collection(db,'chat_messages',token,'messages'), {
         text:'', imageUrl: fileUrl, type: isImage ? 'image' : 'file',
         fileName: rawFile.name,
@@ -735,6 +736,21 @@
         senderRole: 'customer',
         createdAt: Timestamp.now(),
       })
+
+      if (WORKER_URL && NOTIFY_KEY) {
+        fetch(`${WORKER_URL}/notify-cs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
+          body: JSON.stringify({
+            orderNumber: info.orderNumber || (info.isConsultation ? '[Konsultasi]' : ''),
+            customerName: name,
+            division: info.division || '',
+            previewText: isImage ? '📷 Gambar' : `📎 ${rawFile.name}`,
+            isConsultation: !!info.isConsultation,
+            orderId: info.orderId || null,
+          }),
+        }).catch(() => {})
+      }
     } finally { btn.disabled=false; input.value='' }
   }
 </script>
