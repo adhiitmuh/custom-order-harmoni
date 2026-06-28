@@ -69,6 +69,19 @@
       <input type="text" id="fUnit" placeholder="Gaara Apparel">
       <p class="form-hint">Unit yang mengerjakan produksi untuk divisi ini</p>
     </div>
+    <div class="form-group">
+      <label>Pemilik Divisi</label>
+      <input type="text" id="fPemilik" placeholder="cth: Adhitya" list="pemilikList">
+      <datalist id="pemilikList">
+        <option value="Adhitya">
+        <option value="Achmadi">
+        <option value="Amalia">
+        <option value="Anisha">
+        <option value="Disfi">
+      </datalist>
+      <p class="form-hint">Nama anggota keluarga yang memiliki dan menjalankan divisi ini</p>
+    </div>
+
     <div class="form-group" id="keyWrap">
       <label>Key (ID unik, huruf kecil-tanda hubung) <span class="req">*</span></label>
       <input type="text" id="fKey" placeholder="jersey" pattern="[a-z0-9-]+" style="font-family:monospace">
@@ -151,7 +164,7 @@
         <div class="div-icon">${d.icon || '📦'}</div>
         <div class="div-info">
           <div class="div-label">${d.label} <span style="font-size:10px;font-weight:600;color:rgba(3,69,67,.3);margin-left:4px">${d.code || ''}</span>${d.aktif === false ? ' <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-weight:700">Non-aktif</span>' : ''}</div>
-          <div class="div-meta">${d.description || '—'} · ${d.produksiUnit || '—'}</div>
+          <div class="div-meta">${d.description || '—'} · ${d.produksiUnit || '—'}${d.pemilik ? ` · 👤 ${d.pemilik}` : ''}</div>
         </div>
         <div class="div-actions">
           <button class="order-btn" onclick="moveUp(${i})" ${i===0?'disabled':''}>▲</button>
@@ -208,6 +221,7 @@
       document.getElementById('fLabel').value = d.label || ''
       document.getElementById('fDesc').value = d.description || ''
       document.getElementById('fUnit').value = d.produksiUnit || ''
+      document.getElementById('fPemilik').value = d.pemilik || ''
       document.getElementById('fKey').value = key
     } else {
       document.getElementById('fIcon').value = ''
@@ -215,6 +229,7 @@
       document.getElementById('fLabel').value = ''
       document.getElementById('fDesc').value = ''
       document.getElementById('fUnit').value = ''
+      document.getElementById('fPemilik').value = ''
       document.getElementById('fKey').value = ''
     }
 
@@ -262,7 +277,8 @@
 
     try {
       const isNew = !editingKey
-      const data = { label, code, icon, description: desc, produksiUnit: unit, updatedAt: Timestamp.now() }
+      const pemilik = document.getElementById('fPemilik').value.trim()
+      const data = { label, code, icon, description: desc, produksiUnit: unit, pemilik, updatedAt: Timestamp.now() }
       if (isNew) {
         data.aktif = true
         data.orderIndex = allDivs.length

@@ -120,6 +120,7 @@
   let allOrders = []
   let lokasiList = []
   let bankList = []
+  let divisiPemilikMap = {}  // key divisi → nama pemilik
   let currentFrom = null
   let currentTo = null
 
@@ -144,10 +145,15 @@
             .then(({ doc, getDoc }) => getDoc(doc(db, 'settings', 'payment_info')))
             .then(snap => snap.exists() ? snap.data() : {})
             .catch(() => ({}))
-        : Promise.resolve({})
-    ])).then(([ordersSnap, lokasiSnap, paymentInfo]) => {
+        : Promise.resolve({}),
+      profile.role === 'owner'
+        ? getDocs(collection(db, 'divisions')).catch(() => ({ docs: [] }))
+        : Promise.resolve({ docs: [] })
+    ])).then(([ordersSnap, lokasiSnap, paymentInfo, divisionsSnap]) => {
       lokasiList = lokasiSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       bankList = (paymentInfo.banks || []).filter(b => b.isActive !== false)
+      divisiPemilikMap = {}
+      divisionsSnap.docs.forEach(d => { if (d.data().pemilik) divisiPemilikMap[d.id] = d.data().pemilik })
       allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPeriod('month')
     }).catch(err => {
@@ -402,55 +408,64 @@
     const sumEl = document.getElementById('kewajibanSummary')
     if (!el || !sumEl) return
 
-    // Cari bank aktif untuk divisi tertentu
     function getBankForDiv(div) {
       const byDiv = bankList.filter(b => {
         const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
         return divs.includes(div)
       })
       if (byDiv.length) return byDiv
-      // fallback: bank universal (divisions kosong = semua divisi)
-      const universal = bankList.filter(b => {
+      return bankList.filter(b => {
         const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
         return !divs.length
       })
-      return universal
     }
 
-    // Bangun map lokasiId → divisiPemilik (untuk deteksi kewajiban internal)
-    const lokasiPemilikMap = {}
-    lokasiList.forEach(l => { if (l.divisiPemilik) lokasiPemilikMap[l.id] = l.divisiPemilik })
+    // lokasiId → divisi pemilik lokasi (untuk deteksi kewajiban internal)
+    const lokasiDivMap = {}
+    lokasiList.forEach(l => { if (l.divisiPemilik) lokasiDivMap[l.id] = l.divisiPemilik })
 
-    // Per divisi: pisah internal (lokasi milik divisi itu sendiri) vs eksternal
+    // Per divisi: pisah internal vs eksternal
     const divData = DIVISIONS.map(d => {
-      const divOrders = orders.filter(o => o.division === d)
-      const eksternalOrders = divOrders.filter(o => lokasiPemilikMap[o.lokasiId] !== d)
-      const internalOrders  = divOrders.filter(o => lokasiPemilikMap[o.lokasiId] === d)
-      const withModal     = eksternalOrders.filter(o => o.hargaModal > 0)
-      const totalModal    = withModal.reduce((s,o) => s + (o.hargaModal||0), 0)
-      const tanpaModal    = eksternalOrders.length - withModal.length
-      const totalInternal = internalOrders.filter(o => o.hargaModal > 0).reduce((s,o) => s + (o.hargaModal||0), 0)
-      return { div: d, count: divOrders.length, eksternalCount: eksternalOrders.length, withModal: withModal.length, tanpaModal, totalModal, internalCount: internalOrders.length, totalInternal }
-    }).filter(d => d.count > 0).sort((a,b) => b.totalModal - a.totalModal)
+      const divOrders     = orders.filter(o => o.division === d)
+      const eksternalOrders = divOrders.filter(o => lokasiDivMap[o.lokasiId] !== d)
+      const internalOrders  = divOrders.filter(o => lokasiDivMap[o.lokasiId] === d)
+      const withModal       = eksternalOrders.filter(o => o.hargaModal > 0)
+      const totalModal      = withModal.reduce((s,o) => s + (o.hargaModal||0), 0)
+      const tanpaModal      = eksternalOrders.length - withModal.length
+      const totalInternal   = internalOrders.filter(o => o.hargaModal > 0).reduce((s,o) => s + (o.hargaModal||0), 0)
+      const pemilik         = divisiPemilikMap[d] || '—'
+      return { div: d, pemilik, count: divOrders.length, eksternalCount: eksternalOrders.length, withModal: withModal.length, tanpaModal, totalModal, internalCount: internalOrders.length, totalInternal }
+    }).filter(d => d.count > 0)
 
-    const totalKewajiban = divData.reduce((s,d) => s + d.totalModal, 0)
-    const totalOrderDenganModal = divData.reduce((s,d) => s + d.withModal, 0)
+    // Group per pemilik
+    const byPemilik = {}
+    divData.forEach(d => {
+      if (!byPemilik[d.pemilik]) byPemilik[d.pemilik] = []
+      byPemilik[d.pemilik].push(d)
+    })
+
+    const totalKewajiban      = divData.reduce((s,d) => s + d.totalModal, 0)
     const totalOrderTanpaModal = divData.reduce((s,d) => s + d.tanpaModal, 0)
+    const pemilikList         = Object.keys(byPemilik).sort()
 
-    sumEl.innerHTML = `
+    // Summary cards — satu per pemilik
+    sumEl.innerHTML = pemilikList.map(p => {
+      const rows  = byPemilik[p]
+      const total = rows.reduce((s,d) => s + d.totalModal, 0)
+      const banks = [...new Map(rows.flatMap(d => getBankForDiv(d.div)).map(b => [b.accountNumber, b])).values()]
+      return `
+        <div class="stat-card">
+          <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:6px">👤 ${p}</div>
+          <div class="stat-val" style="color:#b91c1c;font-size:20px">${fmtCurrency(total)}</div>
+          <div class="stat-lbl">${rows.map(d => `${DIVISION_META[d.div]?.icon||''} ${DIVISION_META[d.div]?.label||d.div}`).join(', ')}</div>
+          ${banks.length ? banks.map(b => `<div style="margin-top:6px;font-size:11px;color:var(--green);font-weight:700">🏦 ${b.bankName} · <span style="font-family:monospace">${b.accountNumber}</span></div>`).join('') : `<div style="font-size:10px;color:rgba(3,69,67,.35);margin-top:4px">Belum ada rekening</div>`}
+        </div>`
+    }).join('') + `
       <div class="stat-card">
-        <div class="stat-val" style="color:#b91c1c">${fmtCurrency(totalKewajiban)}</div>
-        <div class="stat-lbl">Total Kewajiban ke Semua Divisi</div>
-        <div style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">dari ${totalOrderDenganModal} order ada harga modal</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" style="color:${totalOrderTanpaModal>0?'#d97706':'#059669'}">${totalOrderTanpaModal}</div>
-        <div class="stat-lbl">Order Belum Ada Harga Modal</div>
-        <div style="font-size:11px;color:rgba(3,69,67,.35);margin-top:4px">${totalOrderTanpaModal>0?'Kewajiban belum bisa dihitung akurat':'Semua order sudah ada data modal ✓'}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" style="color:var(--black)">${divData.length}</div>
-        <div class="stat-lbl">Divisi Aktif di Periode Ini</div>
+        <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:6px">📊 Total Semua</div>
+        <div class="stat-val" style="color:#b91c1c;font-size:20px">${fmtCurrency(totalKewajiban)}</div>
+        <div class="stat-lbl">${pemilikList.length} pemilik · ${divData.length} divisi aktif</div>
+        ${totalOrderTanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:4px">⚠ ${totalOrderTanpaModal} order belum ada modal</div>` : `<div style="font-size:10px;color:#059669;margin-top:4px">Semua order sudah ada data modal ✓</div>`}
       </div>`
 
     if (!divData.length) {
@@ -458,57 +473,73 @@
       return
     }
 
+    // Tabel digroup per pemilik
+    const tableRows = pemilikList.map(p => {
+      const rows      = byPemilik[p]
+      const subtotal  = rows.reduce((s,d) => s + d.totalModal, 0)
+      const rowsHtml  = rows.sort((a,b) => b.totalModal - a.totalModal).map(d => `
+        <tr style="border-bottom:1px solid rgba(3,69,67,.05)" onmouseover="this.style.background='rgba(3,69,67,.02)'" onmouseout="this.style.background=''">
+          <td style="padding:9px 6px 9px 20px;font-weight:600">${DIVISION_META[d.div]?.icon} ${DIVISION_META[d.div]?.label||d.div}</td>
+          <td style="padding:9px 6px;text-align:right;font-family:monospace">${d.count}
+            ${d.internalCount > 0 ? `<div style="font-size:10px;color:rgba(3,69,67,.4);margin-top:1px">${d.eksternalCount} ekst.</div>` : ''}
+          </td>
+          <td style="padding:9px 6px;text-align:right">
+            ${d.internalCount > 0
+              ? `<span style="font-size:12px;color:#0369a1;font-weight:700">${d.internalCount}</span>
+                 <div style="font-size:10px;color:#0369a1">${fmtCurrency(d.totalInternal)}</div>`
+              : '<span style="color:rgba(3,69,67,.25)">—</span>'}
+          </td>
+          <td style="padding:9px 6px;text-align:right;color:${d.tanpaModal>0?'#d97706':'rgba(3,69,67,.3)'};font-family:monospace">${d.tanpaModal > 0 ? d.tanpaModal : '—'}</td>
+          <td style="padding:9px 6px;text-align:right">
+            <span style="font-weight:800;font-size:14px;color:#b91c1c">${fmtCurrency(d.totalModal)}</span>
+            ${d.tanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:2px">+${d.tanpaModal} belum dihitung</div>` : ''}
+            ${(() => {
+              const banks = getBankForDiv(d.div)
+              if (!banks.length) return `<div style="font-size:10px;color:rgba(3,69,67,.35);margin-top:4px">— belum ada rekening</div>`
+              return banks.map(b => `
+                <div style="margin-top:5px;background:rgba(3,69,67,.04);border-radius:7px;padding:4px 8px;text-align:left">
+                  <div style="font-size:11px;font-weight:700;color:var(--green)">🏦 ${b.bankName}</div>
+                  <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--black)">${b.accountNumber}</div>
+                  <div style="font-size:10px;color:rgba(3,69,67,.45)">a.n. ${b.accountHolder}</div>
+                </div>`).join('')
+            })()}
+          </td>
+        </tr>`).join('')
+
+      return `
+        <tr style="background:rgba(3,69,67,.04)">
+          <td colspan="5" style="padding:10px 6px;font-size:12px;font-weight:800;color:var(--green)">👤 ${p}
+            <span style="font-weight:400;font-size:11px;color:rgba(3,69,67,.45);margin-left:8px">${rows.map(d=>`${DIVISION_META[d.div]?.icon} ${DIVISION_META[d.div]?.label||d.div}`).join(' · ')}</span>
+          </td>
+        </tr>
+        ${rowsHtml}
+        <tr style="background:rgba(3,69,67,.02);border-top:1px solid rgba(3,69,67,.08)">
+          <td colspan="4" style="padding:8px 6px 8px 20px;font-size:12px;font-weight:700;color:rgba(3,69,67,.6)">Subtotal → ${p}</td>
+          <td style="padding:8px 6px;text-align:right;font-weight:800;font-size:15px;color:#b91c1c">${fmtCurrency(subtotal)}</td>
+        </tr>`
+    }).join('')
+
     el.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
         <tr style="border-bottom:2px solid rgba(3,69,67,.1)">
           <th style="text-align:left;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">DIVISI</th>
-          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">TOTAL ORDER</th>
+          <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">ORDER</th>
           <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">INTERNAL</th>
           <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">BELUM MODAL</th>
           <th style="text-align:right;padding:8px 6px;font-size:10px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.05em">KEWAJIBAN EKSTERNAL</th>
         </tr>
       </thead>
-      <tbody>
-        ${divData.map(d => `
-          <tr style="border-bottom:1px solid rgba(3,69,67,.05)" onmouseover="this.style.background='rgba(3,69,67,.02)'" onmouseout="this.style.background=''">
-            <td style="padding:9px 6px;font-weight:700">${DIVISION_META[d.div]?.icon} ${DIVISION_META[d.div]?.label||d.div}</td>
-            <td style="padding:9px 6px;text-align:right;font-family:monospace">${d.count}
-              ${d.internalCount > 0 ? `<div style="font-size:10px;color:rgba(3,69,67,.4);margin-top:1px">${d.eksternalCount} eksternal</div>` : ''}
-            </td>
-            <td style="padding:9px 6px;text-align:right">
-              ${d.internalCount > 0
-                ? `<span style="font-size:12px;font-family:monospace;color:#0369a1;font-weight:700">${d.internalCount} order</span>
-                   <div style="font-size:10px;color:#0369a1;margin-top:1px">${fmtCurrency(d.totalInternal)}</div>
-                   <div style="font-size:9px;color:rgba(3,69,67,.4);margin-top:1px">bayar ke diri sendiri</div>`
-                : '<span style="color:rgba(3,69,67,.25);font-size:12px">—</span>'}
-            </td>
-            <td style="padding:9px 6px;text-align:right;font-family:monospace;color:${d.tanpaModal>0?'#d97706':'rgba(3,69,67,.3)'}">${d.tanpaModal > 0 ? d.tanpaModal : '—'}</td>
-            <td style="padding:9px 6px;text-align:right">
-              <span style="font-weight:800;font-size:14px;color:#b91c1c">${fmtCurrency(d.totalModal)}</span>
-              ${d.tanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:2px">+${d.tanpaModal} order belum dihitung</div>` : ''}
-              ${(() => {
-                const banks = getBankForDiv(d.div)
-                if (!banks.length) return `<div style="font-size:10px;color:rgba(3,69,67,.35);margin-top:4px">— belum ada rekening</div>`
-                return banks.map(b => `
-                  <div style="margin-top:5px;background:rgba(3,69,67,.04);border-radius:7px;padding:4px 8px;text-align:left">
-                    <div style="font-size:11px;font-weight:700;color:var(--green)">🏦 ${b.bankName}</div>
-                    <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--black);letter-spacing:.03em">${b.accountNumber}</div>
-                    <div style="font-size:10px;color:rgba(3,69,67,.45)">a.n. ${b.accountHolder}</div>
-                  </div>`).join('')
-              })()}
-            </td>
-          </tr>`).join('')}
-      </tbody>
+      <tbody>${tableRows}</tbody>
       <tfoot>
-        <tr style="border-top:2px solid rgba(3,69,67,.1);background:rgba(3,69,67,.02)">
-          <td colspan="4" style="padding:10px 6px;font-weight:800;font-size:13px">TOTAL KEWAJIBAN EKSTERNAL</td>
-          <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:16px;color:#b91c1c">${fmtCurrency(totalKewajiban)}</td>
+        <tr style="border-top:2px solid rgba(3,69,67,.1);background:rgba(3,69,67,.03)">
+          <td colspan="4" style="padding:12px 6px;font-weight:800;font-size:14px">TOTAL SEMUA KEWAJIBAN</td>
+          <td style="padding:12px 6px;text-align:right;font-weight:800;font-size:18px;color:#b91c1c">${fmtCurrency(totalKewajiban)}</td>
         </tr>
       </tfoot>
     </table></div>
     ${totalOrderTanpaModal > 0 ? `
       <div style="background:rgba(251,191,36,.1);border:1.5px solid rgba(251,191,36,.4);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12px;color:#92400e">
-        ⚠ Ada <b>${totalOrderTanpaModal} order</b> yang belum diisi harga modal — kewajiban ke divisi belum terhitung akurat. Buka order tersebut dan isi harga modal.
+        ⚠ Ada <b>${totalOrderTanpaModal} order</b> yang belum diisi harga modal — kewajiban ke divisi belum terhitung akurat.
       </div>` : ''}`
   }
 
