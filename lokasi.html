@@ -93,6 +93,14 @@
       <input type="text" id="fPJ" placeholder="Nama penanggung jawab lokasi">
     </div>
 
+    <div class="form-group">
+      <label>Pemilik Lokasi (Divisi)</label>
+      <select id="fDivisiPemilik">
+        <option value="">— Pusat / Owner —</option>
+      </select>
+      <p class="form-hint">Divisi mana yang memiliki lokasi ini? Dipakai untuk menandai kewajiban internal vs eksternal di laporan.</p>
+    </div>
+
     <div class="form-group" id="komisiWrap" style="display:none">
       <label>Komisi Mitra (%)</label>
       <input type="number" id="fKomisi" placeholder="15" min="0" max="100" step="0.5">
@@ -110,9 +118,20 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, Timestamp, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
+  import { LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON, DIVISIONS, DIVISION_META } from './js/utils.js'
 
   let lokasiList = []
+
+  function populateDivisiPemilik() {
+    const sel = document.getElementById('fDivisiPemilik')
+    if (sel.options.length > 1) return
+    DIVISIONS.forEach(d => {
+      const opt = document.createElement('option')
+      opt.value = d
+      opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+      sel.appendChild(opt)
+    })
+  }
 
   requireAuth((profile) => {
     if (profile.role !== 'owner') {
@@ -123,6 +142,7 @@
   })
 
   async function loadLokasi() {
+    populateDivisiPemilik()
     try {
       await dataAuthReady
       const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('createdAt', 'asc')))
@@ -161,6 +181,7 @@
             ${l.kota?`<span>📌 ${l.kota}</span>`:''}
             ${l.pj?`<span>👤 ${l.pj}</span>`:''}
             ${l.tipe==='titik'&&l.komisiPersen!=null?`<span>💰 Komisi ${l.komisiPersen}%</span>`:''}
+            ${l.divisiPemilik ? `<span style="color:var(--green);font-weight:600">${DIVISION_META[l.divisiPemilik]?.icon||''} Milik: ${DIVISION_META[l.divisiPemilik]?.label||l.divisiPemilik}</span>` : `<span style="color:rgba(3,69,67,.35)">Milik: Pusat/Owner</span>`}
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0">
@@ -177,6 +198,7 @@
     document.getElementById('fTipe').value = ''
     document.getElementById('fKota').value = ''
     document.getElementById('fPJ').value = ''
+    document.getElementById('fDivisiPemilik').value = ''
     document.getElementById('fKomisi').value = ''
     document.getElementById('komisiWrap').style.display = 'none'
     document.getElementById('formAlert').style.display = 'none'
@@ -202,6 +224,7 @@
     document.getElementById('fTipe').value = l.tipe || ''
     document.getElementById('fKota').value = l.kota || ''
     document.getElementById('fPJ').value = l.pj || ''
+    document.getElementById('fDivisiPemilik').value = l.divisiPemilik || ''
     document.getElementById('fKomisi').value = l.komisiPersen ?? 15
     document.getElementById('komisiWrap').style.display = l.tipe === 'titik' ? '' : 'none'
     document.getElementById('formAlert').style.display = 'none'
@@ -226,6 +249,7 @@
         tipe,
         kota: document.getElementById('fKota').value.trim() || '',
         pj: document.getElementById('fPJ').value.trim() || '',
+        divisiPemilik: document.getElementById('fDivisiPemilik').value || '',
         komisiPersen: tipe === 'titik' ? (Number(document.getElementById('fKomisi').value) || 15) : null,
         aktif: true,
       }
