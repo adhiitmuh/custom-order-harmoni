@@ -60,6 +60,17 @@
           </div>
           <p class="form-hint">Pilih Universal untuk tampil di semua divisi, atau centang divisi tertentu</p>
         </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Berlaku untuk Lokasi</label>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:10px;color:var(--green)">
+              <input type="checkbox" id="bankLokasiUniversal" onchange="toggleBankLokasi()" style="width:16px;height:16px;accent-color:var(--green)">
+              🌐 Semua Lokasi
+            </label>
+            <div id="bankLokasiChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
+          </div>
+          <p class="form-hint">Kosongkan untuk semua lokasi, atau pilih lokasi tertentu</p>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
           <input type="checkbox" id="bankActive" checked style="width:16px;height:16px;accent-color:var(--green)">
           <label for="bankActive" style="font-size:13px;cursor:pointer">Aktif (tampil di invoice dan pilihan pembayaran)</label>
@@ -197,6 +208,42 @@
   const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
 
   let paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true }
+  let _lokasiList = []
+
+  async function loadLokasiList() {
+    if (_lokasiList.length) return
+    const snap = await getDocs(collection(db, 'lokasi'))
+    _lokasiList = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
+  }
+
+  function populateBankLokasiChecks() {
+    const el = document.getElementById('bankLokasiChecks')
+    if (!el) return
+    el.innerHTML = _lokasiList.map(l => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" class="bankLocCheck" value="${l.id}" style="width:14px;height:14px;accent-color:var(--green)">
+        ${l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏪' : '📍'} ${l.nama}
+      </label>`).join('')
+  }
+
+  window.toggleBankLokasi = function() {
+    const isAll = document.getElementById('bankLokasiUniversal').checked
+    document.getElementById('bankLokasiChecks').style.opacity = isAll ? '0.3' : '1'
+    document.getElementById('bankLokasiChecks').style.pointerEvents = isAll ? 'none' : ''
+    if (isAll) document.querySelectorAll('.bankLocCheck').forEach(c => c.checked = false)
+  }
+
+  function setBankLokasiUI(lokasiIds) {
+    const isAll = !lokasiIds.length
+    document.getElementById('bankLokasiUniversal').checked = isAll
+    document.querySelectorAll('.bankLocCheck').forEach(c => { c.checked = lokasiIds.includes(c.value) })
+    toggleBankLokasi()
+  }
+
+  function readBankLokasiIds() {
+    if (document.getElementById('bankLokasiUniversal').checked) return []
+    return [...document.querySelectorAll('.bankLocCheck:checked')].map(c => c.value)
+  }
 
   function populateDivisionSelects() {
     // Bank: multi-checkbox
@@ -256,11 +303,11 @@
         </div>`
       return
     }
-    // Render defaults immediately — no loading state
     populateDivisionSelects()
     renderBankList()
     loadPaymentInfo()
     loadCloudBackupList()
+    loadLokasiList().then(populateBankLokasiChecks)
   })
 
   async function loadPaymentInfo() {
@@ -292,7 +339,8 @@
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:14px">${b.bankName}</div>
           <div style="font-family:monospace;font-size:13px;color:var(--green);margin-top:1px">${b.accountNumber}</div>
-          <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder} · ${(() => { const divs = getBankDivisions(b); return divs.length ? divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : '🌐 Semua Divisi' })()} </div>
+          <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder}</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px">${(() => { const divs = getBankDivisions(b); return divs.length ? divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : '🌐 Semua Divisi' })()} · ${(() => { const locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []; return locs.length ? locs.map(id => { const l = _lokasiList.find(x=>x.id===id); return l ? l.nama : id }).join(', ') : '📍 Semua Lokasi' })()} </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:${b.isActive!==false?'rgba(5,150,105,.1)':'rgba(3,69,67,.06)'};color:${b.isActive!==false?'#065f46':'rgba(3,69,67,.4)'}">${b.isActive!==false?'Aktif':'Nonaktif'}</span>
@@ -312,6 +360,9 @@
     setBankDivisionUI([])
     document.getElementById('bankUniversal').checked = true
     toggleBankUniversal()
+    setBankLokasiUI([])
+    document.getElementById('bankLokasiUniversal').checked = true
+    toggleBankLokasi()
     document.getElementById('bankForm').style.display = ''
     document.getElementById('bankName').focus()
   }
@@ -325,6 +376,7 @@
     document.getElementById('bankHolder').value = b.accountHolder
     document.getElementById('bankActive').checked = b.isActive !== false
     setBankDivisionUI(getBankDivisions(b))
+    setBankLokasiUI(Array.isArray(b.lokasiIds) ? b.lokasiIds : [])
     document.getElementById('bankForm').style.display = ''
   }
 
@@ -348,7 +400,8 @@
     if (!name || !number || !holder) { showAlert('Nama bank, no. rekening, dan atas nama wajib diisi', 'error'); return }
 
     const divisions = readBankDivisions()
-    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, divisions }
+    const lokasiIds = readBankLokasiIds()
+    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, divisions, lokasiIds }
     const idx = parseInt(document.getElementById('editBankIndex').value)
     if (idx >= 0) { paymentInfo.banks[idx] = bank } else { paymentInfo.banks.push(bank) }
 

@@ -387,10 +387,14 @@
       if (info.cashActive !== false) {
         const o = document.createElement('option'); o.value = 'cash'; o.textContent = '💵 Tunai / Cash'; sel.appendChild(o)
       }
+      const lokasiId = document.getElementById('lokasiId')?.value || ''
       ;(info.banks || []).filter(b => {
         if (b.isActive === false) return false
-        if (!b.division || !division) return true
-        return b.division === division
+        const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
+        const locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
+        const divOk = !divs.length || divs.includes(division)
+        const locOk = !locs.length || locs.includes(lokasiId)
+        return divOk && locOk
       }).forEach(b => {
         const o = document.createElement('option')
         o.value = `transfer_${b.bankName.toLowerCase().replace(/\s+/g,'_')}`
