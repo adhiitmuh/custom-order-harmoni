@@ -565,8 +565,8 @@
       const e = lokasiMap.get(o.lokasiId)
       e.count++
       e.totalOmzet += o.totalPrice || 0
-      const pm = o.paymentMethod || ''
-      if (pm && (o.depositPaid || 0) > 0) {
+      const pm = o.paymentMethod || 'belum_dipilih'
+      if ((o.depositPaid || 0) > 0) {
         e.paymentBreakdown[pm] = (e.paymentBreakdown[pm] || 0) + (o.depositPaid || 0)
       }
     }
@@ -580,7 +580,7 @@
     const totalKomisi = rows.filter(r => r.tipe === 'titik').reduce((s,r) => s + Math.round(r.totalOmzet * r.komisiPersen / 100), 0)
 
     function fmtPaymentLabel(pm) {
-      if (!pm) return 'Belum dipilih'
+      if (!pm || pm === 'belum_dipilih') return '❓ Belum dipilih'
       if (pm === 'cash') return '💵 Tunai'
       if (pm === 'qris') return '📱 QRIS'
       if (pm.startsWith('transfer_')) return `🏦 ${pm.replace('transfer_','').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}`
