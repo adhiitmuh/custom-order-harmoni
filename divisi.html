@@ -28,8 +28,16 @@
   <main class="main">
     <div style="margin-bottom:20px">
       <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
-      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black);margin-top:8px">Kelola Divisi</h1>
-      <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Tambah, edit, atau nonaktifkan divisi. Urutan di sini menentukan tampilan di seluruh aplikasi.</p>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:8px">
+        <div>
+          <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Divisi</h1>
+          <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Tambah, edit, atau nonaktifkan divisi. Urutan di sini menentukan tampilan di seluruh aplikasi.</p>
+        </div>
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(3,69,67,.55);cursor:pointer;white-space:nowrap;margin-top:6px">
+          <input type="checkbox" id="hideInactive" onchange="toggleHideInactive()" style="width:15px;height:15px;accent-color:var(--green)">
+          Sembunyikan non-aktif
+        </label>
+      </div>
     </div>
 
     <div id="pageContent"><div class="loading">Memuat…</div></div>
@@ -174,6 +182,13 @@
         </div>
       </div>`).join('')
     document.getElementById('addWrap').style.display = ''
+  }
+
+  window.toggleHideInactive = function() {
+    const hide = document.getElementById('hideInactive').checked
+    document.querySelectorAll('.div-row.inactive').forEach(el => {
+      el.style.display = hide ? 'none' : ''
+    })
   }
 
   window.moveUp = async function(i) {
