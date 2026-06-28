@@ -745,3 +745,50 @@ npx wrangler kv:key put --binding=OLSERA_KV "OLSERA_CABANG_A" "api_key"
 - Notif customer sudah jalan via Fonnte (sementara) — migrasi ke WA Cloud API sebelum bot aktif penuh
 - Reservasi ready stock: full payment dulu (transfer manual, CS verifikasi) — payment gateway bisa ditambah belakangan
 - Lokasi: Pusat + Cabang + Titik (mitra) — tiap lokasi pakai nama sendiri di footer notif WA: "[Nama Lokasi] by Harmoni Indonesia"
+
+---
+
+## Model Bisnis — Divisi & Lokasi
+
+### Struktur Kepemilikan
+
+Setiap **divisi** dijalankan oleh anggota keluarga (saudara) yang berbeda sebagai usaha mandiri:
+- Divisi memiliki dan membiayai produksi sendiri (beli bahan baku, bayar tenaga kerja)
+- Divisi menentukan `hargaModal` (cost produksi) di `price_list`
+- Divisi **bukan** karyawan — mereka mitra usaha keluarga independen
+
+**Pusat, Cabang, dan Titik** adalah **titik penerimaan order** — bukan unit produksi:
+- Menerima order dari customer
+- Collect pembayaran dari customer
+- Meneruskan order ke divisi yang relevan untuk diproduksi
+- Berkewajiban membayar divisi sejumlah `hargaModal` per order
+
+### Model Keuangan — Transfer Pricing
+
+```
+Customer bayar ke Lokasi (Pusat/Cabang/Titik):   Rp 100.000  ← harga jual (Normal/Promo/Admin)
+Lokasi wajib bayar ke Divisi:                     Rp  70.000  ← hargaModal (cost produksi divisi)
+─────────────────────────────────────────────────────────────
+Margin Lokasi:                                    Rp  30.000
+```
+
+- **Divisi** → revenue mereka = `hargaModal` × qty semua order divisi itu di periode tertentu
+- **Lokasi** → profit mereka = Σ(harga customer) − Σ(hargaModal) semua order di lokasi itu
+
+### Keamanan Data Customer
+
+Tim produksi dan CS bisa chat dengan customer via link token (chat.html) untuk diskusi desain, **tanpa bisa melihat nomor WA/kontak customer** — hanya owner yang bisa lihat. Ini mencegah pengambilan customer secara langsung oleh staf atau divisi.
+
+### Implikasi untuk Laporan
+
+Laporan keuangan yang dibutuhkan per periode:
+
+| Laporan | Untuk Siapa | Formula |
+|---|---|---|
+| Omzet per lokasi | Owner / Kepala Cabang | Σ `totalPrice` orders di lokasi |
+| Kewajiban bayar ke divisi | Owner / Kepala Cabang | Σ `hargaModal` per divisi |
+| Margin lokasi | Owner | Omzet − Kewajiban ke divisi |
+| Revenue per divisi | Tiap saudara / divisi | Σ `hargaModal` orders divisi itu |
+| Breakdown metode bayar | Owner / Kepala Cabang | Groupby `paymentMethod` per lokasi |
+
+**Catatan:** `hargaModal` wajib diisi di setiap order agar laporan akurat. Saat ini sudah ada di field `hargaModal` di collection `orders` dan di `price_list/{division}.items[].priceModal`.
