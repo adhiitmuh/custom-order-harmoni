@@ -247,15 +247,36 @@ nama            string    — "Titik Harmoni Manggala"
 tipe            string    — 'pusat' | 'cabang' | 'titik'
 kota            string    — "Makassar"
 pj              string    — penanggung jawab
+divisiPemilik   string    — key divisi yang memiliki lokasi ini (kosong = pusat/owner)
+                           Dipakai untuk deteksi kewajiban internal vs eksternal di laporan
 komisiPersen    number    — % komisi mitra (hanya tipe 'titik', default 15)
 aktif           boolean
 createdAt       timestamp
 updatedAt       timestamp
 ```
 
+### Collection `divisions/{key}`
+Data divisi dinamis (bisa ditambah/edit dari divisi.html). Key = division key (cth: `jersey`).
+```
+label           string    — "Jersey, Batik dan Lanyard Printing"
+code            string    — "JRS"
+icon            string    — emoji
+description     string    — deskripsi singkat
+produksiUnit    string    — nama unit produksi
+pemilik         string    — nama pemilik divisi (cth: Adhitya, Achmadi, Amalia, Anisha, Disfi)
+                           Dipakai untuk grouping kewajiban per orang di laporan
+aktif           boolean
+orderIndex      number    — urutan tampil di app
+createdAt       timestamp
+updatedAt       timestamp
+```
+
 ### Collection `settings/{id}`
 - `monthly_target`: `{ amount: number }` — target omzet bulanan
-- `payment_info`: `{ banks: [{bankName, accountNumber, accountHolder, isActive, division}], qris: [{imageUrl, division, isActive}], cashActive: boolean }` — rekening bank & QRIS per divisi
+- `payment_info`: `{ banks: [{bankName, accountNumber, accountHolder, isActive, divisions: string[], lokasiIds: string[]}], qris: [{imageUrl, division, isActive}], cashActive: boolean }`
+  - `divisions[]` — divisi yang pakai rekening ini (kosong = universal/semua divisi)
+  - `lokasiIds[]` — lokasi yang pakai rekening ini (kosong = semua lokasi)
+  - Backward compat: field lama `division: string` masih dibaca via helper `getBankDivisions(b)`
 
 ---
 
@@ -351,6 +372,13 @@ cancelled         → Dibatalkan
   - Footer: `[Nama Lokasi] by Harmoni Indonesia` atau `Harmoni Indonesia · Makassar`
 - ✅ **Invoice selalu tampilkan rekening bank** — semua bank aktif tampil di invoice meski metode bayar belum dipilih, difilter per divisi (bank universal + bank khusus divisi order)
 - ✅ Progress update tampil di chat customer (`type: 'progress'` di `chat_messages`)
+- ✅ **Rekening bank multi-divisi** — bank bisa di-assign ke beberapa divisi sekaligus via checkbox grid + Universal toggle (kosong = semua divisi). Field: `divisions: string[]`
+- ✅ **Rekening bank per lokasi** — bank bisa di-filter per lokasi via `lokasiIds: string[]`. Lookup di order.html: priority division+lokasi → division → lokasi → any
+- ✅ **Badge 💬 fix** — `sendFile` di chat.html sekarang memanggil `/notify-cs` Worker (sama seperti `sendMsg`), increment `unreadCustomerChat`
+- ✅ **Laporan kewajiban ke divisi** — section owner-only di laporan.html: total `hargaModal` per divisi yang wajib dibayar lokasi ke divisi produsen, grouped per pemilik (nama orang), dengan rekening tujuan transfer, flag internal vs eksternal
+- ✅ **Field `pemilik` di divisi** — divisi.html: nama orang yang memiliki divisi. Dipakai untuk grouping kewajiban di laporan
+- ✅ **Field `divisiPemilik` di lokasi** — lokasi.html: divisi mana yang punya lokasi ini. Dipakai untuk deteksi kewajiban internal (pemilik lokasi = pemilik divisi → bayar ke diri sendiri)
+- ✅ **Toggle sembunyikan non-aktif** — divisi.html: checkbox pojok kanan atas untuk hide divisi non-aktif
 
 ---
 
@@ -670,7 +698,7 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 
 ## Bug / Pending Fix
 
-- [ ] **Badge 💬 tidak naik saat customer kirim foto** — `sendFile` di `chat.html` tidak memanggil Worker, hanya `sendMsg` yang increment `unreadCustomerChat`. Perlu tambah fetch ke `/notify-cs` di dalam `sendFile`.
+*(Tidak ada bug aktif saat ini)*
 
 ---
 
@@ -779,16 +807,26 @@ Margin Lokasi:                                    Rp  30.000
 
 Tim produksi dan CS bisa chat dengan customer via link token (chat.html) untuk diskusi desain, **tanpa bisa melihat nomor WA/kontak customer** — hanya owner yang bisa lihat. Ini mencegah pengambilan customer secara langsung oleh staf atau divisi.
 
+### Pemilik Divisi & Lokasi
+
+| Field | Di mana | Isi | Fungsi |
+|---|---|---|---|
+| `divisions/{key}.pemilik` | Firestore, edit di divisi.html | Nama orang (Adhitya/Achmadi/dll) | Group kewajiban per orang di laporan |
+| `lokasi/{id}.divisiPemilik` | Firestore, edit di lokasi.html | Key divisi (cth: `konveksi`) | Deteksi kewajiban internal vs eksternal |
+
+**Kewajiban internal** = order dari lokasi milik divisi yang sama → flagged biru "bayar ke diri sendiri", tidak masuk total kewajiban eksternal.
+
 ### Implikasi untuk Laporan
 
 Laporan keuangan yang dibutuhkan per periode:
 
-| Laporan | Untuk Siapa | Formula |
+| Laporan | Untuk Siapa | Status |
 |---|---|---|
-| Omzet per lokasi | Owner / Kepala Cabang | Σ `totalPrice` orders di lokasi |
-| Kewajiban bayar ke divisi | Owner / Kepala Cabang | Σ `hargaModal` per divisi |
-| Margin lokasi | Owner | Omzet − Kewajiban ke divisi |
-| Revenue per divisi | Tiap saudara / divisi | Σ `hargaModal` orders divisi itu |
-| Breakdown metode bayar | Owner / Kepala Cabang | Groupby `paymentMethod` per lokasi |
+| Omzet per lokasi | Owner | ✅ Ada di laporan.html |
+| Breakdown metode bayar per lokasi | Owner | ✅ Ada di laporan.html |
+| Kewajiban ke divisi per pemilik | Owner | ✅ Ada di laporan.html — grouped by `pemilik`, dengan rekening tujuan |
+| Kewajiban internal vs eksternal | Owner | ✅ Ada — flag berdasarkan `divisiPemilik` lokasi |
+| Margin lokasi | Owner | ✅ Ada di laporan.html |
+| Revenue per divisi | Owner | ✅ Sama dengan kewajiban eksternal yang diterima tiap divisi |
 
-**Catatan:** `hargaModal` wajib diisi di setiap order agar laporan akurat. Saat ini sudah ada di field `hargaModal` di collection `orders` dan di `price_list/{division}.items[].priceModal`.
+**Catatan:** `hargaModal` wajib diisi di setiap order agar laporan akurat. Field ada di `orders.hargaModal` dan referensinya di `price_list/{division}.items[].priceModal`.
