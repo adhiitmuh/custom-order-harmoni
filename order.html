@@ -770,9 +770,12 @@
     if (method && method.startsWith('transfer_')) {
       const banks = paymentInfo.banks || []
       const bankName = method.replace('transfer_','')
-      const bank = banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName && b.division === order.division)
-                 || banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName && !b.division)
-                 || banks.find(b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName)
+      const matchDiv = b => { const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : []); return divs.includes(order.division) }
+      const isUniversal = b => { const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : []); return !divs.length }
+      const byName = b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName
+      const bank = banks.find(b => byName(b) && matchDiv(b))
+                 || banks.find(b => byName(b) && isUniversal(b))
+                 || banks.find(b => byName(b))
       if (!bank) return ''
       return `<div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px">
         <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:8px">TRANSFER BANK</p>
@@ -785,8 +788,12 @@
     // Kalau belum dipilih metode (atau QRIS) — tampilkan semua opsi pembayaran aktif
     // Filter bank: tampilkan bank khusus divisi ini + bank universal (tanpa divisi)
     // Bank khusus divisi lain tidak ditampilkan
+    const bankMatchesDivision = b => {
+      const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
+      return !divs.length || divs.includes(order.division)
+    }
     const allActiveBanks = (paymentInfo.banks || []).filter(b => b.isActive !== false)
-    const activeBanks = allActiveBanks.filter(b => !b.division || b.division === order.division)
+    const activeBanks = allActiveBanks.filter(bankMatchesDivision)
     const activeQris = (paymentInfo.qris || []).filter(q => q.isActive !== false && (!q.division || q.division === order.division))
     // Legacy single QRIS
     const legacyQris = (!paymentInfo.qris?.length && paymentInfo.qrisActive && paymentInfo.qrisImageUrl)

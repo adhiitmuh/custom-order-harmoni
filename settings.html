@@ -51,10 +51,14 @@
         </div>
         <div class="form-group" style="margin-bottom:12px">
           <label>Berlaku untuk Divisi</label>
-          <select id="bankDivision" style="font-size:13px">
-            <option value="">— Semua Divisi —</option>
-          </select>
-          <p class="form-hint">Kosongkan jika rekening ini berlaku untuk semua divisi</p>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:10px;color:var(--green)">
+              <input type="checkbox" id="bankUniversal" onchange="toggleBankUniversal()" style="width:16px;height:16px;accent-color:var(--green)">
+              🌐 Universal — berlaku untuk semua divisi
+            </label>
+            <div id="bankDivisionChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
+          </div>
+          <p class="form-hint">Pilih Universal untuk tampil di semua divisi, atau centang divisi tertentu</p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
           <input type="checkbox" id="bankActive" checked style="width:16px;height:16px;accent-color:var(--green)">
@@ -194,17 +198,52 @@
 
   let paymentInfo = { banks: [], qrisImageUrl: '', qrisActive: false, cashActive: true }
 
-  // Populate bank division select (deferred until DOM ready via requireAuth)
   function populateDivisionSelects() {
-    ;['bankDivision', 'qrisDivision'].forEach(id => {
-      const sel = document.getElementById(id)
-      if (!sel) return
+    // Bank: multi-checkbox
+    const bankChecks = document.getElementById('bankDivisionChecks')
+    if (bankChecks) {
+      bankChecks.innerHTML = DIVISIONS.map(d => `
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" class="bankDivCheck" value="${d}" style="width:14px;height:14px;accent-color:var(--green)">
+          ${DIVISION_META[d].icon} ${DIVISION_META[d].label}
+        </label>`).join('')
+    }
+    // QRIS: single select tetap
+    const qrisSel = document.getElementById('qrisDivision')
+    if (qrisSel && !qrisSel.options.length > 1) {
       DIVISIONS.forEach(d => {
         const opt = document.createElement('option')
         opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-        sel.appendChild(opt)
+        qrisSel.appendChild(opt)
       })
+    }
+  }
+
+  window.toggleBankUniversal = function() {
+    const isUniversal = document.getElementById('bankUniversal').checked
+    document.getElementById('bankDivisionChecks').style.opacity = isUniversal ? '0.3' : '1'
+    document.getElementById('bankDivisionChecks').style.pointerEvents = isUniversal ? 'none' : ''
+    if (isUniversal) document.querySelectorAll('.bankDivCheck').forEach(c => c.checked = false)
+  }
+
+  function getBankDivisions(b) {
+    if (Array.isArray(b.divisions)) return b.divisions
+    if (b.division) return [b.division]
+    return []
+  }
+
+  function setBankDivisionUI(divisions) {
+    const isUniversal = !divisions.length
+    document.getElementById('bankUniversal').checked = isUniversal
+    document.querySelectorAll('.bankDivCheck').forEach(c => {
+      c.checked = divisions.includes(c.value)
     })
+    toggleBankUniversal()
+  }
+
+  function readBankDivisions() {
+    if (document.getElementById('bankUniversal').checked) return []
+    return [...document.querySelectorAll('.bankDivCheck:checked')].map(c => c.value)
   }
 
   requireAuth((profile) => {
@@ -253,7 +292,7 @@
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:14px">${b.bankName}</div>
           <div style="font-family:monospace;font-size:13px;color:var(--green);margin-top:1px">${b.accountNumber}</div>
-          <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder}${b.division ? ` · ${DIVISION_META[b.division]?.icon||''} ${DIVISION_META[b.division]?.label||b.division}` : ''}</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder} · ${(() => { const divs = getBankDivisions(b); return divs.length ? divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : '🌐 Semua Divisi' })()} </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:${b.isActive!==false?'rgba(5,150,105,.1)':'rgba(3,69,67,.06)'};color:${b.isActive!==false?'#065f46':'rgba(3,69,67,.4)'}">${b.isActive!==false?'Aktif':'Nonaktif'}</span>
@@ -269,8 +308,10 @@
     document.getElementById('bankName').value = ''
     document.getElementById('bankNumber').value = ''
     document.getElementById('bankHolder').value = ''
-    document.getElementById('bankDivision').value = ''
     document.getElementById('bankActive').checked = true
+    setBankDivisionUI([])
+    document.getElementById('bankUniversal').checked = true
+    toggleBankUniversal()
     document.getElementById('bankForm').style.display = ''
     document.getElementById('bankName').focus()
   }
@@ -282,8 +323,8 @@
     document.getElementById('bankName').value = b.bankName
     document.getElementById('bankNumber').value = b.accountNumber
     document.getElementById('bankHolder').value = b.accountHolder
-    document.getElementById('bankDivision').value = b.division || ''
     document.getElementById('bankActive').checked = b.isActive !== false
+    setBankDivisionUI(getBankDivisions(b))
     document.getElementById('bankForm').style.display = ''
   }
 
@@ -306,8 +347,8 @@
     const active = document.getElementById('bankActive').checked
     if (!name || !number || !holder) { showAlert('Nama bank, no. rekening, dan atas nama wajib diisi', 'error'); return }
 
-    const division = document.getElementById('bankDivision').value
-    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, division: division || '' }
+    const divisions = readBankDivisions()
+    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, divisions }
     const idx = parseInt(document.getElementById('editBankIndex').value)
     if (idx >= 0) { paymentInfo.banks[idx] = bank } else { paymentInfo.banks.push(bank) }
 
