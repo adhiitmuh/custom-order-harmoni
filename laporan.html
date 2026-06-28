@@ -119,6 +119,7 @@
 
   let allOrders = []
   let lokasiList = []
+  let bankList = []
   let currentFrom = null
   let currentTo = null
 
@@ -137,9 +138,16 @@
       getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))),
       profile.role === 'owner'
         ? getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))
-        : Promise.resolve({ docs: [] })
-    ])).then(([ordersSnap, lokasiSnap]) => {
+        : Promise.resolve({ docs: [] }),
+      profile.role === 'owner'
+        ? import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+            .then(({ doc, getDoc }) => getDoc(doc(db, 'settings', 'payment_info')))
+            .then(snap => snap.exists() ? snap.data() : {})
+            .catch(() => ({}))
+        : Promise.resolve({})
+    ])).then(([ordersSnap, lokasiSnap, paymentInfo]) => {
       lokasiList = lokasiSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      bankList = (paymentInfo.banks || []).filter(b => b.isActive !== false)
       allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPeriod('month')
     }).catch(err => {
@@ -394,6 +402,21 @@
     const sumEl = document.getElementById('kewajibanSummary')
     if (!el || !sumEl) return
 
+    // Cari bank aktif untuk divisi tertentu
+    function getBankForDiv(div) {
+      const byDiv = bankList.filter(b => {
+        const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
+        return divs.includes(div)
+      })
+      if (byDiv.length) return byDiv
+      // fallback: bank universal (divisions kosong = semua divisi)
+      const universal = bankList.filter(b => {
+        const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
+        return !divs.length
+      })
+      return universal
+    }
+
     // Bangun map lokasiId → divisiPemilik (untuk deteksi kewajiban internal)
     const lokasiPemilikMap = {}
     lokasiList.forEach(l => { if (l.divisiPemilik) lokasiPemilikMap[l.id] = l.divisiPemilik })
@@ -463,6 +486,16 @@
             <td style="padding:9px 6px;text-align:right">
               <span style="font-weight:800;font-size:14px;color:#b91c1c">${fmtCurrency(d.totalModal)}</span>
               ${d.tanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:2px">+${d.tanpaModal} order belum dihitung</div>` : ''}
+              ${(() => {
+                const banks = getBankForDiv(d.div)
+                if (!banks.length) return `<div style="font-size:10px;color:rgba(3,69,67,.35);margin-top:4px">— belum ada rekening</div>`
+                return banks.map(b => `
+                  <div style="margin-top:5px;background:rgba(3,69,67,.04);border-radius:7px;padding:4px 8px;text-align:left">
+                    <div style="font-size:11px;font-weight:700;color:var(--green)">🏦 ${b.bankName}</div>
+                    <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--black);letter-spacing:.03em">${b.accountNumber}</div>
+                    <div style="font-size:10px;color:rgba(3,69,67,.45)">a.n. ${b.accountHolder}</div>
+                  </div>`).join('')
+              })()}
             </td>
           </tr>`).join('')}
       </tbody>
