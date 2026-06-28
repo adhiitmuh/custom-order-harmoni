@@ -616,6 +616,28 @@
                 <label style="font-size:12px">DP Masuk (Rp)</label>
                 <input type="text" inputmode="numeric" id="editDp" value="${fmtPrice(order.depositPaid)}" oninput="this.value=fmtInputPrice(this.value)">
               </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label style="font-size:12px">Metode Bayar</label>
+                <select id="editPaymentMethod" style="font-size:13px">
+                  <option value="">— Belum dipilih —</option>
+                  ${(() => {
+                    const opts = []
+                    if (paymentInfo) {
+                      ;(paymentInfo.banks || []).filter(b => b.isActive !== false).forEach(b => {
+                        const val = 'transfer_' + b.bankName.toLowerCase().replace(/\s+/g,'_')
+                        opts.push(`<option value="${val}" ${order.paymentMethod===val?'selected':''}>🏦 Transfer ${b.bankName}</option>`)
+                      })
+                      ;(paymentInfo.qris || []).filter(q => q.isActive !== false).forEach(() => {
+                        opts.push(`<option value="qris" ${order.paymentMethod==='qris'?'selected':''}>📱 QRIS</option>`)
+                      })
+                      if (paymentInfo.cashActive !== false) {
+                        opts.push(`<option value="cash" ${order.paymentMethod==='cash'?'selected':''}>💵 Tunai</option>`)
+                      }
+                    }
+                    return [...new Set(opts)].join('')
+                  })()}
+                </select>
+              </div>
               <button onclick="savePayment()" class="btn btn-primary" style="width:100%;justify-content:center" id="savePayBtn">Simpan</button>
             </div>
           </div>
@@ -1404,9 +1426,11 @@
     try {
       const now = Timestamp.now()
       const newDp = parsePrice(document.getElementById('editDp').value)
+      const pm = document.getElementById('editPaymentMethod')?.value || ''
       const updates = {
         totalPrice: parsePrice(document.getElementById('editTotal').value),
         depositPaid: newDp,
+        paymentMethod: pm || null,
         updatedAt: now,
         paymentEditBy: getProfile().name,
         paymentEditAt: now,
