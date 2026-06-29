@@ -67,6 +67,9 @@
         <option value="urgent">Urgent (≤ 2 hari)</option>
         <option value="warn">Hampir (≤ 5 hari)</option>
       </select>
+      <select id="lokasiFilter" onchange="applyFilter()">
+        <option value="">Semua Lokasi</option>
+      </select>
     </div>
 
     <div style="overflow-x:auto;border-radius:12px;border:1.5px solid rgba(3,69,67,.07)">
@@ -194,17 +197,28 @@
       return
     }
 
+    refreshLokasiFilter()
     applyFilter()
+  }
+
+  function refreshLokasiFilter() {
+    const sel = document.getElementById('lokasiFilter')
+    const current = sel.value
+    const lokasis = [...new Set(allOrders.map(o => o.lokasiNama || 'Pusat').filter(Boolean))].sort()
+    sel.innerHTML = '<option value="">Semua Lokasi</option>'
+      + lokasis.map(l => `<option value="${l}"${l===current?' selected':''}>${l}</option>`).join('')
   }
 
   window.applyFilter = function() {
     const search = document.getElementById('searchInput').value.toLowerCase()
     const statusF = document.getElementById('statusFilter').value
     const urgentF = document.getElementById('urgentFilter').value
+    const lokasiF = document.getElementById('lokasiFilter').value
 
     filteredOrders = allOrders.filter(o => {
       if (search && !((o.customerName||'').toLowerCase().includes(search) || (o.orderNumber||'').toLowerCase().includes(search))) return false
       if (statusF && o.status !== statusF) return false
+      if (lokasiF && (o.lokasiNama || 'Pusat') !== lokasiF) return false
       if (urgentF) {
         const sisa = sisaHari(o.dueDate)
         if (urgentF === 'urgent' && (sisa === null || sisa > 2)) return false
