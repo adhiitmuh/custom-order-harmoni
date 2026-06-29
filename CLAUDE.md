@@ -44,7 +44,7 @@ custom-order-harmoni/
 ├── divisi.html         — Kelola divisi
 ├── supplier.html       — Kelola supplier/produksi luar (owner only): nama, divisi, kontak WA tersembunyi
 ├── supplier-view.html  — Token-based view untuk supplier: lihat pesanan (tanpa harga/kontak), update progress
-├── production-sheet.html — Production sheet bordir & papan-nama: tabel excel-style, sisa hari, update status inline
+├── production-sheet.html — Papan Nama Sheet: tabel excel-style khusus order papan nama (bordir papan + divisi papan-nama US/KL), sisa hari, update status inline
 ├── lokasi.html         — Kelola lokasi (pusat/cabang/titik)
 ├── css/style.css
 ├── js/
@@ -431,13 +431,14 @@ cancelled         → Dibatalkan
 - ✅ **Kirim foto di inbox chat** — tombol 📎 di inbox.html, upload ke Storage (`inbox/{threadId}/...`). Consultation: imageUrl disimpan ke Firestore & tampil di chat.html. WA bot thread: foto disimpan Firestore (visible di inbox), teks tetap lewat Worker ke WA customer
 - ✅ **Omzet per divisi per lokasi** — laporan.html section Per Lokasi: setiap card lokasi kini menampilkan breakdown omzet per divisi dengan progress bar % dan jumlah order
 - ✅ **Kelola Supplier** — supplier.html (owner only): CRUD supplier/produksi luar, kontak tersembunyi dari non-owner, filter per divisi
-- ✅ **Production Sheet** — production-sheet.html: tabel excel-style order aktif per divisi (bordir & papan-nama), kolom sisa hari (urgent/warn/ok), update status inline, filter search/status/urgent
+- ✅ **Papan Nama Sheet** — production-sheet.html: tabel excel-style khusus order papan nama aktif, 2 tab: (1) Bordir Sistem Komputer — hanya order bordir yang ada item "papan" di orderItems, (2) Papan Nama US & Kaca Lapis — semua order divisi papan-nama. Kolom: sisa hari (urgent/warn/ok), update status inline, filter search/status/urgent, notes expand/collapse
 - ✅ **Lempar ke Supplier** — order.html: CS ajukan item ke supplier → pending_approval → manager/owner approve → generate supplierToken → tombol kirim link via WA otomatis
 - ✅ **Supplier View** — supplier-view.html: token-based, supplier lihat pesanan (kode order, item qty, ukuran, spek, file desain, target selesai, sisa hari) tanpa harga/kontak/nama customer, bisa update progress
 - ✅ **Staff list cache TTL** — mentions.js `_staffCache` di-refresh setiap 5 menit, jadi staf baru otomatis muncul di @mention tanpa perlu reload manual
 - ✅ **Badge 🔒 internal chat di kalender** — chip order di kalender.html kini tampil badge `🔒 N` jika ada pesan internal chat belum dibaca (per-user, sama seperti orders.html)
 - ✅ **Fallback lokasiNama → branch** — order.html display lokasi menggunakan `lokasiNama || branch` agar order lama yang pakai field `branch` tetap tampil nama lokasinya
-- ✅ **Production Sheet papan-nama multi-divisi** — tab papan-nama narik dari dua sumber: order `division == 'papan-nama'` langsung + order `division == 'bordir'` yang ada item "papan" di orderItems; di-merge, dedup, sort by dueDate
+- ✅ **Papan Nama Sheet — dua tab terpisah** — tab Bordir: query `division == 'bordir'` lalu filter orderItems yang mengandung kata "papan" (order bordir umum seperti bordir logo tidak tampil); tab Papan Nama: query `division == 'papan-nama'` langsung, tidak ada merge antar divisi. Sort by dueDate dilakukan di JS (bukan Firestore orderBy) untuk menghindari kebutuhan composite index
+- ✅ **namaCustom per item order** — field `namaCustom` di orderItems untuk papan nama: nama/teks yang dicetak di papan. Input muncul otomatis di new-order.html saat divisi papan-nama dipilih atau item bordir mengandung kata "papan". Tampil di order.html (label ungu 🏷) dan Papan Nama Sheet
 - ✅ **Keamanan isStaffAuth()** — Firestore rules kini membedakan anonymous auth (customer/supplier) vs staff login (email/password). Koleksi sensitif (users, settings, price_list, lokasi, divisions, chat_threads, notifications, feedback, dll) hanya bisa diakses staff login
 - ✅ **Harga modal tidak bocor ke customer** — price_list diblokir untuk anonymous auth; chat.html fetch price_list di-wrap try/catch (gagal gracefully) + priceModal di-strip client-side sebagai defence-in-depth. Customer hanya bisa lihat konten product_knowledge (teks markdown)
 
