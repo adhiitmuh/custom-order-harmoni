@@ -38,8 +38,9 @@
         </div>
         <div class="form-group">
           <label>No. WhatsApp / Email <span class="req">*</span></label>
-          <input type="text" id="customerContact" placeholder="08xx / email@…" required>
+          <input type="text" id="customerContact" placeholder="08xx / email@…" required autocomplete="off">
           <p class="form-hint">Hanya terlihat Owner & CS — tersembunyi untuk tim produksi</p>
+          <div id="returningCustomerHint" style="display:none;margin-top:8px;border-radius:10px;padding:10px 12px;font-size:12px;border:1.5px solid rgba(3,69,67,.15);background:rgba(3,69,67,.03)"></div>
         </div>
       </div>
 
@@ -211,7 +212,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
@@ -295,6 +296,67 @@
 
   let _paymentInfoCache = null
   let lokasiList = []
+  let _contactLookupTimer = null
+
+  function normalizeContact(c) {
+    return c.replace(/\s+/g, '').replace(/^0/, '62')
+  }
+
+  async function lookupReturningCustomer(raw) {
+    const hint = document.getElementById('returningCustomerHint')
+    if (!raw || raw.length < 5) { hint.style.display = 'none'; return }
+
+    const norm = normalizeContact(raw)
+    // Query dengan value asli DAN normalized (misal 08xx vs 628xx)
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(collection(db, 'orders'), where('customerContact', '==', raw))),
+      norm !== raw ? getDocs(query(collection(db, 'orders'), where('customerContact', '==', norm))) : Promise.resolve({ docs: [] })
+    ])
+    const docs = [...snap1.docs, ...snap2.docs]
+    if (!docs.length) { hint.style.display = 'none'; return }
+
+    // Ambil nama dari order terbaru
+    const sorted = docs.sort((a, b) => (b.data().createdAt?.seconds||0) - (a.data().createdAt?.seconds||0))
+    const latestName = sorted[0].data().customerName || ''
+
+    // Auto-isi nama dari data lama (selalu override)
+    const nameEl = document.getElementById('customerName')
+    if (nameEl && latestName) {
+      nameEl.value = latestName
+      nameEl.style.background = 'rgba(3,69,67,.06)'
+      nameEl.title = 'Diisi otomatis dari data order sebelumnya'
+      setTimeout(() => { nameEl.style.background = ''; nameEl.title = '' }, 2000)
+    }
+
+    // Hitung divisi yang pernah dipesan
+    const divCounts = {}
+    docs.forEach(d => {
+      const div = d.data().division
+      if (div) divCounts[div] = (divCounts[div] || 0) + 1
+    })
+    const divTags = Object.entries(divCounts)
+      .sort((a,b) => b[1]-a[1])
+      .map(([d, n]) => `<span style="background:rgba(3,69,67,.08);padding:1px 7px;border-radius:999px;font-weight:600">${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d} ×${n}</span>`)
+      .join(' ')
+
+    hint.style.display = ''
+    hint.innerHTML = `
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:18px;flex-shrink:0">🔁</span>
+        <div>
+          <div style="font-weight:700;color:var(--green);margin-bottom:3px">Customer lama — ${docs.length} order sebelumnya</div>
+          <div style="color:rgba(3,69,67,.6);margin-bottom:6px">Nama tersimpan: <b>${latestName || '—'}</b></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${divTags}</div>
+          <a href="crm.html?contact=${encodeURIComponent(raw)}" target="_blank" style="font-size:11px;color:var(--green);font-weight:600;text-decoration:none">Lihat riwayat lengkap →</a>
+        </div>
+      </div>`
+  }
+
+  document.getElementById('customerContact').addEventListener('input', function() {
+    clearTimeout(_contactLookupTimer)
+    document.getElementById('returningCustomerHint').style.display = 'none'
+    _contactLookupTimer = setTimeout(() => lookupReturningCustomer(this.value.trim()), 700)
+  })
 
   // ── Draft localStorage ──────────────────────────────────────────────────────
   const DRAFT_KEY = 'harmoni_new_order_draft'
