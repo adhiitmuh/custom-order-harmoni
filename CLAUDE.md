@@ -380,6 +380,8 @@ cancelled         → Dibatalkan
 - ✅ **Field `divisiPemilik` di lokasi** — lokasi.html: divisi mana yang punya lokasi ini. Dipakai untuk deteksi kewajiban internal (pemilik lokasi = pemilik divisi → bayar ke diri sendiri)
 - ✅ **Toggle sembunyikan non-aktif** — divisi.html: checkbox pojok kanan atas untuk hide divisi non-aktif
 - ✅ **Kirim foto di internal chat** — tombol 📎 di chat internal order, upload ke Storage (`internal_chat/{orderId}/...`), tampil sebagai thumbnail inline, bisa disertai caption teks
+- ✅ **Kirim foto di inbox chat** — tombol 📎 di inbox.html, upload ke Storage (`inbox/{threadId}/...`). Consultation: imageUrl disimpan ke Firestore & tampil di chat.html. WA bot thread: foto disimpan Firestore (visible di inbox), teks tetap lewat Worker ke WA customer
+- ✅ **Omzet per divisi per lokasi** — laporan.html section Per Lokasi: setiap card lokasi kini menampilkan breakdown omzet per divisi dengan progress bar % dan jumlah order
 
 ---
 
