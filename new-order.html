@@ -483,12 +483,18 @@
         <input type="text" placeholder="cth: Bordir Logo, Jersey Futsal S…" value="${item.name||''}"
           data-field="name" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'" onchange="matchItemToPrice(${id})">
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
           data-field="varian" data-row="${id}"
           style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
           onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
           onchange="showTierButtons(${id})">
+        <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
+          <input type="text" placeholder="Nama / teks yang dicetak di papan nama" value="${item.namaCustom||''}"
+            data-field="namaCustom" data-row="${id}"
+            style="width:100%;border:none;border-bottom:1.5px dashed rgba(124,58,237,.35);padding:3px 2px;font-size:11px;color:#4c1d95;outline:none;background:transparent;border-radius:0"
+            onfocus="this.style.borderBottomColor='#7c3aed'" onblur="this.style.borderBottomColor='rgba(124,58,237,.35)'">
+        </div>
       </td>
       <td style="padding:6px 4px">
         <input type="number" placeholder="0" min="1" value="${item.qty||''}"
@@ -522,6 +528,7 @@
       </td>`
     tbody.appendChild(tr)
     if (getProfile()?.role === 'owner') document.getElementById(`modalCell-${id}`).style.display = ''
+    toggleNamaCustom(id)
     recalcTotal()
     window.recalcAutoModal()
     debouncedSaveDraft()
@@ -701,12 +708,30 @@
     return [...document.querySelectorAll('#itemRows tr')].map(tr => {
       const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
       const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
+      const namaCustom = tr.querySelector('[data-field="namaCustom"]')?.value.trim() || ''
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
       const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
       const tier = getItemTier(name, varian, price)
-      return { name, varian, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier }
+      return { name, varian, namaCustom: namaCustom || null, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
+  }
+
+  function _isPapanItem(rowId) {
+    const name = document.querySelector(`[data-field="name"][data-row="${rowId}"]`)?.value.toLowerCase() || ''
+    return selectedDiv === 'papan-nama' || name.includes('papan')
+  }
+
+  window.toggleNamaCustom = function(rowId) {
+    const wrap = document.getElementById(`namaCustomWrap-${rowId}`)
+    if (wrap) wrap.style.display = _isPapanItem(rowId) ? '' : 'none'
+  }
+
+  function refreshAllNamaCustom() {
+    document.querySelectorAll('#itemRows tr').forEach(tr => {
+      const rowId = tr.id?.replace('row-', '')
+      if (rowId) toggleNamaCustom(rowId)
+    })
   }
   let currentPriceList = null
   let currentPriceTier = 'normal'
@@ -910,6 +935,7 @@
     _autoHargaModal = 0
     loadPriceList(d)
     if (!skipPaymentLoad) loadPaymentMethods(d)
+    refreshAllNamaCustom()
     const sizeCard = document.getElementById('sizeCard')
     if (SIZE_DIVISIONS.includes(d)) {
       sizeCard.style.display = ''
