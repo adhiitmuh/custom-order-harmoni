@@ -388,12 +388,15 @@
           <!-- Rincian Item -->
           ${order.orderItems?.length ? `
           <div class="card" style="margin-bottom:16px">
-            <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">📋 Rincian Item</h2>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700">📋 Rincian Item</h2>
+              ${canEdit ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">Klik qty atau harga untuk edit</span>` : ''}
+            </div>
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead>
                 <tr style="border-bottom:1.5px solid rgba(3,69,67,.1)">
                   <th style="text-align:left;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600">Nama Item / Produk</th>
-                  <th style="text-align:center;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:50px">Qty</th>
+                  <th style="text-align:center;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:60px">Qty</th>
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Harga/Pcs</th>
                   ${canSeeModal ? `<th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:100px">Modal/Pcs</th>` : ''}
                   <th style="text-align:right;padding-bottom:8px;font-size:11px;color:rgba(3,69,67,.45);font-weight:600;width:110px">Subtotal</th>
@@ -406,11 +409,30 @@
                     <div style="font-weight:500">${it.name||'-'}</div>
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
                   </td>
-                  <td style="padding:9px 0;text-align:center;color:rgba(3,69,67,.6)">${it.qty||0}</td>
+                  <td style="padding:9px 0;text-align:center">
+                    ${canEdit ? `
+                      <span id="qval-${i}" style="cursor:pointer;color:rgba(3,69,67,.7);font-weight:600;padding:2px 6px;border-radius:4px;display:inline-block" onclick="editItemQty(${i})" title="Klik untuk edit">${it.qty||0}</span>
+                      <input id="qinp-${i}" type="number" min="1" value="${it.qty||0}"
+                        style="display:none;width:52px;text-align:center;font-size:13px;font-weight:600;border:1.5px solid #034543;border-radius:6px;padding:3px 4px;outline:none"
+                        onblur="saveItemQty(${i}, this.value)"
+                        onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')cancelItemQty(${i})">
+                    ` : `<span style="color:rgba(3,69,67,.6)">${it.qty||0}</span>`}
+                  </td>
                   <td style="padding:9px 0;text-align:right">
-                    <span style="color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</span>
-                    ${it.tier === 'promo' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;vertical-align:middle">PROMO</span>` : ''}
-                    ${it.tier === 'admin' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;vertical-align:middle">ADMIN</span>` : ''}
+                    ${canEdit ? `
+                      <span id="pval-${i}" style="cursor:pointer;color:rgba(3,69,67,.7);padding:2px 5px;border-radius:4px;display:inline-block" onclick="editItemPrice(${i})" title="Klik untuk edit">${fmtCurrency(it.pricePerUnit)}</span>
+                      <input id="pinp-${i}" type="text" inputmode="numeric" value="${fmtPrice(it.pricePerUnit)}"
+                        style="display:none;width:95px;text-align:right;font-size:12px;border:1.5px solid #034543;border-radius:6px;padding:3px 8px;outline:none"
+                        oninput="this.value=fmtInputPrice(this.value)"
+                        onblur="saveItemPrice(${i}, this.value)"
+                        onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')cancelItemPrice(${i})">
+                      ${it.tier === 'promo' ? `<span style="display:block;margin-top:2px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">PROMO</span>` : ''}
+                      ${it.tier === 'admin' ? `<span style="display:block;margin-top:2px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px">ADMIN</span>` : ''}
+                    ` : `
+                      <span style="color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</span>
+                      ${it.tier === 'promo' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;vertical-align:middle">PROMO</span>` : ''}
+                      ${it.tier === 'admin' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;vertical-align:middle">ADMIN</span>` : ''}
+                    `}
                   </td>
                   ${canEditModal ? `
                   <td style="padding:9px 0;text-align:right">
@@ -428,13 +450,13 @@
                       ? `<span style="color:#d97706" title="Menunggu approval">⏳ ${fmtCurrency(order.pendingOrderItems[i].priceModal)}</span>`
                       : `<span style="color:rgba(3,69,67,.2)">—</span>`}
                   </td>` : ''}
-                  <td style="padding:9px 0;text-align:right;font-weight:600">${fmtCurrency(it.subtotal)}</td>
+                  <td style="padding:9px 0;text-align:right;font-weight:600" id="stval-${i}">${fmtCurrency(it.subtotal)}</td>
                 </tr>`).join('')}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="${canSeeModal ? 4 : 3}" style="padding-top:10px;font-weight:700;font-size:13px">Total Item</td>
-                  <td style="padding-top:10px;text-align:right;font-weight:800;font-size:14px;color:var(--green)">${fmtCurrency(order.orderItems.reduce((s,it)=>s+(it.subtotal||0),0))}</td>
+                  <td style="padding-top:10px;text-align:right;font-weight:800;font-size:14px;color:var(--green)" id="itemsGrandTotal">${fmtCurrency(order.orderItems.reduce((s,it)=>s+(it.subtotal||0),0))}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1319,6 +1341,85 @@
       order.hargaModal = hargaModal || null
       const disp = document.getElementById(`mval-${i}`)
       if (disp) disp.innerHTML = newModal ? fmtCurrency(newModal) : '<span style="color:rgba(3,69,67,.2)">— edit</span>'
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+  }
+
+  // === QTY & HARGA PER ITEM (inline edit for canEdit roles) ===
+  function recalcItemTotals() {
+    const total = (order.orderItems||[]).reduce((s, it) => s + (it.subtotal||0), 0)
+    const el = document.getElementById('itemsGrandTotal')
+    if (el) el.textContent = fmtCurrency(total)
+  }
+
+  window.editItemQty = function(i) {
+    document.getElementById(`qval-${i}`).style.display = 'none'
+    const inp = document.getElementById(`qinp-${i}`)
+    inp.style.display = 'inline-block'
+    inp.focus(); inp.select()
+  }
+
+  window.cancelItemQty = function(i) {
+    const it = (order.orderItems||[])[i]
+    document.getElementById(`qval-${i}`).style.display = ''
+    const inp = document.getElementById(`qinp-${i}`)
+    inp.style.display = 'none'
+    inp.value = it?.qty || 0
+  }
+
+  window.saveItemQty = async function(i, val) {
+    const qty = Math.max(1, parseInt(val) || 1)
+    cancelItemQty(i)
+    const it = (order.orderItems||[])[i]
+    if (!it || qty === it.qty) return
+    const items = order.orderItems.map((item, idx) => {
+      if (idx !== i) return item
+      const subtotal = qty * (item.pricePerUnit || 0)
+      return { ...item, qty, subtotal }
+    })
+    const totalPrice = items.reduce((s, item) => s + (item.subtotal||0), 0)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now() })
+      order.orderItems = items
+      order.totalPrice = totalPrice
+      document.getElementById(`qval-${i}`).textContent = qty
+      document.getElementById(`stval-${i}`).textContent = fmtCurrency(items[i].subtotal)
+      recalcItemTotals()
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+  }
+
+  window.editItemPrice = function(i) {
+    document.getElementById(`pval-${i}`).style.display = 'none'
+    const inp = document.getElementById(`pinp-${i}`)
+    inp.style.display = 'inline-block'
+    inp.focus(); inp.select()
+  }
+
+  window.cancelItemPrice = function(i) {
+    const it = (order.orderItems||[])[i]
+    document.getElementById(`pval-${i}`).style.display = ''
+    const inp = document.getElementById(`pinp-${i}`)
+    inp.style.display = 'none'
+    inp.value = fmtPrice(it?.pricePerUnit)
+  }
+
+  window.saveItemPrice = async function(i, val) {
+    const pricePerUnit = parsePrice(val)
+    cancelItemPrice(i)
+    const it = (order.orderItems||[])[i]
+    if (!it || pricePerUnit === it.pricePerUnit) return
+    const items = order.orderItems.map((item, idx) => {
+      if (idx !== i) return item
+      const subtotal = (item.qty || 0) * pricePerUnit
+      return { ...item, pricePerUnit, subtotal }
+    })
+    const totalPrice = items.reduce((s, item) => s + (item.subtotal||0), 0)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now() })
+      order.orderItems = items
+      order.totalPrice = totalPrice
+      document.getElementById(`pval-${i}`).textContent = fmtCurrency(pricePerUnit)
+      document.getElementById(`stval-${i}`).textContent = fmtCurrency(items[i].subtotal)
+      recalcItemTotals()
     } catch(err) { alert('Gagal simpan: ' + err.message) }
   }
 
