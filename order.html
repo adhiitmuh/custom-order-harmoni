@@ -786,10 +786,17 @@
         <div id="internalChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
           <div class="loading">Memuat…</div>
         </div>
+        <div id="internalPhotoPreview" style="display:none;margin-bottom:8px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:12px;color:#065f46;display:flex;align-items:center;gap:8px">
+          <span id="internalPhotoName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <button onclick="cancelInternalPhoto()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:0">✕</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:flex-end">
           <textarea id="internalChatInput" placeholder="Tulis pesan untuk tim… (Enter kirim, Shift+Enter baris baru)" rows="2"
             style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendInternalMsg()}"></textarea>
+          <label title="Kirim foto" style="background:var(--beige-soft);border:1.5px solid rgba(3,69,67,.15);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;display:flex;align-items:center">
+            📎<input type="file" id="internalPhotoInput" accept="image/*" style="display:none" onchange="selectInternalPhoto(this)">
+          </label>
           <button onclick="sendInternalMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>
@@ -1972,6 +1979,9 @@
         const escaped = (m.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
         const rendered = highlightMentions(escaped, staffList, profile?.id)
         const isMentioned = staffList.some(s => s.id === profile?.id && (m.content||'').includes('@'+s.name))
+        const bubbleContent = m.imageUrl
+          ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:200px;border-radius:8px;display:block;object-fit:cover"></a>${m.content ? `<div style="margin-top:6px;font-size:12px">${escaped}</div>` : ''}`
+          : rendered
         return `
           <div style="display:flex;flex-direction:column;align-items:${align}">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
@@ -1979,8 +1989,8 @@
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
             </div>
-            <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:9px 13px;border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-              ${rendered}
+            <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:${m.imageUrl ? '6px' : '9px 13px'};border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+              ${bubbleContent}
             </div>
           </div>`
       }).join('')
@@ -1988,18 +1998,53 @@
     })
   }
 
+  let _internalPhotoFile = null
+
+  window.selectInternalPhoto = function(input) {
+    const file = input.files[0]
+    if (!file) return
+    _internalPhotoFile = file
+    const preview = document.getElementById('internalPhotoPreview')
+    document.getElementById('internalPhotoName').textContent = '📷 ' + file.name
+    preview.style.display = 'flex'
+    input.value = ''
+  }
+
+  window.cancelInternalPhoto = function() {
+    _internalPhotoFile = null
+    document.getElementById('internalPhotoPreview').style.display = 'none'
+    document.getElementById('internalPhotoName').textContent = ''
+  }
+
   window.sendInternalMsg = async function() {
     const input = document.getElementById('internalChatInput')
     const content = input?.value.trim()
-    if (!content || !order) return
+    const file = _internalPhotoFile
+    if (!content && !file) return
     const profile = getProfile()
     const staffList = await loadStaff().catch(() => [])
     const mentioned = parseMentions(content, staffList)
 
     input.value = ''
     input.style.height = 'auto'
+    cancelInternalPhoto()
+
+    let imageUrl = null
+    if (file) {
+      const path = `internal_chat/${orderId}/${Date.now()}_${file.name}`
+      const storageRef = ref(storage, path)
+      await new Promise((resolve, reject) => {
+        const task = uploadBytesResumable(storageRef, file)
+        task.on('state_changed', null, reject, async () => {
+          imageUrl = await getDownloadURL(storageRef)
+          resolve()
+        })
+      })
+    }
+
     await addDoc(collection(db, 'orders', orderId, 'internal_chat'), {
-      content,
+      content: content || '',
+      imageUrl: imageUrl || null,
       senderId:   profile.id,
       senderName: profile.name,
       senderRole: profile.role,
@@ -2014,7 +2059,6 @@
     }).catch(() => {})
 
     if (mentioned.length) {
-      // Ada @mention: kirim mention notif saja (tidak double dengan internal_chat notif)
       writeMentionNotifs(mentioned, profile.id, profile.name, content, orderId, order.orderNumber).catch(() => {})
     } else {
       addDoc(collection(db, 'notifications'), {
@@ -2026,7 +2070,7 @@
         fromUid:     profile.id,
         fromName:    profile.name,
         fromRole:    profile.role,
-        preview:     content.substring(0, 80),
+        preview:     content ? content.substring(0, 80) : '📷 Foto',
         createdAt:   Timestamp.now(),
       }).catch(() => {})
     }
