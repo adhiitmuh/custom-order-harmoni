@@ -59,6 +59,16 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    match /suppliers/{id} {
+      allow read: if isAuth();
+      allow write: if isOwner();
+    }
+
+    match /supplier_tokens/{token} {
+      allow read: if true; // Supplier akses via token tanpa login
+      allow write: if isAuth();
+    }
+
     // Chat messages — public read/write (token = password)
     match /chat_messages/{chatToken}/messages/{msgId} {
       allow read: if true;
