@@ -605,10 +605,10 @@
             </div>
             <div id="paymentView">
               <div style="font-size:13px;space-y:6px">
-                <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:rgba(3,69,67,.5)">Total</span><span style="font-weight:700">${fmtCurrency(order.totalPrice)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:rgba(3,69,67,.5)">Total</span><span id="payTotal" style="font-weight:700">${fmtCurrency(order.totalPrice)}</span></div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:rgba(3,69,67,.5)">DP Masuk</span><span style="font-weight:700;color:#059669">${fmtCurrency(order.depositPaid)}</span></div>
                 <hr class="sep">
-                <div style="display:flex;justify-content:space-between"><span style="color:rgba(3,69,67,.5)">Sisa</span><span style="font-weight:800;font-size:15px;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:rgba(3,69,67,.5)">Sisa</span><span id="paySisa" style="font-weight:800;font-size:15px;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</span></div>
               </div>
               ${sisa>0&&(order.totalPrice||0)>0&&canEdit ? `<button onclick="markPaid()" class="btn btn-green" style="width:100%;margin-top:12px;justify-content:center" id="markPaidBtn">✓ Tandai Lunas</button>` : ''}
               ${isPaid ? `<div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;font-weight:700;font-size:13px;color:#065f46">✅ LUNAS</div>` : ''}
@@ -1347,8 +1347,16 @@
   // === QTY & HARGA PER ITEM (inline edit for canEdit roles) ===
   function recalcItemTotals() {
     const total = (order.orderItems||[]).reduce((s, it) => s + (it.subtotal||0), 0)
-    const el = document.getElementById('itemsGrandTotal')
-    if (el) el.textContent = fmtCurrency(total)
+    const elTotal = document.getElementById('itemsGrandTotal')
+    if (elTotal) elTotal.textContent = fmtCurrency(total)
+    const payTotal = document.getElementById('payTotal')
+    if (payTotal) payTotal.textContent = fmtCurrency(order.totalPrice)
+    const sisa = (order.totalPrice||0) - (order.depositPaid||0)
+    const paySisa = document.getElementById('paySisa')
+    if (paySisa) {
+      paySisa.textContent = fmtCurrency(sisa)
+      paySisa.style.color = sisa > 0 ? '#b91c1c' : '#059669'
+    }
   }
 
   window.editItemQty = function(i) {
