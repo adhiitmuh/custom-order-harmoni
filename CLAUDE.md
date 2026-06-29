@@ -68,6 +68,12 @@ Config ada di `js/config.js` — hardcoded, ini aman untuk repo publik (anon key
 
 **Catatan:** `chat.html` standalone — hardcode config sendiri karena tidak pakai `js/config.js` (halaman ini diakses publik tanpa auth).
 
+**Auth level di Firestore Rules:**
+- `isAuth()` — siapapun yang login, **termasuk anonymous auth** (dipakai hanya untuk `orders` agar supplier-view.html tetap bisa baca order via anonymous auth)
+- `isStaffAuth()` — hanya yang login dengan **email/password** (bukan anonymous); dipakai untuk semua koleksi sensitif
+- Halaman publik yang pakai `signInAnonymously`: `chat.html` (customer), `supplier-view.html` (supplier)
+- Koleksi yang masih `isAuth()` (bukan isStaffAuth): `orders`, `orders/progress_updates` — karena supplier-view.html perlu baca data order
+
 ---
 
 ## Data Model (Firestore)
@@ -431,6 +437,9 @@ cancelled         → Dibatalkan
 - ✅ **Staff list cache TTL** — mentions.js `_staffCache` di-refresh setiap 5 menit, jadi staf baru otomatis muncul di @mention tanpa perlu reload manual
 - ✅ **Badge 🔒 internal chat di kalender** — chip order di kalender.html kini tampil badge `🔒 N` jika ada pesan internal chat belum dibaca (per-user, sama seperti orders.html)
 - ✅ **Fallback lokasiNama → branch** — order.html display lokasi menggunakan `lokasiNama || branch` agar order lama yang pakai field `branch` tetap tampil nama lokasinya
+- ✅ **Production Sheet papan-nama multi-divisi** — tab papan-nama narik dari dua sumber: order `division == 'papan-nama'` langsung + order `division == 'bordir'` yang ada item "papan" di orderItems; di-merge, dedup, sort by dueDate
+- ✅ **Keamanan isStaffAuth()** — Firestore rules kini membedakan anonymous auth (customer/supplier) vs staff login (email/password). Koleksi sensitif (users, settings, price_list, lokasi, divisions, chat_threads, notifications, feedback, dll) hanya bisa diakses staff login
+- ✅ **Harga modal tidak bocor ke customer** — price_list diblokir untuk anonymous auth; chat.html fetch price_list di-wrap try/catch (gagal gracefully) + priceModal di-strip client-side sebagai defence-in-depth. Customer hanya bisa lihat konten product_knowledge (teks markdown)
 
 ---
 
