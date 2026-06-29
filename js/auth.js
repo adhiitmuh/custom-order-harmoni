@@ -249,6 +249,9 @@ export function renderSidebar(profile) {
       <a href="kalender.html" class="sidebar-link ${page==='kalender.html'?'active':''}">
         <span class="icon">📅</span>Kalender Produksi
       </a>
+      <a href="production-sheet.html" class="sidebar-link ${page==='production-sheet.html'?'active':''}">
+        <span class="icon">🗂️</span>Production Sheet
+      </a>
     </div>
 
     ${(profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
@@ -290,6 +293,9 @@ export function renderSidebar(profile) {
       </a>
       <a href="divisi.html" class="sidebar-link ${page==='divisi.html'?'active':''}">
         <span class="icon">🏷️</span>Kelola Divisi
+      </a>
+      <a href="supplier.html" class="sidebar-link ${page==='supplier.html'?'active':''}">
+        <span class="icon">🏭</span>Kelola Supplier
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
         <span class="icon">⚙️</span>Pengaturan & Backup

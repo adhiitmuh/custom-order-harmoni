@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detail Pesanan — Harmoni</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f4f3; color: #1a1a1a; min-height: 100vh; }
+    .topbar { background: #034543; color: #FFFBD5; padding: 14px 20px; display: flex; align-items: center; gap: 10px; }
+    .topbar-logo { font-size: 18px; font-weight: 800; letter-spacing: -.02em; }
+    .topbar-sub { font-size: 11px; opacity: .55; margin-top: 1px; }
+    .container { max-width: 680px; margin: 0 auto; padding: 20px 16px 60px; }
+    .card { background: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; border: 1.5px solid rgba(3,69,67,.07); }
+    .section-title { font-size: 11px; font-weight: 700; color: rgba(3,69,67,.45); letter-spacing: .06em; margin-bottom: 10px; }
+    .info-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid rgba(3,69,67,.06); font-size: 13px; gap: 12px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: rgba(3,69,67,.5); flex-shrink: 0; }
+    .info-val { font-weight: 600; text-align: right; }
+    .days-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .days-urgent { background: #fee2e2; color: #991b1b; }
+    .days-warn { background: #fef3c7; color: #92400e; }
+    .days-ok { background: #d1fae5; color: #065f46; }
+    .file-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .file-thumb { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; border: 1.5px solid rgba(3,69,67,.1); display: block; }
+    .file-doc { width: 80px; height: 80px; border-radius: 10px; border: 1.5px solid rgba(3,69,67,.1); display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f8fafa; text-decoration: none; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 700; color: rgba(3,69,67,.45); letter-spacing: .05em; border-bottom: 2px solid rgba(3,69,67,.1); }
+    td { padding: 9px 6px; border-bottom: 1px solid rgba(3,69,67,.06); }
+    .progress-form textarea { width: 100%; border: 1.5px solid rgba(3,69,67,.15); border-radius: 10px; padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical; outline: none; }
+    .progress-form textarea:focus { border-color: #034543; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; border: none; transition: opacity .15s; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #034543; color: #FFFBD5; width: 100%; margin-top: 10px; }
+    .status-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+    .progress-entry { padding: 10px 0; border-bottom: 1px solid rgba(3,69,67,.06); }
+    .progress-entry:last-child { border-bottom: none; }
+    .loading { text-align: center; padding: 60px 20px; color: rgba(3,69,67,.4); font-size: 14px; }
+    .error { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <div class="topbar-logo">harmoni</div>
+    <div class="topbar-sub">Portal Supplier</div>
+  </div>
+</div>
+
+<div class="container">
+  <div id="content"><div class="loading">Memuat pesanan…</div></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+  import { getFirestore, doc, getDoc, collection, addDoc, query, orderBy, getDocs, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBNDvKe5oFqIQ-B5TvVe6EaHNVKIMp5K6U",
+    authDomain: "harmoni-custom-order.firebaseapp.com",
+    projectId: "harmoni-custom-order",
+    storageBucket: "harmoni-custom-order.appspot.com",
+    messagingSenderId: "1057097237358",
+    appId: "1:1057097237358:web:4ac38e6e58ca6ca35eedff"
+  }
+  const app  = initializeApp(firebaseConfig, 'supplier-view')
+  const db   = getFirestore(app)
+  const auth = getAuth(app)
+  await signInAnonymously(auth).catch(() => {})
+
+  const token = new URLSearchParams(location.search).get('t')
+  const el = document.getElementById('content')
+
+  if (!token) {
+    el.innerHTML = '<div class="error">Link tidak valid — tidak ada token pesanan.</div>'
+    throw new Error('no token')
+  }
+
+  // Load supplier token doc
+  const tokenSnap = await getDoc(doc(db, 'supplier_tokens', token)).catch(() => null)
+  if (!tokenSnap?.exists()) {
+    el.innerHTML = '<div class="error">Link tidak valid atau sudah kedaluwarsa.</div>'
+    throw new Error('token not found')
+  }
+
+  const tokenData = tokenSnap.data()
+  const { orderId, supplierNama, itemIndexes } = tokenData
+
+  const orderSnap = await getDoc(doc(db, 'orders', orderId)).catch(() => null)
+  if (!orderSnap?.exists()) {
+    el.innerHTML = '<div class="error">Data pesanan tidak ditemukan.</div>'
+    throw new Error('order not found')
+  }
+
+  const order = orderSnap.data()
+
+  // Load progress updates
+  const progressSnap = await getDocs(query(collection(db, 'orders', orderId, 'progress_updates'), orderBy('createdAt', 'asc'))).catch(() => ({ docs: [] }))
+  const progressList = progressSnap.docs.map(d => d.data())
+
+  // Filter items assigned to this supplier
+  const assignedItems = (order.orderItems || []).filter((_, i) => (itemIndexes || []).includes(i))
+
+  // Sisa hari
+  function sisaHari(dueDate) {
+    if (!dueDate) return null
+    const diff = Math.ceil((new Date(dueDate) - new Date()) / 86400000)
+    return diff
+  }
+
+  function fmtDate(s) {
+    if (!s) return '—'
+    const d = new Date(s)
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+  }
+
+  function fmtCurrency(n) {
+    if (!n) return '—'
+    return 'Rp ' + Math.round(n).toLocaleString('id-ID')
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return ''
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    const diff = Math.floor((Date.now() - d.getTime()) / 1000)
+    if (diff < 60) return 'baru saja'
+    if (diff < 3600) return Math.floor(diff/60) + ' menit lalu'
+    if (diff < 86400) return Math.floor(diff/3600) + ' jam lalu'
+    return Math.floor(diff/86400) + ' hari lalu'
+  }
+
+  const sisa = sisaHari(order.dueDate)
+  const sisaClass = sisa === null ? '' : sisa <= 2 ? 'days-urgent' : sisa <= 5 ? 'days-warn' : 'days-ok'
+  const sisaText = sisa === null ? '—' : sisa < 0 ? `Terlambat ${Math.abs(sisa)} hari` : sisa === 0 ? 'Hari ini!' : `${sisa} hari lagi`
+
+  // Size breakdown
+  const sizeEntries = order.sizeBreakdown ? Object.entries(order.sizeBreakdown).filter(([,v]) => v > 0) : []
+
+  // Design files
+  const files = order.designFiles || []
+
+  el.innerHTML = `
+    <div class="card" style="background:#034543;color:#FFFBD5;padding:16px 20px;margin-bottom:14px">
+      <div style="font-size:11px;opacity:.55;letter-spacing:.06em;margin-bottom:4px">KODE ORDER</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">${tokenData.orderCode || '—'}</div>
+      <div style="font-size:12px;opacity:.6;margin-top:4px">Dikirim dari Harmoni Indonesia</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">INFORMASI PESANAN</div>
+      <div class="info-row">
+        <span class="info-label">Produk / Divisi</span>
+        <span class="info-val">${tokenData.divisiLabel || '—'}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Spesifikasi</span>
+        <span class="info-val" style="max-width:60%">${order.varian || order.notes || '—'}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Target Selesai</span>
+        <span class="info-val">${fmtDate(order.dueDate)}</span>
+      </div>
+      <div class="info-row" style="border-bottom:none">
+        <span class="info-label">Sisa Waktu</span>
+        <span class="days-badge ${sisaClass}" style="font-size:13px">${sisaText}</span>
+      </div>
+    </div>
+
+    ${assignedItems.length ? `
+    <div class="card">
+      <div class="section-title">ITEM YANG DIKERJAKAN</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th style="text-align:center;width:60px">Qty</th>
+            <th style="text-align:left">Keterangan</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${assignedItems.map(it => `
+          <tr>
+            <td style="font-weight:600">${it.name || '—'}</td>
+            <td style="text-align:center;font-weight:700">${it.qty || 0}</td>
+            <td style="color:rgba(3,69,67,.6);font-size:12px">${it.varian || it.notes || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
+
+    ${sizeEntries.length ? `
+    <div class="card">
+      <div class="section-title">RINCIAN UKURAN</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px">
+        ${sizeEntries.map(([size, qty]) => `
+        <div style="border:1.5px solid rgba(3,69,67,.12);border-radius:10px;padding:10px 8px;text-align:center;background:#f8fafa">
+          <div style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">${size}</div>
+          <div style="font-size:20px;font-weight:800;color:#034543">${qty}</div>
+        </div>`).join('')}
+        <div style="border:2px solid #034543;border-radius:10px;padding:10px 8px;text-align:center;background:#034543;color:#FFFBD5">
+          <div style="font-size:11px;opacity:.6;margin-bottom:2px">TOTAL</div>
+          <div style="font-size:20px;font-weight:800">${sizeEntries.reduce((s,[,v]) => s+v, 0)}</div>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${files.length ? `
+    <div class="card">
+      <div class="section-title">FILE DESAIN</div>
+      <div class="file-grid">
+        ${files.map(url => {
+          const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(url.split('?')[0])
+          return isImg
+            ? `<a href="${url}" target="_blank"><img src="${url}" class="file-thumb" alt="Desain"></a>`
+            : `<a href="${url}" target="_blank" class="file-doc"><span style="font-size:28px">📄</span><span style="font-size:9px;color:rgba(3,69,67,.45);margin-top:4px">File</span></a>`
+        }).join('')}
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="section-title">PROGRESS</div>
+      <div id="progressList">
+        ${progressList.length ? progressList.map(u => `
+        <div class="progress-entry">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:700;color:#034543">${u.percentage || 0}%</span>
+            <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
+          </div>
+          <div style="height:6px;background:rgba(3,69,67,.08);border-radius:3px;margin-bottom:6px">
+            <div style="height:6px;background:#034543;border-radius:3px;width:${u.percentage||0}%"></div>
+          </div>
+          ${u.notes ? `<div style="font-size:12px;color:rgba(3,69,67,.6)">${u.notes}</div>` : ''}
+        </div>`).join('')
+        : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:10px 0">Belum ada update progress</p>'}
+      </div>
+
+      <div class="progress-form" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(3,69,67,.08)">
+        <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.6);margin-bottom:8px">Update Progress</div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px;color:rgba(3,69,67,.5);display:block;margin-bottom:4px">Persentase selesai</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="range" id="progressRange" min="0" max="100" step="5" value="0"
+              style="flex:1;accent-color:#034543" oninput="document.getElementById('progressPct').textContent=this.value+'%'">
+            <span id="progressPct" style="font-size:14px;font-weight:800;color:#034543;min-width:40px">0%</span>
+          </div>
+        </div>
+        <textarea id="progressNotes" rows="2" placeholder="Catatan progress (opsional)…"></textarea>
+        <button onclick="submitProgress()" class="btn btn-primary" id="submitProgressBtn">Kirim Update Progress</button>
+        <div id="progressSuccess" style="display:none;margin-top:8px;background:#d1fae5;color:#065f46;border-radius:8px;padding:10px;text-align:center;font-size:13px;font-weight:600">✅ Progress berhasil diupdate!</div>
+        <div id="progressError" style="display:none;margin-top:8px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:10px;text-align:center;font-size:13px"></div>
+      </div>
+    </div>
+  `
+
+  window.submitProgress = async function() {
+    const pct   = parseInt(document.getElementById('progressRange').value)
+    const notes = document.getElementById('progressNotes').value.trim()
+    const btn   = document.getElementById('submitProgressBtn')
+    const succ  = document.getElementById('progressSuccess')
+    const errEl = document.getElementById('progressError')
+
+    btn.disabled = true
+    btn.textContent = 'Mengirim…'
+    succ.style.display = 'none'
+    errEl.style.display = 'none'
+
+    try {
+      await addDoc(collection(db, 'orders', orderId, 'progress_updates'), {
+        percentage: pct,
+        notes,
+        createdBy: supplierNama || 'Supplier',
+        createdByType: 'supplier',
+        supplierToken: token,
+        photos: [],
+        createdAt: Timestamp.now(),
+      })
+      // Update order progressPercentage
+      const { updateDoc, doc: fDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+      await updateDoc(fDoc(db, 'orders', orderId), {
+        progressPercentage: pct,
+        updatedAt: Timestamp.now(),
+      })
+      succ.style.display = ''
+      document.getElementById('progressNotes').value = ''
+      document.getElementById('progressRange').value = 0
+      document.getElementById('progressPct').textContent = '0%'
+
+      // Reload progress list
+      const newSnap = await getDocs(query(collection(db, 'orders', orderId, 'progress_updates'), orderBy('createdAt', 'asc')))
+      const newList = newSnap.docs.map(d => d.data())
+      document.getElementById('progressList').innerHTML = newList.map(u => `
+        <div class="progress-entry">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:700;color:#034543">${u.percentage || 0}%</span>
+            <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
+          </div>
+          <div style="height:6px;background:rgba(3,69,67,.08);border-radius:3px;margin-bottom:6px">
+            <div style="height:6px;background:#034543;border-radius:3px;width:${u.percentage||0}%"></div>
+          </div>
+          ${u.notes ? `<div style="font-size:12px;color:rgba(3,69,67,.6)">${u.notes}</div>` : ''}
+        </div>`).join('')
+    } catch(e) {
+      errEl.textContent = 'Gagal kirim: ' + e.message
+      errEl.style.display = ''
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Kirim Update Progress'
+    }
+  }
+</script>
+</body>
+</html>

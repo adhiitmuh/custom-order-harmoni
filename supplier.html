@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Supplier — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .sup-row { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; background:var(--white); margin-bottom:8px; border:1.5px solid rgba(3,69,67,.07); }
+    .sup-row.inactive { opacity:.45; }
+    .sup-avatar { width:38px; height:38px; border-radius:50%; background:var(--green); color:var(--beige); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800; flex-shrink:0; }
+    .sup-info { flex:1; min-width:0; }
+    .sup-name { font-size:14px; font-weight:700; color:var(--black); }
+    .sup-meta { font-size:11px; color:rgba(3,69,67,.45); margin-top:2px; }
+    .div-tag { display:inline-block; font-size:10px; font-weight:700; background:rgba(3,69,67,.08); color:rgba(3,69,67,.6); padding:1px 6px; border-radius:4px; margin-right:3px; margin-top:2px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:20px">
+      <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:8px">
+        <div>
+          <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Supplier</h1>
+          <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Daftar supplier dan tempat produksi luar. Kontak tersembunyi dari karyawan — hanya owner yang bisa lihat.</p>
+        </div>
+        <button onclick="openModal()" class="btn btn-primary" style="white-space:nowrap;flex-shrink:0;margin-top:4px">＋ Tambah Supplier</button>
+      </div>
+    </div>
+
+    <div id="pageContent"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<!-- Add / Edit Modal -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
+    <h3 id="modalHeading" style="font-size:15px;font-weight:700;margin-bottom:18px">Tambah Supplier</h3>
+
+    <div class="form-group">
+      <label>Nama Supplier / Tempat Produksi <span class="req">*</span></label>
+      <input type="text" id="fNama" placeholder="Contoh: Percetakan Maju Jaya">
+    </div>
+    <div class="form-group">
+      <label>No WA / Kontak <span class="req">*</span></label>
+      <input type="text" id="fKontak" placeholder="628xxxxxxxxxx" inputmode="tel">
+      <p class="form-hint">Hanya owner yang bisa melihat kontak ini</p>
+    </div>
+    <div class="form-group">
+      <label>Alamat / Kota</label>
+      <input type="text" id="fAlamat" placeholder="Contoh: Makassar">
+    </div>
+    <div class="form-group">
+      <label>Catatan Internal</label>
+      <textarea id="fCatatan" rows="2" placeholder="Catatan khusus untuk internal (tidak dilihat supplier)"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:18px">
+      <label style="margin-bottom:8px;display:block">Divisi yang Dilayani <span class="req">*</span></label>
+      <div id="divisiCheckboxes" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px"></div>
+      <p class="form-hint">Centang semua divisi yang bisa dikerjakan supplier ini</p>
+    </div>
+
+    <div id="modalError" class="alert alert-error" style="display:none;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeModal()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
+      <button onclick="saveSupplier()" class="btn btn-primary" style="flex:1;justify-content:center" id="modalSaveBtn">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions } from './js/auth.js'
+  import { collection, doc, getDocs, setDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META } from './js/utils.js'
+
+  let allSuppliers = []
+  let allDivisions = []
+  let editingId = null
+
+  requireAuth(async (profile) => {
+    if (profile.role !== 'owner') {
+      window.location.href = 'orders.html'
+      return
+    }
+    await dataAuthReady
+    allDivisions = await getActiveDivisions()
+    await load()
+  })
+
+  async function load() {
+    const el = document.getElementById('pageContent')
+    try {
+      const snap = await getDocs(collection(db, 'suppliers'))
+      allSuppliers = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.nama || '').localeCompare(b.nama || ''))
+      render()
+    } catch(e) {
+      el.innerHTML = `<div class="alert alert-error">Gagal memuat: ${e.message}</div>`
+    }
+  }
+
+  function render() {
+    const el = document.getElementById('pageContent')
+    if (!allSuppliers.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🏭</div><p>Belum ada supplier. Tambahkan supplier pertama.</p></div>'
+      return
+    }
+    el.innerHTML = allSuppliers.map(s => {
+      const divTags = (s.divisi || []).map(d => {
+        const meta = DIVISION_META[d] || allDivisions.find(x => x.key === d)
+        return `<span class="div-tag">${meta?.icon || '📦'} ${meta?.label || d}</span>`
+      }).join('')
+      return `
+      <div class="sup-row${s.aktif === false ? ' inactive' : ''}">
+        <div class="sup-avatar">${(s.nama||'S')[0].toUpperCase()}</div>
+        <div class="sup-info">
+          <div class="sup-name">${s.nama}${s.aktif === false ? ' <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-weight:700">Non-aktif</span>' : ''}</div>
+          <div class="sup-meta">📞 ${s.kontak || '—'} ${s.alamat ? '· 📍 ' + s.alamat : ''}</div>
+          <div style="margin-top:4px">${divTags || '<span style="font-size:11px;color:rgba(3,69,67,.3)">Belum ada divisi</span>'}</div>
+          ${s.catatan ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:3px;font-style:italic">📝 ${s.catatan}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" onclick="openModal('${s.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAktif('${s.id}')" style="color:${s.aktif===false?'#059669':'#b91c1c'}">${s.aktif===false?'Aktifkan':'Nonaktifkan'}</button>
+        </div>
+      </div>`
+    }).join('')
+  }
+
+  window.toggleAktif = async function(id) {
+    const s = allSuppliers.find(x => x.id === id)
+    if (!s) return
+    const newVal = s.aktif === false ? true : false
+    await updateDoc(doc(db, 'suppliers', id), { aktif: newVal, updatedAt: Timestamp.now() })
+    s.aktif = newVal
+    render()
+  }
+
+  window.openModal = function(id) {
+    editingId = id || null
+    const isNew = !id
+    document.getElementById('modalHeading').textContent = isNew ? 'Tambah Supplier' : 'Edit Supplier'
+    document.getElementById('modalError').style.display = 'none'
+
+    // Build division checkboxes
+    const cbWrap = document.getElementById('divisiCheckboxes')
+    cbWrap.innerHTML = allDivisions.map(d => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:8px;border:1px solid rgba(3,69,67,.1);background:var(--beige-soft)">
+        <input type="checkbox" class="div-cb" value="${d.key}" style="accent-color:var(--green)">
+        ${d.icon || '📦'} ${d.label}
+      </label>`).join('')
+
+    if (id) {
+      const s = allSuppliers.find(x => x.id === id)
+      document.getElementById('fNama').value = s.nama || ''
+      document.getElementById('fKontak').value = s.kontak || ''
+      document.getElementById('fAlamat').value = s.alamat || ''
+      document.getElementById('fCatatan').value = s.catatan || ''
+      const divisi = s.divisi || []
+      document.querySelectorAll('.div-cb').forEach(cb => { cb.checked = divisi.includes(cb.value) })
+    } else {
+      document.getElementById('fNama').value = ''
+      document.getElementById('fKontak').value = ''
+      document.getElementById('fAlamat').value = ''
+      document.getElementById('fCatatan').value = ''
+    }
+
+    document.getElementById('editModal').style.display = 'flex'
+    document.getElementById('fNama').focus()
+  }
+
+  window.closeModal = function() {
+    document.getElementById('editModal').style.display = 'none'
+    editingId = null
+  }
+
+  window.saveSupplier = async function() {
+    const nama    = document.getElementById('fNama').value.trim()
+    const kontak  = document.getElementById('fKontak').value.trim()
+    const alamat  = document.getElementById('fAlamat').value.trim()
+    const catatan = document.getElementById('fCatatan').value.trim()
+    const divisi  = [...document.querySelectorAll('.div-cb:checked')].map(cb => cb.value)
+    const errEl   = document.getElementById('modalError')
+
+    if (!nama || !kontak || !divisi.length) {
+      errEl.textContent = 'Nama, kontak, dan minimal satu divisi wajib diisi'
+      errEl.style.display = ''
+      return
+    }
+
+    const btn = document.getElementById('modalSaveBtn')
+    btn.textContent = 'Menyimpan…'
+    btn.disabled = true
+
+    try {
+      const id = editingId || crypto.randomUUID()
+      const data = { nama, kontak, alamat, catatan, divisi, updatedAt: Timestamp.now() }
+      if (!editingId) { data.aktif = true; data.createdAt = Timestamp.now() }
+      await setDoc(doc(db, 'suppliers', id), data, { merge: true })
+      closeModal()
+      await load()
+    } catch(e) {
+      errEl.textContent = 'Gagal menyimpan: ' + e.message
+      errEl.style.display = ''
+    } finally {
+      btn.textContent = 'Simpan'
+      btn.disabled = false
+    }
+  }
+</script>
+</body>
+</html>

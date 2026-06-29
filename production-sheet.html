@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production Sheet — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .sheet-tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+    .sheet-tab { padding:7px 16px; border-radius:8px; border:1.5px solid rgba(3,69,67,.15); background:var(--white); font-size:13px; font-weight:600; cursor:pointer; color:rgba(3,69,67,.55); transition:all .15s; }
+    .sheet-tab.active { background:var(--green); color:var(--beige); border-color:var(--green); }
+    .ps-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .ps-table th { text-align:left; padding:8px 10px; font-size:10px; font-weight:700; color:rgba(3,69,67,.45); letter-spacing:.05em; border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; background:var(--white); position:sticky; top:0; z-index:1; }
+    .ps-table td { padding:10px 10px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    .ps-table tr:hover td { background:rgba(3,69,67,.02); }
+    .days-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
+    .days-urgent { background:#fee2e2; color:#991b1b; }
+    .days-warn { background:#fef3c7; color:#92400e; }
+    .days-ok { background:#d1fae5; color:#065f46; }
+    .days-done { background:rgba(3,69,67,.08); color:rgba(3,69,67,.4); }
+    .status-select { border:1.5px solid rgba(3,69,67,.15); border-radius:7px; padding:4px 8px; font-size:12px; font-family:inherit; background:var(--white); color:var(--black); cursor:pointer; outline:none; }
+    .status-select:focus { border-color:var(--green); }
+    .file-mini { width:36px; height:36px; border-radius:6px; object-fit:cover; border:1px solid rgba(3,69,67,.1); display:inline-block; }
+    .order-num { font-size:11px; font-weight:700; color:rgba(3,69,67,.4); letter-spacing:.03em; }
+    .size-chips { display:flex; flex-wrap:wrap; gap:3px; }
+    .size-chip { font-size:10px; background:rgba(3,69,67,.07); color:rgba(3,69,67,.7); padding:1px 5px; border-radius:4px; font-weight:600; }
+    .pct-bar { height:4px; background:rgba(3,69,67,.08); border-radius:2px; margin-top:3px; width:80px; }
+    .pct-fill { height:4px; background:var(--green); border-radius:2px; }
+    .filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    .filter-bar input, .filter-bar select { font-size:13px; padding:6px 10px; border:1.5px solid rgba(3,69,67,.15); border-radius:8px; background:var(--white); outline:none; font-family:inherit; }
+    .filter-bar input:focus, .filter-bar select:focus { border-color:var(--green); }
+    .saving-dot { display:none; width:8px; height:8px; border-radius:50%; background:#059669; animation:pulse .8s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @media(max-width:700px){
+      .ps-table th:nth-child(5), .ps-table td:nth-child(5) { display:none; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <h1 style="font-size:22px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Production Sheet</h1>
+        <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:2px">Order aktif siap produksi — update status langsung dari sini</p>
+      </div>
+      <span class="saving-dot" id="savingDot" title="Menyimpan…"></span>
+    </div>
+
+    <div class="sheet-tabs" id="sheetTabs"></div>
+
+    <div class="filter-bar">
+      <input type="search" id="searchInput" placeholder="Cari nama / no order…" style="flex:1;min-width:160px" oninput="applyFilter()">
+      <select id="statusFilter" onchange="applyFilter()">
+        <option value="">Semua Status</option>
+        <option value="pending">Menunggu Konfirmasi</option>
+        <option value="in-progress">Sedang Dikerjakan</option>
+        <option value="quality-check">Quality Check</option>
+      </select>
+      <select id="urgentFilter" onchange="applyFilter()">
+        <option value="">Semua</option>
+        <option value="urgent">Urgent (≤ 2 hari)</option>
+        <option value="warn">Hampir (≤ 5 hari)</option>
+      </select>
+    </div>
+
+    <div style="overflow-x:auto;border-radius:12px;border:1.5px solid rgba(3,69,67,.07)">
+      <table class="ps-table" id="sheetTable">
+        <thead>
+          <tr>
+            <th style="width:130px">NO ORDER</th>
+            <th>NAMA / SPESIFIKASI</th>
+            <th style="width:80px">FILE</th>
+            <th style="width:80px;text-align:center">QTY</th>
+            <th style="width:160px">UKURAN</th>
+            <th style="width:110px;text-align:center">TARGET</th>
+            <th style="width:100px;text-align:center">SISA</th>
+            <th style="width:70px;text-align:center">PROG</th>
+            <th style="width:160px">STATUS</th>
+          </tr>
+        </thead>
+        <tbody id="sheetBody"><tr><td colspan="9" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">Pilih divisi di atas</td></tr></tbody>
+      </table>
+    </div>
+    <div id="sheetCount" style="font-size:12px;color:rgba(3,69,67,.4);margin-top:8px;text-align:right"></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess } from './js/auth.js'
+  import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
+
+  const SHEET_DIVISIONS = ['bordir', 'papan-nama']
+  const DONE_STATUSES = ['done', 'delivered', 'cancelled']
+
+  let allOrders = []
+  let filteredOrders = []
+  let activeDiv = null
+  let _profile = null
+
+  const STATUS_OPTIONS = [
+    { value: 'pending',        label: '⏳ Menunggu Konfirmasi' },
+    { value: 'in-progress',    label: '🔧 Sedang Dikerjakan' },
+    { value: 'quality-check',  label: '🔍 Quality Check' },
+    { value: 'done',           label: '✅ Selesai' },
+    { value: 'delivered',      label: '📦 Sudah Dikirim' },
+    { value: 'cancelled',      label: '❌ Dibatalkan' },
+  ]
+
+  requireAuth(async (profile) => {
+    _profile = profile
+    const canAccess = profile.role === 'owner' || profile.role === 'manager'
+      || profile.role === 'cs' || hasProductionAccess(profile, null)
+    if (!canAccess) {
+      window.location.href = 'orders.html'
+      return
+    }
+    await dataAuthReady
+    const allDivs = await getActiveDivisions()
+
+    // Build tabs — only sheet divisions that are active
+    const sheetDivs = allDivs.filter(d => SHEET_DIVISIONS.includes(d.key))
+    if (!sheetDivs.length) {
+      document.getElementById('sheetTabs').innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.4)">Tidak ada divisi produksi yang aktif.</p>'
+      return
+    }
+
+    const tabEl = document.getElementById('sheetTabs')
+    tabEl.innerHTML = sheetDivs.map((d, i) => `
+      <button class="sheet-tab${i===0?' active':''}" onclick="switchDiv('${d.key}', this)">
+        ${d.icon || '📦'} ${d.label}
+      </button>`).join('')
+
+    await switchDiv(sheetDivs[0].key, tabEl.firstElementChild)
+  })
+
+  window.switchDiv = async function(divKey, btnEl) {
+    activeDiv = divKey
+    document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'))
+    btnEl?.classList.add('active')
+    document.getElementById('sheetBody').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:rgba(3,69,67,.35)">Memuat…</td></tr>'
+
+    const snap = await getDocs(query(
+      collection(db, 'orders'),
+      where('division', '==', divKey),
+      orderBy('dueDate', 'asc')
+    ))
+    allOrders = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(o => !DONE_STATUSES.includes(o.status))
+
+    applyFilter()
+  }
+
+  window.applyFilter = function() {
+    const search = document.getElementById('searchInput').value.toLowerCase()
+    const statusF = document.getElementById('statusFilter').value
+    const urgentF = document.getElementById('urgentFilter').value
+
+    filteredOrders = allOrders.filter(o => {
+      if (search && !((o.customerName||'').toLowerCase().includes(search) || (o.orderNumber||'').toLowerCase().includes(search))) return false
+      if (statusF && o.status !== statusF) return false
+      if (urgentF) {
+        const sisa = sisaHari(o.dueDate)
+        if (urgentF === 'urgent' && (sisa === null || sisa > 2)) return false
+        if (urgentF === 'warn' && (sisa === null || sisa > 5)) return false
+      }
+      return true
+    })
+    renderTable()
+  }
+
+  function sisaHari(dueDate) {
+    if (!dueDate) return null
+    return Math.ceil((new Date(dueDate) - new Date()) / 86400000)
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('sheetBody')
+    document.getElementById('sheetCount').textContent = filteredOrders.length
+      ? `${filteredOrders.length} order ditampilkan${allOrders.length !== filteredOrders.length ? ' (dari ' + allOrders.length + ' total)' : ''}`
+      : ''
+
+    if (!filteredOrders.length) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">
+        ${allOrders.length ? 'Tidak ada order sesuai filter' : 'Tidak ada order aktif untuk divisi ini 🎉'}
+      </td></tr>`
+      return
+    }
+
+    tbody.innerHTML = filteredOrders.map((o, rowIdx) => {
+      const sisa = sisaHari(o.dueDate)
+      const isDone = DONE_STATUSES.includes(o.status)
+      const sisaClass = isDone ? 'days-done' : sisa === null ? '' : sisa <= 2 ? 'days-urgent' : sisa <= 5 ? 'days-warn' : 'days-ok'
+      const sisaText = isDone ? 'Selesai' : sisa === null ? '—' : sisa < 0 ? `${Math.abs(sisa)}h terlambat` : sisa === 0 ? 'Hari ini!' : `${sisa} hari`
+
+      // Design files (first image only for thumbnail)
+      const files = o.designFiles || []
+      const firstImg = files.find(f => /\.(jpg|jpeg|png|gif|webp)/i.test(f.split('?')[0]))
+      const fileCell = firstImg
+        ? `<a href="${firstImg}" target="_blank"><img src="${firstImg}" class="file-mini" alt="file"></a>${files.length > 1 ? `<span style="font-size:10px;color:rgba(3,69,67,.4);margin-left:3px">+${files.length-1}</span>` : ''}`
+        : files.length
+          ? `<a href="${files[0]}" target="_blank" style="font-size:20px;text-decoration:none">📄</a>`
+          : '<span style="color:rgba(3,69,67,.2);font-size:12px">—</span>'
+
+      // Size breakdown
+      const sizeEntries = o.sizeBreakdown ? Object.entries(o.sizeBreakdown).filter(([,v]) => v > 0) : []
+      const sizeCell = sizeEntries.length
+        ? `<div class="size-chips">${sizeEntries.map(([s,v]) => `<span class="size-chip">${s}:${v}</span>`).join('')}</div>`
+        : '<span style="color:rgba(3,69,67,.25);font-size:12px">—</span>'
+
+      // Total qty from orderItems or sizeBreakdown
+      const totalQty = o.orderItems?.reduce((s,it) => s+(it.qty||0), 0)
+        || sizeEntries.reduce((s,[,v]) => s+v, 0)
+        || o.qty || '—'
+
+      // Status select
+      const statusOpts = STATUS_OPTIONS.map(opt =>
+        `<option value="${opt.value}"${o.status===opt.value?' selected':''}>${opt.label}</option>`
+      ).join('')
+
+      const pct = o.progressPercentage || 0
+
+      return `<tr id="row-${o.id}">
+        <td>
+          <div class="order-num">${o.orderNumber || '—'}</div>
+          <div style="font-size:10px;color:rgba(3,69,67,.3);margin-top:2px">${o.lokasiNama || 'Pusat'}</div>
+        </td>
+        <td>
+          <div style="font-weight:600;color:var(--black)">${o.customerName || '—'}</div>
+          ${o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
+          ${o.notes ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px;font-style:italic">${o.notes.substring(0,80)}${o.notes.length>80?'…':''}</div>` : ''}
+        </td>
+        <td>${fileCell}</td>
+        <td style="text-align:center;font-weight:700;font-size:15px">${totalQty}</td>
+        <td>${sizeCell}</td>
+        <td style="text-align:center;font-size:12px;color:rgba(3,69,67,.6)">${o.dueDate ? o.dueDate.split('-').reverse().join('/') : '—'}</td>
+        <td style="text-align:center"><span class="days-badge ${sisaClass}">${sisaText}</span></td>
+        <td style="text-align:center">
+          <div style="font-size:11px;font-weight:700;color:var(--green)">${pct}%</div>
+          <div class="pct-bar"><div class="pct-fill" style="width:${pct}%"></div></div>
+        </td>
+        <td>
+          <select class="status-select" onchange="updateStatus('${o.id}', this.value, ${rowIdx})">
+            ${statusOpts}
+          </select>
+        </td>
+      </tr>`
+    }).join('')
+  }
+
+  window.updateStatus = async function(orderId, newStatus, rowIdx) {
+    const dot = document.getElementById('savingDot')
+    dot.style.display = 'inline-block'
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: newStatus,
+        updatedAt: Timestamp.now(),
+        lastEditBy: _profile?.name || 'production',
+      })
+      const o = allOrders.find(x => x.id === orderId)
+      if (o) o.status = newStatus
+      // Remove from list if now done
+      if (DONE_STATUSES.includes(newStatus)) {
+        allOrders = allOrders.filter(x => x.id !== orderId)
+        applyFilter()
+      }
+    } catch(e) {
+      alert('Gagal update status: ' + e.message)
+    } finally {
+      dot.style.display = 'none'
+    }
+  }
+</script>
+</body>
+</html>

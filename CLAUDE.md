@@ -42,6 +42,9 @@ custom-order-harmoni/
 ├── inbox.html          — Chat Inbox staff: kelola thread WA bot, balas customer, buat order dari chat
 ├── audit-chat.html     — Audit chat WA Bot
 ├── divisi.html         — Kelola divisi
+├── supplier.html       — Kelola supplier/produksi luar (owner only): nama, divisi, kontak WA tersembunyi
+├── supplier-view.html  — Token-based view untuk supplier: lihat pesanan (tanpa harga/kontak), update progress
+├── production-sheet.html — Production sheet bordir & papan-nama: tabel excel-style, sisa hari, update status inline
 ├── lokasi.html         — Kelola lokasi (pusat/cabang/titik)
 ├── css/style.css
 ├── js/
@@ -271,6 +274,45 @@ createdAt       timestamp
 updatedAt       timestamp
 ```
 
+### Collection `suppliers/{id}`
+```
+nama            string    — nama supplier / tempat produksi luar
+kontak          string    — nomor WA (hanya owner yang bisa lihat)
+alamat          string    — kota/alamat
+catatan         string    — catatan internal (tidak terlihat supplier)
+divisi          string[]  — divisi yang bisa dikerjakan supplier ini
+aktif           boolean
+createdAt, updatedAt
+```
+
+### Collection `supplier_tokens/{token}`
+Dibuat saat owner/manager approve pengajuan lempar ke supplier.
+```
+orderId         string
+orderCode       string    — kode yang ditampilkan ke supplier (bukan HRM- number asli)
+supplierId      string
+supplierNama    string
+divisiLabel     string
+itemIndexes     number[]  — index item di orderItems yang dikerjakan supplier ini
+createdBy       string    — uid approver
+createdAt       timestamp
+```
+
+`orders.supplierAssignments[]` — array per item:
+```
+itemIndex       number
+supplierId      string
+supplierNama    string
+assignStatus    string    — 'pending_approval' | 'approved'
+assignedBy      string    — uid CS yang mengajukan
+assignedByName  string
+assignedAt      timestamp
+approvedBy      string
+approvedByName  string
+approvedAt      timestamp
+supplierToken   string    — key di supplier_tokens (setelah approved)
+```
+
 ### Collection `settings/{id}`
 - `monthly_target`: `{ amount: number }` — target omzet bulanan
 - `payment_info`: `{ banks: [{bankName, accountNumber, accountHolder, isActive, divisions: string[], lokasiIds: string[]}], qris: [{imageUrl, division, isActive}], cashActive: boolean }`
@@ -382,6 +424,10 @@ cancelled         → Dibatalkan
 - ✅ **Kirim foto di internal chat** — tombol 📎 di chat internal order, upload ke Storage (`internal_chat/{orderId}/...`), tampil sebagai thumbnail inline, bisa disertai caption teks
 - ✅ **Kirim foto di inbox chat** — tombol 📎 di inbox.html, upload ke Storage (`inbox/{threadId}/...`). Consultation: imageUrl disimpan ke Firestore & tampil di chat.html. WA bot thread: foto disimpan Firestore (visible di inbox), teks tetap lewat Worker ke WA customer
 - ✅ **Omzet per divisi per lokasi** — laporan.html section Per Lokasi: setiap card lokasi kini menampilkan breakdown omzet per divisi dengan progress bar % dan jumlah order
+- ✅ **Kelola Supplier** — supplier.html (owner only): CRUD supplier/produksi luar, kontak tersembunyi dari non-owner, filter per divisi
+- ✅ **Production Sheet** — production-sheet.html: tabel excel-style order aktif per divisi (bordir & papan-nama), kolom sisa hari (urgent/warn/ok), update status inline, filter search/status/urgent
+- ✅ **Lempar ke Supplier** — order.html: CS ajukan item ke supplier → pending_approval → manager/owner approve → generate supplierToken → tombol kirim link via WA otomatis
+- ✅ **Supplier View** — supplier-view.html: token-based, supplier lihat pesanan (kode order, item qty, ukuran, spek, file desain, target selesai, sisa hari) tanpa harga/kontak/nama customer, bisa update progress
 
 ---
 

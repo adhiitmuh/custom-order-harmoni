@@ -462,6 +462,18 @@
             </table>
           </div>` : ''}
 
+          <!-- Supplier Assignment -->
+          ${order.orderItems?.length && (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
+          <div class="card no-print" id="supplierCard" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 style="font-size:14px;font-weight:700">🏭 Lempar ke Supplier</h2>
+              ${profile.role === 'cs' ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">CS bisa ajukan — manager/owner approve</span>` : ''}
+            </div>
+            <div id="supplierAssignUI">
+              <div class="loading" style="padding:12px">Memuat supplier…</div>
+            </div>
+          </div>` : ''}
+
           <!-- Owner: approval banner untuk pengajuan modal dari data role -->
           ${canEditModal && order.modalApprovalStatus === 'pending' ? `
           <div class="card no-print" style="margin-bottom:16px;border:1.5px solid #fde68a;background:#fffbeb">
@@ -806,6 +818,7 @@
     `
 
     renderInvoiceDoc()
+    loadSupplierAssignUI()
   }
 
   function renderPaymentInfoBlock(order, sisa, isPaid) {
@@ -1153,6 +1166,156 @@
       }
       await loadOrder(profile)
     } catch(err) { alert('Gagal void: ' + err.message) }
+  }
+
+  // === SUPPLIER ASSIGNMENT ===
+  let _supplierList = []
+
+  async function loadSupplierAssignUI() {
+    const el = document.getElementById('supplierAssignUI')
+    if (!el) return
+    const profile = getProfile()
+
+    try {
+      const snap = await getDocs(collection(db, 'suppliers'))
+      _supplierList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.aktif !== false && (s.divisi||[]).includes(order.division))
+    } catch(e) {
+      el.innerHTML = `<p style="font-size:13px;color:rgba(3,69,67,.4)">Gagal memuat supplier: ${e.message}</p>`
+      return
+    }
+
+    const assignments = order.supplierAssignments || []
+
+    if (!_supplierList.length) {
+      el.innerHTML = `<p style="font-size:13px;color:rgba(3,69,67,.4)">Belum ada supplier yang melayani divisi ${DIVISION_META[order.division]?.label || order.division}. <a href="supplier.html" style="color:var(--green)">Tambah supplier →</a></p>`
+      return
+    }
+
+    const canApprove = profile.role === 'owner' || profile.role === 'manager'
+    const canAssign  = profile.role === 'cs' || canApprove
+
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px">
+        <thead>
+          <tr style="border-bottom:1.5px solid rgba(3,69,67,.1)">
+            <th style="text-align:left;padding:6px 4px;font-size:10px;color:rgba(3,69,67,.45);font-weight:700">ITEM</th>
+            <th style="text-align:center;padding:6px 4px;font-size:10px;color:rgba(3,69,67,.45);font-weight:700;width:50px">QTY</th>
+            <th style="text-align:left;padding:6px 4px;font-size:10px;color:rgba(3,69,67,.45);font-weight:700">SUPPLIER</th>
+            <th style="text-align:center;padding:6px 4px;font-size:10px;color:rgba(3,69,67,.45);font-weight:700;width:80px">STATUS</th>
+            <th style="padding:6px 4px;width:80px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(order.orderItems||[]).map((it, i) => {
+            const asgn = assignments.find(a => a.itemIndex === i)
+            const statusBadge = !asgn ? '' : asgn.assignStatus === 'approved'
+              ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:4px;font-weight:700">✓ Approved</span>`
+              : `<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-weight:700">⏳ Pending</span>`
+
+            const supplierSelect = _supplierList.map(s =>
+              `<option value="${s.id}"${asgn?.supplierId===s.id?' selected':''}>${s.nama}</option>`
+            ).join('')
+
+            const actionBtn = !canApprove ? '' : asgn?.assignStatus === 'pending_approval'
+              ? `<button onclick="approveSupplierAssign(${i})" class="btn btn-ghost btn-sm" style="color:#059669;font-size:11px">✓ Approve</button>`
+              : ''
+
+            const shareBtn = asgn?.assignStatus === 'approved' && asgn?.supplierToken && canApprove
+              ? `<button onclick="shareSupplierLink('${asgn.supplierToken}','${asgn.supplierNama}')" class="btn btn-ghost btn-sm" style="font-size:11px">📲 Kirim</button>`
+              : ''
+
+            return `<tr style="border-bottom:1px solid rgba(3,69,67,.06)">
+              <td style="padding:8px 4px;font-weight:500">${it.name||'—'}<br><span style="font-size:10px;color:rgba(3,69,67,.4)">${it.varian||''}</span></td>
+              <td style="padding:8px 4px;text-align:center;font-weight:700">${it.qty||0}</td>
+              <td style="padding:8px 4px">
+                ${canAssign && (!asgn || asgn.assignStatus !== 'approved') ? `
+                <select id="supSel-${i}" style="border:1.5px solid rgba(3,69,67,.15);border-radius:7px;padding:4px 6px;font-size:12px;font-family:inherit;background:var(--white)">
+                  <option value="">— Pilih supplier</option>
+                  ${supplierSelect}
+                </select>` : `<span style="font-size:12px;color:rgba(3,69,67,.6)">${asgn?.supplierNama||'—'}</span>`}
+              </td>
+              <td style="padding:8px 4px;text-align:center">${statusBadge}</td>
+              <td style="padding:8px 4px;display:flex;gap:4px;flex-wrap:wrap">${actionBtn}${shareBtn}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+      ${canAssign ? `<button onclick="submitSupplierAssign()" class="btn btn-ghost btn-sm" style="font-size:12px">Ajukan ke Supplier</button>` : ''}
+    `
+  }
+
+  window.submitSupplierAssign = async function() {
+    const profile = getProfile()
+    const newAssignments = []
+    let hasSelection = false
+
+    ;(order.orderItems||[]).forEach((it, i) => {
+      const sel = document.getElementById(`supSel-${i}`)
+      if (!sel || !sel.value) return
+      const supplier = _supplierList.find(s => s.id === sel.value)
+      if (!supplier) return
+      hasSelection = true
+      const existing = (order.supplierAssignments||[]).find(a => a.itemIndex === i)
+      if (!existing || existing.supplierId !== supplier.id) {
+        newAssignments.push({
+          itemIndex: i,
+          supplierId: supplier.id,
+          supplierNama: supplier.nama,
+          assignStatus: 'pending_approval',
+          assignedBy: profile.id,
+          assignedByName: profile.name,
+          assignedAt: Timestamp.now(),
+          supplierToken: null,
+        })
+      }
+    })
+
+    if (!hasSelection) { alert('Pilih minimal satu supplier dulu.'); return }
+
+    const merged = [...(order.supplierAssignments||[]).filter(a => !newAssignments.find(n => n.itemIndex === a.itemIndex)), ...newAssignments]
+    await updateDoc(doc(db, 'orders', orderId), { supplierAssignments: merged, updatedAt: Timestamp.now() })
+    order.supplierAssignments = merged
+    await loadSupplierAssignUI()
+  }
+
+  window.approveSupplierAssign = async function(itemIndex) {
+    const profile = getProfile()
+    const asgn = (order.supplierAssignments||[]).find(a => a.itemIndex === itemIndex)
+    if (!asgn) return
+
+    const token = 'sup_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    const divMeta = DIVISION_META[order.division]
+
+    await setDoc(doc(db, 'supplier_tokens', token), {
+      orderId,
+      orderCode: order.orderNumber ? order.orderNumber.replace(/HRM-[A-Z]+-\d+-/, 'ORD-') : 'ORD-' + orderId.slice(-6).toUpperCase(),
+      supplierId: asgn.supplierId,
+      supplierNama: asgn.supplierNama,
+      divisiLabel: divMeta?.label || order.division,
+      itemIndexes: [itemIndex],
+      createdBy: profile.id,
+      createdAt: Timestamp.now(),
+    })
+
+    const updated = (order.supplierAssignments||[]).map(a => a.itemIndex === itemIndex
+      ? { ...a, assignStatus: 'approved', supplierToken: token, approvedBy: profile.id, approvedByName: profile.name, approvedAt: Timestamp.now() }
+      : a
+    )
+    await updateDoc(doc(db, 'orders', orderId), { supplierAssignments: updated, updatedAt: Timestamp.now() })
+    order.supplierAssignments = updated
+    await loadSupplierAssignUI()
+  }
+
+  window.shareSupplierLink = function(token, supplierNama) {
+    const url = `${location.origin}${location.pathname.replace('order.html','supplier-view.html')}?t=${token}`
+    const supplier = _supplierList.find(s => s.nama === supplierNama)
+    const kontak = supplier?.kontak?.replace(/\D/g,'').replace(/^0/,'62') || ''
+    const msg = `Halo *${supplierNama}*,\n\nBerikut link detail pesanan dari *Harmoni Indonesia* untuk Anda kerjakan:\n\n${url}\n\nMelalui link ini Anda bisa:\n✅ Lihat detail pesanan & file desain\n✅ Update progress pengerjaan\n\nTerima kasih 🙏\n_Harmoni Indonesia_`
+    const waUrl = kontak.startsWith('62')
+      ? `https://wa.me/${kontak}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`
+    window.open(waUrl, '_blank')
   }
 
   window.deleteOrder = async function() {
