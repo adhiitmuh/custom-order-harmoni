@@ -218,8 +218,9 @@
 </div>
 
 <script type="module">
-import { db, auth } from './js/config.js'
+import { db, auth, storage } from './js/config.js'
 import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
+import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -399,7 +400,14 @@ window.openThread = function(threadId) {
     </div>
 
     ${!isClosed ? `
+    <div id="inboxPhotoPreview" style="display:none;padding:6px 14px;background:#f0fdf4;border-top:1px solid #bbf7d0;font-size:12px;color:#065f46;align-items:center;gap:8px;flex-shrink:0">
+      <span id="inboxPhotoName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <button onclick="cancelInboxPhoto()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:0">✕</button>
+    </div>
     <div class="chat-input">
+      <label title="Kirim foto" style="background:var(--beige-soft);border:1.5px solid rgba(3,69,67,.15);border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+        📎<input type="file" id="inboxPhotoInput" accept="image/*" style="display:none" onchange="selectInboxPhoto(this)">
+      </label>
       <textarea class="reply-ta" id="replyTa" placeholder="Ketik balasan… (Enter kirim, Shift+Enter baris baru)"
         oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply()}"></textarea>
@@ -473,7 +481,8 @@ function renderMessages(msgs) {
           ${isAI ? `<div class="sender-label">🤖 AI Agent</div>` : ''}
           ${!isCustomer && !isAI && m.senderName ? `<div class="sender-label">${esc(m.senderName)}</div>` : ''}
           <div class="bubble ${st}${m.flagged ? ' flagged' : ''}">
-            <div style="white-space:pre-wrap">${esc(m.content || '')}</div>
+            ${m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:200px;border-radius:8px;display:block;object-fit:cover;margin-bottom:${m.content ? '6px' : '0'}"></a>` : ''}
+            ${m.content ? `<div style="white-space:pre-wrap">${esc(m.content || '')}</div>` : ''}
             ${m.flagged ? `<div class="flag-tag">🚩 ${esc(m.flagReason || 'Konten mencurigakan')}</div>` : ''}
             <div class="bubble-time">${time}</div>
           </div>
@@ -485,12 +494,31 @@ function renderMessages(msgs) {
   if (wasAtBottom) el.scrollTop = el.scrollHeight
 }
 
+// ─── Photo upload for inbox ───────────────────────────────────────────────────
+let _inboxPhotoFile = null
+
+window.selectInboxPhoto = function(input) {
+  const file = input.files[0]
+  if (!file) return
+  _inboxPhotoFile = file
+  document.getElementById('inboxPhotoName').textContent = '📷 ' + file.name
+  document.getElementById('inboxPhotoPreview').style.display = 'flex'
+  input.value = ''
+}
+
+window.cancelInboxPhoto = function() {
+  _inboxPhotoFile = null
+  document.getElementById('inboxPhotoPreview').style.display = 'none'
+  document.getElementById('inboxPhotoName').textContent = ''
+}
+
 // ─── Send reply ───────────────────────────────────────────────────────────────
 window.sendReply = async function() {
   const ta  = document.getElementById('replyTa')
   const btn = document.getElementById('sendBtnEl')
   const msg = ta?.value.trim()
-  if (!msg || !activeThreadId) return
+  const file = _inboxPhotoFile
+  if (!msg && !file || !activeThreadId) return
 
   const thread = allThreads.find(t => t.id === activeThreadId)
   if (!thread) return
@@ -516,20 +544,35 @@ window.sendReply = async function() {
   ta.disabled  = true
 
   try {
+    // Upload photo first if any
+    let imageUrl = null
+    if (file) {
+      const path = `inbox/${activeThreadId}/${Date.now()}_${file.name}`
+      const storRef = ref(storage, path)
+      await new Promise((resolve, reject) => {
+        const task = uploadBytesResumable(storRef, file)
+        task.on('state_changed', null, reject, async () => {
+          imageUrl = await getDownloadURL(storRef)
+          resolve()
+        })
+      })
+      cancelInboxPhoto()
+    }
+
     if (isConsultation) {
       // Consultation: write directly to Firestore (no Worker needed)
       const { flagged, reason } = detectSuspiciousMsg(msg)
       const token = thread.token || activeThreadId
       await addDoc(collection(db, 'chat_messages', token, 'messages'), {
-        text: msg, imageUrl: null, type: 'text',
+        text: msg, imageUrl, type: imageUrl ? 'image' : 'text',
         senderId: profile?.id || '', senderName: profile?.name || '',
         senderRole: profile?.role || 'admin', senderBranch: profile?.branch || '',
         createdAt: Timestamp.now(),
       })
       updateDoc(doc(db, 'consultations', activeThreadId), {
-        lastMessage: msg, lastMessageAt: Timestamp.now(),
+        lastMessage: imageUrl && !msg ? '📷 Foto' : msg, lastMessageAt: Timestamp.now(),
       }).catch(() => {})
-      if (flagged) {
+      if (flagged && msg) {
         addDoc(collection(db, 'chat_flags'), {
           chatToken: token, orderId: null, orderNumber: '',
           staffId: profile?.id || '', staffName: profile?.name || '', staffRole: profile?.role || '',
@@ -538,21 +581,33 @@ window.sendReply = async function() {
         }).catch(() => {})
       }
     } else {
-      // WA bot thread: send via Worker (delivers to customer's WA)
-      if (!WORKER_URL) {
-        alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dengan URL Cloudflare Worker Anda.')
-        btn.disabled = false; ta.disabled = false
-        return
+      // WA bot thread: send text via Worker, photo stored in Firestore only
+      if (imageUrl) {
+        await addDoc(collection(db, 'chat_threads', activeThreadId, 'messages'), {
+          content: msg, imageUrl, type: 'image',
+          senderType: 'admin', senderId: profile?.id || '', senderName: profile?.name || '',
+          createdAt: Timestamp.now(),
+        })
+        updateDoc(doc(db, 'chat_threads', activeThreadId), {
+          lastMessage: '📷 Foto' + (msg ? ': ' + msg : ''), lastMessageAt: Timestamp.now(),
+        }).catch(() => {})
       }
-      const idToken = await auth.currentUser.getIdToken()
-      const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: activeThreadId, message: msg, adminId: profile?.id, adminName: profile?.name }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        throw new Error(err.error || `HTTP ${resp.status}`)
+      if (msg) {
+        if (!WORKER_URL) {
+          alert('WORKER_URL belum dikonfigurasi di inbox.html. Isi dengan URL Cloudflare Worker Anda.')
+          btn.disabled = false; ta.disabled = false
+          return
+        }
+        const idToken = await auth.currentUser.getIdToken()
+        const resp = await fetch(`${WORKER_URL}/send-chat-reply`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threadId: activeThreadId, message: msg, adminId: profile?.id, adminName: profile?.name }),
+        })
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}))
+          throw new Error(err.error || `HTTP ${resp.status}`)
+        }
       }
     }
     ta.value = ''
