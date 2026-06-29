@@ -147,17 +147,23 @@
   }
 
   async function init() {
-    // Load knowledge & price lists (shared for both order and consultation mode)
     const { getDocs: gd } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
-    const [knowledgeSnap, ...priceSnaps] = await Promise.all([
-      gd(collection(db,'product_knowledge')),
-      ...DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))),
-    ])
+    // product_knowledge is public — always loads
+    const knowledgeSnap = await gd(collection(db,'product_knowledge'))
     const allKnowledge = knowledgeSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
+    // price_list is staff-only — anonymous auth (customer chat) will be blocked by Firestore rules.
+    // Fetch with fallback so customer chat still works if blocked.
     const allPrices = {}
-    DIVISIONS_ALL.forEach((d,i) => {
-      if (priceSnaps[i].exists()) allPrices[d] = priceSnaps[i].data()
-    })
+    try {
+      const priceSnaps = await Promise.all(DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))))
+      DIVISIONS_ALL.forEach((d,i) => {
+        if (priceSnaps[i].exists()) {
+          const { items, ...rest } = priceSnaps[i].data()
+          // Strip priceModal before storing — defence-in-depth
+          allPrices[d] = { ...rest, items: (items||[]).map(({ priceModal, ...item }) => item) }
+        }
+      })
+    } catch (_) { /* blocked for anonymous users — customers see knowledge content only */ }
 
     // Try order first
     const snap = await getDoc(doc(db,'public_order_info',token))

@@ -73,8 +73,10 @@
   let currentDate = new Date()
   let allOrders = []
   let activeDivFilter = null
+  let profile = null
 
-  requireAuth(() => {
+  requireAuth((p) => {
+    profile = p
     dataAuthReady.then(() =>
     getDocs(collection(db,'orders'))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -159,8 +161,9 @@
         const isDone = ['done','delivered'].includes(o.status)
         const chipClass = isDone ? 'chip-done' : dLeft < 0 ? 'chip-late' : dLeft <= 2 ? 'chip-urgent' : 'chip-ok'
         const meta = DIVISION_META[o.division]||{}
+        const unreadInternal = (o.internalChatCount||0) - (o.lastReadInternalChatCount?.[profile?.id]||0)
         html += `<a href="order.html?id=${o.id}" class="order-chip ${chipClass}" title="${o.customerName} · ${STATUS_LABEL[o.status]}">
-          ${meta.icon} ${o.customerName}
+          ${meta.icon} ${o.customerName}${unreadInternal > 0 ? ` <span style="background:#7c3aed;color:white;font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px">🔒 ${unreadInternal}</span>` : ''}
         </a>`
       }
       if (dayOrders.length > 3) html += `<span class="more-chip">+${dayOrders.length-3} lagi</span>`

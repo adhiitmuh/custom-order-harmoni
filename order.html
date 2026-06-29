@@ -310,7 +310,7 @@
               <div>
                 <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Lokasi Harmoni</p>
                 <div style="display:flex;align-items:center;gap:6px">
-                  <span style="font-weight:600;flex:1" id="lokasiDisplay">${order.lokasiNama || '—'}</span>
+                  <span style="font-weight:600;flex:1" id="lokasiDisplay">${order.lokasiNama || order.branch || '—'}</span>
                   ${canEditLokasi ? `<button onclick="editLokasi()" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" id="lokasiEditBtn">Edit</button>` : ''}
                 </div>
                 ${canEditLokasi ? `
@@ -935,7 +935,7 @@
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
               <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
               ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
-              ${order.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama}</div>` : ''}
+              ${(order.lokasiNama || order.branch) ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama || order.branch}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>

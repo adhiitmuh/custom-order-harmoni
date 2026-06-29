@@ -2,18 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAuth() { return request.auth != null; }
+    // Distinguishes real staff login (email/password) from anonymous auth used by public pages
+    function isStaffAuth() { return isAuth() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
     function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
-    function isOwner() { return isAuth() && role() == 'owner'; }
-    function isOwnerOrCS() { return isAuth() && role() in ['owner','cs']; }
-    function isData() { return isAuth() && role() == 'data'; }
+    function isOwner() { return isStaffAuth() && role() == 'owner'; }
+    function isOwnerOrCS() { return isStaffAuth() && role() in ['owner','cs']; }
+    function isData() { return isStaffAuth() && role() == 'data'; }
 
     match /users/{uid} {
-      allow read: if isAuth();
-      allow write: if isOwner() || request.auth.uid == uid;
+      allow read: if isStaffAuth();
+      allow write: if isOwner() || (isStaffAuth() && request.auth.uid == uid);
     }
     match /orders/{orderId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
+      allow read: if isAuth();   // isAuth() (not isStaffAuth) — supplier-view.html uses anonymous auth
+      allow create: if isStaffAuth();
       allow update: if isAuth();
       allow delete: if isOwner();
     }
@@ -23,8 +25,8 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
     match /orders/{orderId}/internal_chat/{msgId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
+      allow read: if isStaffAuth();
+      allow create: if isStaffAuth();
       allow delete: if isOwner();
     }
     match /product_knowledge/{id} {
@@ -32,41 +34,41 @@ service cloud.firestore {
       allow write: if isOwner() || isData();
     }
     match /order_counters/{div} {
-      allow read, write: if isAuth();
+      allow read, write: if isStaffAuth();
     }
     match /price_list/{div} {
-      allow read: if isAuth(); // Requires auth (chat.html uses anonymous auth)
+      allow read: if isStaffAuth(); // Staff login only — anonymous auth (chat.html) blocked
       allow write: if isOwnerOrCS() || isData();
     }
     match /settings/{id} {
-      allow read: if isAuth();
-      allow write: if isAuth();
+      allow read: if isStaffAuth();
+      allow write: if isStaffAuth();
     }
 
     // Public order info for customer chat (token-based access)
     match /public_order_info/{chatToken} {
       allow read: if true;
-      allow write: if isAuth();
+      allow write: if isStaffAuth();
     }
 
     match /lokasi/{id} {
-      allow read: if isAuth();
+      allow read: if isStaffAuth();
       allow write: if isOwner();
     }
 
     match /divisions/{id} {
-      allow read: if isAuth();
+      allow read: if isStaffAuth();
       allow write: if isOwner();
     }
 
     match /suppliers/{id} {
-      allow read: if isAuth();
+      allow read: if isStaffAuth();
       allow write: if isOwner();
     }
 
     match /supplier_tokens/{token} {
       allow read: if true; // Supplier akses via token tanpa login
-      allow write: if isAuth();
+      allow write: if isStaffAuth();
     }
 
     // Chat messages — public read/write (token = password)
@@ -78,12 +80,12 @@ service cloud.firestore {
 
     // Chat inbox threads — readable by all staff, writable by owner/cs
     match /chat_threads/{threadId} {
-      allow read: if isAuth();
+      allow read: if isStaffAuth();
       allow write: if isOwnerOrCS();
     }
     match /chat_threads/{threadId}/messages/{msgId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
+      allow read: if isStaffAuth();
+      allow create: if isStaffAuth();
       allow delete: if isOwner();
     }
 
@@ -100,8 +102,8 @@ service cloud.firestore {
 
     // In-app notifications per order internal chat
     match /notifications/{notifId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
+      allow read: if isStaffAuth();
+      allow create: if isStaffAuth();
       allow delete: if isOwner();
     }
 
@@ -114,7 +116,7 @@ service cloud.firestore {
     // Flag pesan mencurigakan — staff menulis, owner yang baca & tinjau
     match /chat_flags/{id} {
       allow read: if isOwner();
-      allow create: if isAuth();
+      allow create: if isStaffAuth();
       allow update: if isOwner();
       allow delete: if isOwner();
     }
@@ -126,7 +128,7 @@ service cloud.firestore {
 
     // Customer feedback — public write (token = password), staff read only
     match /feedback/{token} {
-      allow read: if isAuth();
+      allow read: if isStaffAuth();
       allow create: if true; // Anyone with token can submit feedback
       allow update: if false; // No editing after submit
       allow delete: if isOwner();

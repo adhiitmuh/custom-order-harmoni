@@ -4,9 +4,11 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 
 let _staffCache = null
+let _staffCacheAt = 0
+const STAFF_CACHE_TTL = 5 * 60 * 1000
 
 export async function loadStaff() {
-  if (_staffCache) return _staffCache
+  if (_staffCache && Date.now() - _staffCacheAt < STAFF_CACHE_TTL) return _staffCache
   const snap = await getDocs(collection(db, 'users'))
   const seen = new Set()
   _staffCache = snap.docs
@@ -14,6 +16,7 @@ export async function loadStaff() {
     .filter(u => u.name)
     .sort((a, b) => a.name.localeCompare(b.name, 'id'))
     .filter(u => { if (seen.has(u.name)) return false; seen.add(u.name); return true })
+  _staffCacheAt = Date.now()
   return _staffCache
 }
 

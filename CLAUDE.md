@@ -428,6 +428,9 @@ cancelled         → Dibatalkan
 - ✅ **Production Sheet** — production-sheet.html: tabel excel-style order aktif per divisi (bordir & papan-nama), kolom sisa hari (urgent/warn/ok), update status inline, filter search/status/urgent
 - ✅ **Lempar ke Supplier** — order.html: CS ajukan item ke supplier → pending_approval → manager/owner approve → generate supplierToken → tombol kirim link via WA otomatis
 - ✅ **Supplier View** — supplier-view.html: token-based, supplier lihat pesanan (kode order, item qty, ukuran, spek, file desain, target selesai, sisa hari) tanpa harga/kontak/nama customer, bisa update progress
+- ✅ **Staff list cache TTL** — mentions.js `_staffCache` di-refresh setiap 5 menit, jadi staf baru otomatis muncul di @mention tanpa perlu reload manual
+- ✅ **Badge 🔒 internal chat di kalender** — chip order di kalender.html kini tampil badge `🔒 N` jika ada pesan internal chat belum dibaca (per-user, sama seperti orders.html)
+- ✅ **Fallback lokasiNama → branch** — order.html display lokasi menggunakan `lokasiNama || branch` agar order lama yang pakai field `branch` tetap tampil nama lokasinya
 
 ---
 

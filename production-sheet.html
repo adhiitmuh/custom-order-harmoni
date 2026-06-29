@@ -100,9 +100,21 @@
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
   const DONE_STATUSES = ['done', 'delivered', 'cancelled']
 
+  // For composite tabs: query multiple divisions and optionally filter by item keyword.
+  // Each entry is an array of { queryDiv, keyword }.
+  // keyword: null = take all orders from that division
+  // keyword: 'papan' = only orders where at least one orderItem name contains 'papan'
+  const COMPOSITE_TABS = {
+    'papan-nama': [
+      { queryDiv: 'papan-nama', keyword: null },  // direct papan-nama orders
+      { queryDiv: 'bordir',     keyword: 'papan' }, // bordir orders with papan nama items
+    ]
+  }
+
   let allOrders = []
   let filteredOrders = []
   let activeDiv = null
+  let activeComposite = null  // array of { queryDiv, keyword } if composite tab
   let _profile = null
 
   const STATUS_OPTIONS = [
@@ -143,18 +155,44 @@
 
   window.switchDiv = async function(divKey, btnEl) {
     activeDiv = divKey
+    activeComposite = COMPOSITE_TABS[divKey] || null
     document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'))
     btnEl?.classList.add('active')
     document.getElementById('sheetBody').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:rgba(3,69,67,.35)">Memuat…</td></tr>'
 
-    const snap = await getDocs(query(
-      collection(db, 'orders'),
-      where('division', '==', divKey),
-      orderBy('dueDate', 'asc')
-    ))
-    allOrders = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(o => !DONE_STATUSES.includes(o.status))
+    if (activeComposite) {
+      // Fetch from multiple divisions in parallel, then merge
+      const snaps = await Promise.all(activeComposite.map(({ queryDiv }) =>
+        getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv), orderBy('dueDate', 'asc')))
+      ))
+      const seen = new Set()
+      allOrders = []
+      snaps.forEach((snap, idx) => {
+        const { keyword } = activeComposite[idx]
+        snap.docs.forEach(d => {
+          if (seen.has(d.id)) return  // dedup (same order can't appear twice)
+          const o = { id: d.id, ...d.data() }
+          if (DONE_STATUSES.includes(o.status)) return
+          if (keyword) {
+            const kw = keyword.toLowerCase()
+            if (!(o.orderItems || []).some(it => (it.name || '').toLowerCase().includes(kw))) return
+          }
+          seen.add(d.id)
+          allOrders.push(o)
+        })
+      })
+      // Sort merged result by dueDate ascending
+      allOrders.sort((a, b) => (a.dueDate || '') < (b.dueDate || '') ? -1 : 1)
+    } else {
+      const snap = await getDocs(query(
+        collection(db, 'orders'),
+        where('division', '==', divKey),
+        orderBy('dueDate', 'asc')
+      ))
+      allOrders = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(o => !DONE_STATUSES.includes(o.status))
+    }
 
     applyFilter()
   }
@@ -216,10 +254,16 @@
         ? `<div class="size-chips">${sizeEntries.map(([s,v]) => `<span class="size-chip">${s}:${v}</span>`).join('')}</div>`
         : '<span style="color:rgba(3,69,67,.25);font-size:12px">—</span>'
 
-      // Total qty from orderItems or sizeBreakdown
-      const totalQty = o.orderItems?.reduce((s,it) => s+(it.qty||0), 0)
-        || sizeEntries.reduce((s,[,v]) => s+v, 0)
-        || o.qty || '—'
+      // For composite tabs (papan-nama from bordir orders), only count papan-related items.
+      // For direct papan-nama division orders, show all items.
+      const papanKeyword = activeComposite ? activeComposite.find(c => c.keyword)?.keyword : null
+      const relevantItems = (papanKeyword && o.division !== activeDiv)
+        ? (o.orderItems || []).filter(it => (it.name || '').toLowerCase().includes(papanKeyword))
+        : (o.orderItems || [])
+
+      const totalQty = relevantItems.length
+        ? relevantItems.reduce((s, it) => s + (it.qty || 0), 0)
+        : sizeEntries.reduce((s, [, v]) => s + v, 0) || o.qty || '—'
 
       // Status select
       const statusOpts = STATUS_OPTIONS.map(opt =>
@@ -235,7 +279,9 @@
         </td>
         <td>
           <div style="font-weight:600;color:var(--black)">${o.customerName || '—'}</div>
-          ${o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
+          ${relevantItems.length > 1 || (relevantItems.length === 1 && relevantItems[0].name)
+            ? `<div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${relevantItems.map(it => it.name + (it.varian ? ` (${it.varian})` : '')).join(', ')}</div>`
+            : o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
           ${o.notes ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px;font-style:italic">${o.notes.substring(0,80)}${o.notes.length>80?'…':''}</div>` : ''}
         </td>
         <td>${fileCell}</td>
