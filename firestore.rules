@@ -2,9 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAuth() { return request.auth != null; }
-    // Staff login (email/password) always has request.auth.token.email.
-    // Anonymous auth (chat.html, supplier-view.html) never has email.
-    function isStaffAuth() { return isAuth() && request.auth.token.email != null; }
+    // Staff login always has a document in users/{uid}.
+    // Anonymous auth (chat.html, supplier-view.html) never does.
+    function isStaffAuth() { return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
     function isOwner() { return isStaffAuth() && role() == 'owner'; }
     function isOwnerOrCS() { return isStaffAuth() && role() in ['owner','cs']; }
