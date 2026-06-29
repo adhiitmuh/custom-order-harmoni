@@ -560,6 +560,7 @@
           count: 0,
           totalOmzet: 0,
           paymentBreakdown: {},
+          divisionBreakdown: {},
         })
       }
       const e = lokasiMap.get(o.lokasiId)
@@ -569,6 +570,10 @@
       if ((o.depositPaid || 0) > 0) {
         e.paymentBreakdown[pm] = (e.paymentBreakdown[pm] || 0) + (o.depositPaid || 0)
       }
+      const div = o.division || 'lainnya'
+      if (!e.divisionBreakdown[div]) e.divisionBreakdown[div] = { count: 0, totalOmzet: 0 }
+      e.divisionBreakdown[div].count++
+      e.divisionBreakdown[div].totalOmzet += o.totalPrice || 0
     }
 
     if (lokasiMap.size === 0) {
@@ -638,6 +643,22 @@
                 <span style="font-size:12px;font-weight:700">Total Masuk</span>
                 <span style="font-size:13px;font-weight:800;color:var(--green)">${fmtCurrency(totalMasuk)}</span>
               </div>` : ''}
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(3,69,67,.1)">
+              <p style="font-size:10px;font-weight:700;color:rgba(3,69,67,.4);letter-spacing:.05em;margin-bottom:7px">OMZET PER DIVISI</p>
+              ${Object.entries(r.divisionBreakdown).sort((a,b) => b[1].totalOmzet - a[1].totalOmzet).map(([div, data]) => {
+                const meta = DIVISION_META[div]
+                const pct = r.totalOmzet > 0 ? Math.round(data.totalOmzet / r.totalOmzet * 100) : 0
+                return `<div style="margin-bottom:6px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+                    <span style="font-size:11px;color:rgba(3,69,67,.7)">${meta?.icon||'📦'} ${meta?.label||div} <span style="color:rgba(3,69,67,.35)">(${data.count} order)</span></span>
+                    <span style="font-size:11px;font-weight:700">${fmtCurrency(data.totalOmzet)}</span>
+                  </div>
+                  <div style="height:4px;background:rgba(3,69,67,.08);border-radius:2px">
+                    <div style="height:4px;background:var(--green);border-radius:2px;width:${pct}%"></div>
+                  </div>
+                </div>`
+              }).join('')}
+            </div>
           </div>`
         }).join('')}
       </div>`
