@@ -95,6 +95,7 @@
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
   import { getFirestore, collection, doc, getDoc, addDoc, setDoc, updateDoc, query, orderBy, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+  import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 
   const firebaseConfig = {
     apiKey: "AIzaSyAy4w2mhgZQfMBto7a9A8dhsrK2Envprf4",
@@ -107,6 +108,8 @@
   const app = initializeApp(firebaseConfig)
   const db  = getFirestore(app)
   const storage = getStorage(app)
+  const auth = getAuth(app)
+  await signInAnonymously(auth).catch(() => {})
 
   const STATUS_LABEL = {
     'pending':'Menunggu Konfirmasi','pending-approval':'Menunggu Approval',

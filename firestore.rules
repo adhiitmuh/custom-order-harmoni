@@ -35,7 +35,7 @@ service cloud.firestore {
       allow read, write: if isAuth();
     }
     match /price_list/{div} {
-      allow read: if true; // Public — customer can read (UI filters to Normal only)
+      allow read: if isAuth(); // Requires auth (chat.html uses anonymous auth)
       allow write: if isOwnerOrCS() || isData();
     }
     match /settings/{id} {

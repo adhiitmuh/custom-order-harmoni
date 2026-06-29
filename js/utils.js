@@ -92,7 +92,9 @@ export function generateId() {
 
 export function generateChatToken() {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  return Array.from({length: 24}, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  const array = new Uint8Array(24)
+  crypto.getRandomValues(array)
+  return Array.from(array, b => chars[b % chars.length]).join('')
 }
 
 export function hasContactInfo(text) {
