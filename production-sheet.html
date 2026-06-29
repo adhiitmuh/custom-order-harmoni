@@ -160,38 +160,41 @@
     btnEl?.classList.add('active')
     document.getElementById('sheetBody').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:rgba(3,69,67,.35)">Memuat…</td></tr>'
 
-    if (activeComposite) {
-      // Fetch from multiple divisions in parallel, then merge
-      const snaps = await Promise.all(activeComposite.map(({ queryDiv }) =>
-        getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv), orderBy('dueDate', 'asc')))
-      ))
-      const seen = new Set()
-      allOrders = []
-      snaps.forEach((snap, idx) => {
-        const { keyword } = activeComposite[idx]
-        snap.docs.forEach(d => {
-          if (seen.has(d.id)) return  // dedup (same order can't appear twice)
-          const o = { id: d.id, ...d.data() }
-          if (DONE_STATUSES.includes(o.status)) return
-          if (keyword) {
-            const kw = keyword.toLowerCase()
-            if (!(o.orderItems || []).some(it => (it.name || '').toLowerCase().includes(kw))) return
-          }
-          seen.add(d.id)
-          allOrders.push(o)
+    try {
+      if (activeComposite) {
+        const snaps = await Promise.all(activeComposite.map(({ queryDiv }) =>
+          getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv)))
+        ))
+        const seen = new Set()
+        allOrders = []
+        snaps.forEach((snap, idx) => {
+          const { keyword } = activeComposite[idx]
+          snap.docs.forEach(d => {
+            if (seen.has(d.id)) return
+            const o = { id: d.id, ...d.data() }
+            if (DONE_STATUSES.includes(o.status)) return
+            if (keyword) {
+              const kw = keyword.toLowerCase()
+              if (!(o.orderItems || []).some(it => (it.name || '').toLowerCase().includes(kw))) return
+            }
+            seen.add(d.id)
+            allOrders.push(o)
+          })
         })
-      })
-      // Sort merged result by dueDate ascending
+      } else {
+        const snap = await getDocs(query(
+          collection(db, 'orders'),
+          where('division', '==', divKey)
+        ))
+        allOrders = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(o => !DONE_STATUSES.includes(o.status))
+      }
+      // Sort by dueDate ascending in JS (avoids composite Firestore index requirement)
       allOrders.sort((a, b) => (a.dueDate || '') < (b.dueDate || '') ? -1 : 1)
-    } else {
-      const snap = await getDocs(query(
-        collection(db, 'orders'),
-        where('division', '==', divKey),
-        orderBy('dueDate', 'asc')
-      ))
-      allOrders = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(o => !DONE_STATUSES.includes(o.status))
+    } catch(e) {
+      document.getElementById('sheetBody').innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:#dc2626">Gagal memuat: ${e.message}</td></tr>`
+      return
     }
 
     applyFilter()
@@ -287,7 +290,15 @@
                 </div>`
               ).join('')
             : o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
-          ${o.notes ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px;font-style:italic">${o.notes.substring(0,120)}${o.notes.length>120?'…':''}</div>` : ''}
+          ${o.notes ? (() => {
+              const short = o.notes.length > 80
+              const preview = short ? o.notes.substring(0, 80) + '…' : o.notes
+              return `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px;font-style:italic">
+                <span id="notes-short-${o.id}">${preview}</span>
+                <span id="notes-full-${o.id}" style="display:none">${o.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>
+                ${short ? `<button onclick="toggleNotes('${o.id}')" id="notes-btn-${o.id}" style="margin-left:4px;font-size:10px;color:var(--green);background:none;border:none;cursor:pointer;padding:0;font-style:normal;text-decoration:underline">Lihat semua</button>` : ''}
+              </div>`
+            })() : ''}
         </td>
         <td>${fileCell}</td>
         <td style="text-align:center;font-weight:700;font-size:15px">${totalQty}</td>
@@ -305,6 +316,17 @@
         </td>
       </tr>`
     }).join('')
+  }
+
+  window.toggleNotes = function(orderId) {
+    const short = document.getElementById(`notes-short-${orderId}`)
+    const full  = document.getElementById(`notes-full-${orderId}`)
+    const btn   = document.getElementById(`notes-btn-${orderId}`)
+    if (!short || !full || !btn) return
+    const expanded = full.style.display !== 'none'
+    short.style.display = expanded ? '' : 'none'
+    full.style.display  = expanded ? 'none' : ''
+    btn.textContent = expanded ? 'Lihat semua' : 'Sembunyikan'
   }
 
   window.updateStatus = async function(orderId, newStatus, rowIdx) {
