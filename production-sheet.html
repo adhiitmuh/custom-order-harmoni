@@ -7,7 +7,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Production Sheet — Harmoni</title>
+  <title>Papan Nama Sheet — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
     .sheet-tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
@@ -46,8 +46,8 @@
   <main class="main">
     <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
       <div>
-        <h1 style="font-size:22px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Production Sheet</h1>
-        <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:2px">Order aktif siap produksi — update status langsung dari sini</p>
+        <h1 style="font-size:22px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Papan Nama Sheet</h1>
+        <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:2px">Order papan nama aktif — bordir & US/Kaca Lapis, update status langsung dari sini</p>
       </div>
       <span class="saving-dot" id="savingDot" title="Menyimpan…"></span>
     </div>
@@ -100,14 +100,11 @@
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
   const DONE_STATUSES = ['done', 'delivered', 'cancelled']
 
-  // For composite tabs: query multiple divisions and optionally filter by item keyword.
-  // Each entry is an array of { queryDiv, keyword }.
-  // keyword: null = take all orders from that division
-  // keyword: 'papan' = only orders where at least one orderItem name contains 'papan'
+  // Composite tabs: filter bordir to only orders with papan nama items.
+  // papan-nama division is a straight query (no composite needed).
   const COMPOSITE_TABS = {
-    'papan-nama': [
-      { queryDiv: 'papan-nama', keyword: null },  // direct papan-nama orders
-      { queryDiv: 'bordir',     keyword: 'papan' }, // bordir orders with papan nama items
+    'bordir': [
+      { queryDiv: 'bordir', keyword: 'papan' }, // bordir orders with papan nama items only
     ]
   }
 

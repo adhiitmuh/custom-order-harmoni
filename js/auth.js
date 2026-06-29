@@ -250,7 +250,7 @@ export function renderSidebar(profile) {
         <span class="icon">📅</span>Kalender Produksi
       </a>
       <a href="production-sheet.html" class="sidebar-link ${page==='production-sheet.html'?'active':''}">
-        <span class="icon">🗂️</span>Production Sheet
+        <span class="icon">🗂️</span>Papan Nama Sheet
       </a>
     </div>
 
