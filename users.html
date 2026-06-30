@@ -171,7 +171,7 @@
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.lokasiNama}</div>` : (u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : '')}
-          ${(() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()
+          ${(() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()}
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
         ${u.id !== getProfile()?.id ? `
