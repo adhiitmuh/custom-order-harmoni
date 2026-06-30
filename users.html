@@ -107,16 +107,20 @@
   let lokasiOptions = []
 
   async function loadLokasiOptions() {
-    const snap = await getDocs(query(collection(db, 'lokasi'), orderBy('tipe')))
-    lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
-    const sel = document.getElementById('newLokasiId')
-    lokasiOptions.forEach(l => {
-      const opt = document.createElement('option')
-      opt.value = l.id
-      const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
-      opt.textContent = `${icon} ${l.nama}`
-      sel.appendChild(opt)
-    })
+    try {
+      const snap = await getDocs(collection(db, 'lokasi'))
+      lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(l => l.aktif !== false)
+        .sort((a, b) => (a.tipe || '').localeCompare(b.tipe || ''))
+      const sel = document.getElementById('newLokasiId')
+      lokasiOptions.forEach(l => {
+        const opt = document.createElement('option')
+        opt.value = l.id
+        const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
+        opt.textContent = `${icon} ${l.nama}`
+        sel.appendChild(opt)
+      })
+    } catch(e) { console.warn('loadLokasiOptions:', e.message) }
   }
 
   // Populate division checkboxes
@@ -144,7 +148,13 @@
   })
 
   async function loadUsers() {
-    const snap = await getDocs(collection(db,'users'))
+    let snap
+    try {
+      snap = await getDocs(collection(db,'users'))
+    } catch(e) {
+      document.getElementById('userList').innerHTML = `<div class="loading" style="color:#dc2626">Gagal memuat: ${e.message}</div>`
+      return
+    }
     const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     const el = document.getElementById('userList')
 
