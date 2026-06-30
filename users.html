@@ -158,7 +158,11 @@
       el.innerHTML = `<div style="padding:20px;color:#dc2626;font-size:13px">⚠️ Gagal memuat: ${e.message}</div>`
       return
     }
-    const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    // Deduplicate by email — each user has 2 docs (portalUID + anonUID), keep one per email
+    const seen = new Set()
+    const users = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => { if (!u.email || seen.has(u.email)) return false; seen.add(u.email); return true })
 
     if (!users.length) {
       el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>Belum ada pengguna</p></div>'
