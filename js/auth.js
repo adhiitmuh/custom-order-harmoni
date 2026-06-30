@@ -286,7 +286,7 @@ export function renderSidebar(profile) {
         <span class="icon">📖</span>Product Knowledge
       </a>
       ${profile.role === 'owner' ? `
-      <a href="https://adhiitmuh.github.io/harmoni-indonesia/" target="_blank" class="sidebar-link">
+      <a href="users.html" class="sidebar-link ${page==='users.html'?'active':''}">
         <span class="icon">⚙️</span>Kelola Pengguna
       </a>
       <a href="lokasi.html" class="sidebar-link ${page==='lokasi.html'?'active':''}">
