@@ -148,11 +148,13 @@
   })
 
   async function loadUsers() {
+    const el = document.getElementById('userList')
     let snap
     try {
-      snap = await getDocs(collection(db,'users'))
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout — coba refresh halaman')), 10000))
+      snap = await Promise.race([getDocs(collection(db,'users')), timeout])
     } catch(e) {
-      document.getElementById('userList').innerHTML = `<div class="loading" style="color:#dc2626">Gagal memuat: ${e.message}</div>`
+      el.innerHTML = `<div style="padding:20px;color:#dc2626;font-size:13px">⚠️ Gagal memuat: ${e.message}</div>`
       return
     }
     const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
