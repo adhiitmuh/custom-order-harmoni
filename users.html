@@ -158,7 +158,6 @@
       return
     }
     const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    const el = document.getElementById('userList')
 
     if (!users.length) {
       el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>Belum ada pengguna</p></div>'
