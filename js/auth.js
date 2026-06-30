@@ -142,6 +142,7 @@ export function requireAuth(callback) {
           const op = opSnap.data()
           if (op.lokasiId) fresh.lokasiId = op.lokasiId
           if (op.lokasiNama) fresh.lokasiNama = op.lokasiNama
+          if (op.lokasiTipe) fresh.lokasiTipe = op.lokasiTipe
           // Pakai divisions dari db sebagai fallback kalau portal tidak ada divisions (untuk CS)
           if (!fresh.divisions?.length && op.divisions?.length) fresh.divisions = op.divisions
         }

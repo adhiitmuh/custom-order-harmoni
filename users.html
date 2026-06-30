@@ -200,12 +200,14 @@
 
       // Save to Firestore
       const lokasiId = document.getElementById('newLokasiId').value
-      const lokasiNama = lokasiId ? (lokasiOptions.find(l => l.id === lokasiId)?.nama || '') : ''
+      const lokasiObj = lokasiId ? lokasiOptions.find(l => l.id === lokasiId) : null
+      const lokasiNama = lokasiObj?.nama || ''
+      const lokasiTipe = lokasiObj?.tipe || ''
       const divisions = (role === 'production' || role === 'cs') ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
       const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
       if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
-      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, divisions, pin, createdAt: Timestamp.now() })
+      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, lokasiTipe, divisions, pin, createdAt: Timestamp.now() })
 
       // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
       // → harus sign out lalu owner login ulang
@@ -250,11 +252,13 @@
     if (!_editLokasiUid) return
     const sel = document.getElementById('editLokasiSel')
     const lokasiId = sel.value
-    const lokasiNama = lokasiId ? (lokasiOptions.find(l => l.id === lokasiId)?.nama || '') : ''
+    const lokasiObj = lokasiId ? lokasiOptions.find(l => l.id === lokasiId) : null
+    const lokasiNama = lokasiObj?.nama || ''
+    const lokasiTipe = lokasiObj?.tipe || ''
     const btn = document.getElementById('saveLokasiBtn')
     btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
-      await updateDoc(doc(db, 'users', _editLokasiUid), { lokasiId, lokasiNama })
+      await updateDoc(doc(db, 'users', _editLokasiUid), { lokasiId, lokasiNama, lokasiTipe })
       closeLokasiModal()
       await loadUsers()
     } catch(err) {

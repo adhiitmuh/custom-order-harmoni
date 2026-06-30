@@ -464,7 +464,7 @@
           </div>` : ''}
 
           <!-- Supplier Assignment -->
-          ${order.orderItems?.length && (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
+          ${order.orderItems?.length && (profile.role === 'owner' || ((profile.role === 'manager' || profile.role === 'cs') && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat'))) ? `
           <div class="card no-print" id="supplierCard" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <h2 style="font-size:14px;font-weight:700">🏭 Lempar ke Supplier</h2>
