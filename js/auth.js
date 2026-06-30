@@ -154,12 +154,13 @@ export function requireAuth(callback) {
       // Also write under the anon UID (from dataAuth) because Firestore rules
       // check request.auth.uid = anon UID, not the portal UID.
       const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '' }
-      setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
-      dataAuthReady.then(anonUser => {
-        if (anonUser && anonUser.uid !== snap.id) {
-          setDoc(doc(db, 'users', anonUser.uid), roleDoc, { merge: true }).catch(() => {})
-        }
-      })
+      // Write portal UID doc and anon UID doc — both must complete before callback
+      // so Firestore rules (isStaffAuth checks users/{anonUID}) pass immediately
+      await setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
+      const anonUser = await dataAuthReady
+      if (anonUser && anonUser.uid !== snap.id) {
+        await setDoc(doc(db, 'users', anonUser.uid), roleDoc, { merge: true }).catch(() => {})
+      }
 
       _profile = fresh
       renderSidebar(fresh)
