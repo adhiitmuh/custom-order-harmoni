@@ -19,6 +19,24 @@ export const dataAuthReady = Promise.race([
   new Promise(resolve => setTimeout(() => resolve(null), 5000))
 ])
 
+// Eagerly write users/{anonUID} from sessionStorage cache as soon as dataAuth is ready.
+// This ensures isStaffAuth() Firestore rule passes even when optimistic render fires
+// the page callback before the background auth verification completes.
+dataAuthReady.then(async (anonUser) => {
+  if (!anonUser) return
+  const cachedUid = sessionStorage.getItem('harmoni_uid')
+  if (!cachedUid) return
+  const cached = sessionStorage.getItem(`profile_${cachedUid}`)
+  if (!cached) return
+  try {
+    const p = JSON.parse(cached)
+    if (!p.role) return
+    await setDoc(doc(db, 'users', anonUser.uid),
+      { role: p.role, name: p.name || '', email: p.email || '', branch: p.branch || '' },
+      { merge: true })
+  } catch {}
+})
+
 let _user = null
 let _profile = null
 let _notifInitialized = false
