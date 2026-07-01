@@ -12,7 +12,10 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isStaffAuth();
-      allow write: if isOwner() || (isStaffAuth() && request.auth.uid == uid);
+      // Self-write allowed for any authenticated user so the anonymous UID doc
+      // can be bootstrapped on first session (breaks the circular dependency
+      // where isStaffAuth requires the doc to exist before it can be created).
+      allow write: if isOwner() || (isAuth() && request.auth.uid == uid);
     }
     match /orders/{orderId} {
       allow read: if isAuth();   // isAuth() (not isStaffAuth) — supplier-view.html uses anonymous auth
