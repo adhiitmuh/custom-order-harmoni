@@ -97,7 +97,7 @@
 
 <script type="module">
   import { auth, db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
@@ -143,7 +143,6 @@
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
-    await dataAuthReady
     loadLokasiOptions()
     loadUsers()
   })

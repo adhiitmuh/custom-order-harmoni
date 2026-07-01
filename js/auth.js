@@ -19,22 +19,27 @@ export const dataAuthReady = Promise.race([
   new Promise(resolve => setTimeout(() => resolve(null), 5000))
 ])
 
-// Eagerly write users/{anonUID} from sessionStorage cache as soon as dataAuth is ready.
-// This ensures isStaffAuth() Firestore rule passes even when optimistic render fires
-// the page callback before the background auth verification completes.
+// firestoreReady resolves after users/{anonUID} is written to Firestore.
+// requireAuth() waits for this before firing the page callback so that
+// isStaffAuth() Firestore rules pass on the very first query.
+let _firestoreReadyResolve = () => {}
+export const firestoreReady = new Promise(resolve => { _firestoreReadyResolve = resolve })
+setTimeout(() => _firestoreReadyResolve(), 5000) // safety: never hang longer than 5s
+
 dataAuthReady.then(async (anonUser) => {
-  if (!anonUser) return
+  if (!anonUser) { _firestoreReadyResolve(); return }
   const cachedUid = sessionStorage.getItem('harmoni_uid')
-  if (!cachedUid) return
+  if (!cachedUid) { _firestoreReadyResolve(); return }
   const cached = sessionStorage.getItem(`profile_${cachedUid}`)
-  if (!cached) return
+  if (!cached) { _firestoreReadyResolve(); return }
   try {
     const p = JSON.parse(cached)
-    if (!p.role) return
+    if (!p.role) { _firestoreReadyResolve(); return }
     await setDoc(doc(db, 'users', anonUser.uid),
       { role: p.role, name: p.name || '', email: p.email || '', branch: p.branch || '' },
       { merge: true })
   } catch {}
+  _firestoreReadyResolve()
 })
 
 let _user = null
@@ -100,9 +105,9 @@ function showAccessDenied(msg) {
 let _callbackFired = false
 
 export function requireAuth(callback) {
-  // ── Optimistic render: render immediately from sessionStorage ──
-  // Don't wait for Firebase Auth at all — show page right away,
-  // then verify auth in background. If user is logged out, redirect.
+  // ── Optimistic render: render sidebar immediately from sessionStorage ──
+  // Fire the page callback only after firestoreReady so that users/{anonUID}
+  // is written before any Firestore query runs (fixes "Missing or insufficient permissions").
   const cachedUid = sessionStorage.getItem('harmoni_uid')
   if (cachedUid) {
     const cached = sessionStorage.getItem(`profile_${cachedUid}`)
@@ -110,8 +115,12 @@ export function requireAuth(callback) {
       try {
         _profile = JSON.parse(cached)
         renderSidebar(_profile)
-        callback(_profile)
-        _callbackFired = true
+        firestoreReady.then(() => {
+          if (!_callbackFired) {
+            _callbackFired = true
+            callback(_profile)
+          }
+        })
       } catch { /* fall through */ }
     }
   }
