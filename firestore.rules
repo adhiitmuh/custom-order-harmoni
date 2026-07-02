@@ -41,7 +41,7 @@ service cloud.firestore {
       allow read, write: if isStaffAuth();
     }
     match /price_list/{div} {
-      allow read: if isStaffAuth(); // Staff login only — anonymous auth (chat.html) blocked
+      allow read: if isAuth(); // Customers can see priceNormal — chat.html strips priceModal/pricePromo/priceAdmin
       allow write: if isOwnerOrCS() || isData();
     }
     match /settings/{id} {
@@ -61,7 +61,7 @@ service cloud.firestore {
     }
 
     match /divisions/{id} {
-      allow read: if isStaffAuth();
+      allow read: if isAuth(); // Public read so chat.html can filter inactive divisions
       allow write: if isOwner();
     }
 

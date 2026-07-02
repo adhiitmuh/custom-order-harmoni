@@ -133,7 +133,8 @@
     init()
   }
 
-  const DIVISIONS_ALL = ['bordir','butik','jersey','jilbab','sablon','konveksi','medali-pin','papan-nama','pin-fiber','sewa-kostum','tailor']
+  // Fallback static list — overridden by live Firestore fetch of active divisions
+  let DIVISIONS_ALL = ['bordir','butik','jersey','jilbab','sablon','konveksi','medali-pin','papan-nama','pin-fiber','sewa-kostum','tailor']
   const DIV_LABEL = {
     bordir:'Bordir',butik:'Butik',jersey:'Jersey',jilbab:'Jilbab',
     sablon:'Kaos & Sablon',konveksi:'Konveksi',
@@ -148,22 +149,39 @@
 
   async function init() {
     const { getDocs: gd } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+
+    // Fetch active divisions (divisions collection now readable by isAuth)
+    try {
+      const divSnap = await gd(collection(db,'divisions'))
+      const activeDivs = divSnap.docs
+        .map(d => ({ key: d.id, ...d.data() }))
+        .filter(d => d.aktif !== false)
+        .sort((a,b) => (a.orderIndex||99) - (b.orderIndex||99))
+      if (activeDivs.length) {
+        DIVISIONS_ALL = activeDivs.map(d => d.key)
+        activeDivs.forEach(d => {
+          if (d.label) DIV_LABEL[d.key] = d.label
+          if (d.icon)  DIV_ICON[d.key]  = d.icon
+        })
+      }
+    } catch (_) { /* fallback to static list */ }
+
     // product_knowledge is public — always loads
     const knowledgeSnap = await gd(collection(db,'product_knowledge'))
     const allKnowledge = knowledgeSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
-    // price_list is staff-only — anonymous auth (customer chat) will be blocked by Firestore rules.
-    // Fetch with fallback so customer chat still works if blocked.
+
+    // price_list — readable by isAuth (anonymous ok). Strip all tiers except priceNormal.
     const allPrices = {}
     try {
       const priceSnaps = await Promise.all(DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))))
       DIVISIONS_ALL.forEach((d,i) => {
         if (priceSnaps[i].exists()) {
           const { items, ...rest } = priceSnaps[i].data()
-          // Strip priceModal before storing — defence-in-depth
-          allPrices[d] = { ...rest, items: (items||[]).map(({ priceModal, ...item }) => item) }
+          // Only expose priceNormal — strip priceModal, pricePromo, priceAdmin
+          allPrices[d] = { ...rest, items: (items||[]).map(({ priceModal, pricePromo, priceAdmin, ...item }) => item) }
         }
       })
-    } catch (_) { /* blocked for anonymous users — customers see knowledge content only */ }
+    } catch (_) { /* fallback: no prices */ }
 
     // Try order first
     const snap = await getDoc(doc(db,'public_order_info',token))
