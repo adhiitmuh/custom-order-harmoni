@@ -223,6 +223,7 @@
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
     const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
+    const canEditItemPrice = profile.role === 'owner' || profile.role === 'manager'
     const canEditModal   = profile.role === 'owner'
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
@@ -420,7 +421,7 @@
                     ` : `<span style="color:rgba(3,69,67,.6)">${it.qty||0}</span>`}
                   </td>
                   <td style="padding:9px 0;text-align:right">
-                    ${canEdit ? `
+                    ${canEditItemPrice ? `
                       <span id="pval-${i}" style="cursor:pointer;color:rgba(3,69,67,.7);padding:2px 5px;border-radius:4px;display:inline-block" onclick="editItemPrice(${i})" title="Klik untuk edit">${fmtCurrency(it.pricePerUnit)}</span>
                       <input id="pinp-${i}" type="text" inputmode="numeric" value="${fmtPrice(it.pricePerUnit)}"
                         style="display:none;width:95px;text-align:right;font-size:12px;border:1.5px solid #034543;border-radius:6px;padding:3px 8px;outline:none"
@@ -430,7 +431,7 @@
                       ${it.tier === 'promo' ? `<span style="display:block;margin-top:2px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px">PROMO</span>` : ''}
                       ${it.tier === 'admin' ? `<span style="display:block;margin-top:2px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px">ADMIN</span>` : ''}
                     ` : `
-                      <span style="color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</span>
+                      <span style="color:rgba(3,69,69,.6)">${fmtCurrency(it.pricePerUnit)}</span>
                       ${it.tier === 'promo' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;vertical-align:middle">PROMO</span>` : ''}
                       ${it.tier === 'admin' ? `<span style="display:inline-block;margin-left:4px;font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;vertical-align:middle">ADMIN</span>` : ''}
                     `}
@@ -1482,6 +1483,36 @@
   }
 
   // === MODAL PER ITEM (inline edit for owner) ===
+  window.editItemPrice = function(i) {
+    document.getElementById(`pval-${i}`).style.display = 'none'
+    const inp = document.getElementById(`pinp-${i}`)
+    inp.style.display = 'inline-block'
+    inp.focus(); inp.select()
+  }
+
+  window.cancelItemPrice = function(i) {
+    const span = document.getElementById(`pval-${i}`)
+    const inp  = document.getElementById(`pinp-${i}`)
+    if (span) span.style.display = ''
+    if (inp)  inp.style.display  = 'none'
+  }
+
+  window.saveItemPrice = async function(i, rawVal) {
+    cancelItemPrice(i)
+    const newPrice = parsePrice(rawVal)
+    if (newPrice === 0) return
+    const items = (order.orderItems||[]).map((it, idx) =>
+      idx === i ? { ...it, pricePerUnit: newPrice, subtotal: newPrice * (it.qty || 1) } : it
+    )
+    const newTotal = items.reduce((s, it) => s + (it.subtotal || 0), 0)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        orderItems: items, totalPrice: newTotal, updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal simpan: ' + err.message) }
+  }
+
   window.editItemModal = function(i) {
     document.getElementById(`mval-${i}`).style.display = 'none'
     const inp = document.getElementById(`minp-${i}`)
@@ -2280,6 +2311,16 @@
     const chatUrl = order.chatToken
       ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}`
       : null
+    const itemLines = (order.orderItems?.length)
+      ? [
+          `*RINCIAN ITEM*`,
+          ...order.orderItems.map(it => {
+            const label = it.varian ? `${it.name} (${it.varian})` : it.name
+            return `• ${label}: ${it.qty||1}pcs × ${fmtCurrency(it.pricePerUnit)} = ${fmtCurrency(it.subtotal)}`
+          }),
+          ``
+        ]
+      : []
     const lines = [
       `*INVOICE HARMONI*`, ``,
       `No. Order: *${order.orderNumber}*`,
@@ -2288,11 +2329,7 @@
       `*Pemesan:* ${order.customerName}`,
       `*Tanggal Pesan:* ${fmtDate(order.orderDate)}`,
       `*Target Selesai:* ${fmtDate(order.dueDate)}`, ``,
-      ...(order.orderItems?.length ? [
-        `*RINCIAN ITEM*`,
-        ...order.orderItems.map(it => `• ${it.name} ${it.qty}pcs × ${fmtCurrency(it.pricePerPcs)} = ${fmtCurrency(it.subtotal)}`),
-        ``,
-      ] : []),
+      ...itemLines,
       `*RINCIAN PEMBAYARAN*`,
       `Total Harga: ${fmtCurrency(order.totalPrice)}`,
       `DP Dibayar: ${fmtCurrency(order.depositPaid)}`,
