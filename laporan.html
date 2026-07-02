@@ -102,9 +102,25 @@
 
     <!-- Order table -->
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2 style="font-size:14px;font-weight:700">Daftar Order</h2>
         <span id="orderTableCount" style="font-size:12px;color:rgba(3,69,67,.4)"></span>
+      </div>
+      <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <input type="text" id="tblSearch" placeholder="🔍 Cari nama / no. order" oninput="onTableFilter()" style="flex:1;min-width:160px;padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;outline:none;color:var(--green)">
+        <select id="tblDivisi" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)"><option value="">Semua Divisi</option></select>
+        <select id="tblStatus" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)">
+          <option value="">Semua Status</option>
+          <option value="__belum_lunas__">💰 Belum Lunas</option>
+          <option value="pending">Menunggu Konfirmasi</option>
+          <option value="pending-approval">Menunggu Approval</option>
+          <option value="in-progress">Sedang Dikerjakan</option>
+          <option value="quality-check">Quality Check</option>
+          <option value="done">Selesai</option>
+          <option value="delivered">Sudah Dikirim</option>
+        </select>
+        <select id="tblLokasi" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)"><option value="">Semua Lokasi</option></select>
+        <button id="tblResetBtn" onclick="resetTableFilter()" style="display:none;padding:7px 10px;border-radius:8px;border:1.5px solid rgba(239,68,68,.3);font-size:12px;font-family:inherit;background:none;color:#dc2626;cursor:pointer">✕ Reset</button>
       </div>
       <div id="orderTable" style="overflow-x:auto"></div>
     </div>
@@ -121,6 +137,7 @@
   let lokasiList = []
   let bankList = []
   let divisiPemilikMap = {}  // key divisi → nama pemilik
+  let currentPeriodOrders = []  // orders after period filter, before table filter
   let currentFrom = null
   let currentTo = null
 
@@ -293,7 +310,59 @@
     renderProfitSection(orders)
     renderKewajibanDivisi(orders)
 
-    // Order table
+    // Store for table filter use, reset filters, populate dropdowns, render table
+    currentPeriodOrders = orders
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    const resetBtn = document.getElementById('tblResetBtn')
+    if (resetBtn) resetBtn.style.display = 'none'
+    populateTableDropdowns()
+    renderOrderTable(orders)
+  }
+
+  function populateTableDropdowns() {
+    const lokasiSel = document.getElementById('tblLokasi')
+    if (lokasiSel) {
+      lokasiSel.innerHTML = '<option value="">Semua Lokasi</option>' +
+        lokasiList.map(l => {
+          const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
+          return `<option value="${l.id}">${icon} ${l.nama}</option>`
+        }).join('')
+    }
+    const divSel = document.getElementById('tblDivisi')
+    if (divSel) {
+      const usedDivs = [...new Set(currentPeriodOrders.map(o => o.division).filter(Boolean))]
+        .sort((a,b) => (DIVISION_META[a]?.label||a).localeCompare(DIVISION_META[b]?.label||b))
+      divSel.innerHTML = '<option value="">Semua Divisi</option>' +
+        usedDivs.map(d => `<option value="${d}">${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}</option>`).join('')
+    }
+  }
+
+  window.onTableFilter = function() {
+    const search = (document.getElementById('tblSearch')?.value || '').toLowerCase()
+    const divisi = document.getElementById('tblDivisi')?.value || ''
+    const status = document.getElementById('tblStatus')?.value || ''
+    const lokasi = document.getElementById('tblLokasi')?.value || ''
+    const filtered = currentPeriodOrders.filter(o => {
+      if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
+      if (divisi && o.division !== divisi) return false
+      if (status === '__belum_lunas__') { if ((o.depositPaid||0) >= (o.totalPrice||0)) return false }
+      else if (status && o.status !== status) return false
+      if (lokasi && o.lokasiId !== lokasi) return false
+      return true
+    })
+    const hasFilter = search || divisi || status || lokasi
+    const resetBtn = document.getElementById('tblResetBtn')
+    if (resetBtn) resetBtn.style.display = hasFilter ? '' : 'none'
+    renderOrderTable(filtered)
+  }
+
+  window.resetTableFilter = function() {
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    document.getElementById('tblResetBtn').style.display = 'none'
+    renderOrderTable(currentPeriodOrders)
+  }
+
+  function renderOrderTable(orders) {
     const isOwner = getProfile()?.role === 'owner'
     const withModal = isOwner ? orders.filter(o => o.hargaModal > 0) : []
     const footerModal  = withModal.reduce((s,o)=>s+(o.hargaModal||0),0)
