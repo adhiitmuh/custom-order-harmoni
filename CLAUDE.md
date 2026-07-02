@@ -72,7 +72,7 @@ Config ada di `js/config.js` — hardcoded, ini aman untuk repo publik (anon key
 - `isAuth()` — siapapun yang login, **termasuk anonymous auth** (dipakai hanya untuk `orders` agar supplier-view.html tetap bisa baca order via anonymous auth)
 - `isStaffAuth()` — hanya yang login dengan **email/password** (bukan anonymous); dipakai untuk semua koleksi sensitif
 - Halaman publik yang pakai `signInAnonymously`: `chat.html` (customer), `supplier-view.html` (supplier)
-- Koleksi yang masih `isAuth()` (bukan isStaffAuth): `orders`, `orders/progress_updates` — karena supplier-view.html perlu baca data order
+- Koleksi yang masih `isAuth()` (bukan isStaffAuth): `orders`, `orders/progress_updates` — karena supplier-view.html perlu baca data order; `divisions` (read) + `price_list` (read) — karena chat.html (anonymous) perlu filter divisi aktif dan tampil harga ke customer
 
 ---
 
@@ -441,6 +441,9 @@ cancelled         → Dibatalkan
 - ✅ **namaCustom per item order** — field `namaCustom` di orderItems untuk papan nama: nama/teks yang dicetak di papan. Input muncul otomatis di new-order.html saat divisi papan-nama dipilih atau item bordir mengandung kata "papan". Tampil di order.html (label ungu 🏷) dan Papan Nama Sheet
 - ✅ **Keamanan isStaffAuth()** — Firestore rules kini membedakan anonymous auth (customer/supplier) vs staff login (email/password). Koleksi sensitif (users, settings, price_list, lokasi, divisions, chat_threads, notifications, feedback, dll) hanya bisa diakses staff login
 - ✅ **Harga modal tidak bocor ke customer** — price_list diblokir untuk anonymous auth; chat.html fetch price_list di-wrap try/catch (gagal gracefully) + priceModal di-strip client-side sebagai defence-in-depth. Customer hanya bisa lihat konten product_knowledge (teks markdown)
+- ✅ **Filter bar Daftar Order di laporan.html** — search nama/no.order + filter divisi + filter status + filter lokasi, footer TOTAL update dinamis mengikuti baris yang terfilter, reset otomatis saat ganti periode
+- ✅ **Right-click / open in new tab** — semua tab navigasi di app menggunakan `<a href>` bukan `<button>`, sehingga bisa diklik kanan → "Buka di tab baru". Diterapkan pertama di knowledge.html (tab divisi) dengan `onclick` + `e.preventDefault()` + `history.pushState` untuk tetap SPA
+- ✅ **`firestoreReady` promise di auth.js** — menyelesaikan circular dependency isStaffAuth: `requireAuth()` delay callback halaman sampai `users/{anonUID}` berhasil ditulis ke Firestore (write rule sekarang `isAuth() && uid == request.auth.uid`). Ada safety timeout 5 detik. Tanpa ini, semua halaman REFERENSI error "Missing or insufficient permissions" saat first load
 
 ---
 
@@ -731,7 +734,7 @@ const messages = conversationHistory.slice(-MAX_HISTORY)
 - [x] Endpoint `/notify-customer` — auto-notif WA ke customer (sementara Fonnte)
 - [ ] **Migrasi Fonnte → WA Cloud API (Meta)** — setup Meta Business, update `fonnteSend()` → `waSend()`
 - [ ] **Set `CLAUDE_API_KEY`** — `npx wrangler secret put CLAUDE_API_KEY`
-- [ ] **Deploy Firestore rules** — `firebase deploy --only firestore:rules` (ada perubahan: `feedback` collection)
+- [x] **Deploy Firestore rules** — deployed, termasuk: fix circular dep `users/{uid}` write, `divisions` read → `isAuth()`, `price_list` read → `isAuth()`, `feedback` collection
 - [ ] Setup WA webhook → arahkan ke `/incoming-chat` (setelah WA Cloud API aktif)
 - [ ] Fungsi `buildMenu(env)` di Worker — fetch divisi aktif (Firestore) + kategori Olsera (cache), generate nomor urut, simpan `menuMap` di session
 - [ ] Handler angka masuk → lookup `session.menuMap[angka]` → routing ke custom_order / ready_stock / cs
