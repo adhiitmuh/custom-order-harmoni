@@ -285,7 +285,7 @@
       <div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:12px;padding:14px 18px;margin-bottom:20px">
         <div style="font-weight:700;font-size:14px;color:#b91c1c">❌ Harga Ditolak</div>
         <div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:3px">Alasan: ${order.priceApprovalReason||'—'}</div>
-        ${canEdit?`<button onclick="location.href='new-order.html'" class="btn btn-ghost btn-sm" style="margin-top:8px">Buat Order Baru</button>`:''}
+        ${canEdit?`<a href="new-order.html" class="btn btn-ghost btn-sm" style="margin-top:8px;display:inline-flex">Buat Order Baru</a>`:''}
       </div>` : ''}
 
       ${order.status === 'draft' ? `
@@ -589,19 +589,48 @@
               </div>
             </div>
             <div id="progressTimeline">
-              ${order.progressUpdates?.length ? order.progressUpdates.map(u => `
-                <div style="display:flex;gap:10px;margin-bottom:10px">
+              ${order.progressUpdates?.length ? order.progressUpdates.map(u => {
+                const canEditEntry = profile.role === 'owner' || profile.role === 'manager' || u.updatedBy === profile.id
+                const canDelEntry  = profile.role === 'owner' || profile.role === 'manager'
+                const safeNote     = String(u.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+                return `
+                <div id="pe-${u.id}" style="display:flex;gap:10px;margin-bottom:10px">
                   <div style="flex-shrink:0;margin-top:5px;width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
-                  <div>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                      <span style="font-size:12px;font-weight:700;color:var(--green)">${u.percentage}%</span>
-                      <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
-                      <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${u.updatedByName||'tim'}</span>
+                  <div style="flex:1;min-width:0">
+                    <!-- Display mode -->
+                    <div id="pd-${u.id}">
+                      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <span style="font-size:12px;font-weight:700;color:var(--green)">${u.percentage}%</span>
+                        <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
+                        <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${u.updatedByName||'tim'}</span>
+                        ${canEditEntry ? `<button onclick="startEditProgress('${u.id}')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;color:rgba(3,69,67,.35);padding:1px 4px;border-radius:4px;line-height:1" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='rgba(3,69,67,.35)'">✏</button>` : ''}
+                        ${canDelEntry  ? `<button onclick="deleteProgressEntry('${u.id}')" title="Hapus" style="border:none;background:none;cursor:pointer;font-size:13px;color:rgba(3,69,67,.25);padding:1px 4px;border-radius:4px;line-height:1" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='rgba(3,69,67,.25)'">✕</button>` : ''}
+                      </div>
+                      <p style="font-size:13px;margin-top:2px;word-break:break-word">${u.note}</p>
+                      ${u.photos?.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`).join('')}</div>` : ''}
                     </div>
-                    <p style="font-size:13px;margin-top:2px">${u.note}</p>
-                    ${u.photos?.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`).join('')}</div>` : ''}
+                    <!-- Edit mode -->
+                    <div id="pf-${u.id}" style="display:none;background:var(--beige-soft);border-radius:8px;padding:10px;border:1px solid rgba(3,69,67,.1)">
+                      <div style="margin-bottom:8px">
+                        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(3,69,67,.5);margin-bottom:3px">
+                          <span>Progress</span><span id="ppct-${u.id}" style="font-weight:700;color:var(--green)">${u.percentage}%</span>
+                        </div>
+                        <input type="range" id="prange-${u.id}" min="0" max="100" step="5" value="${u.percentage}"
+                          oninput="document.getElementById('ppct-${u.id}').textContent=this.value+'%'"
+                          style="width:100%;accent-color:var(--green)">
+                      </div>
+                      <textarea id="pnote-${u.id}" rows="2"
+                        style="width:100%;border:1.5px solid rgba(3,69,67,.2);border-radius:8px;padding:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"
+                        onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.2)'"
+                      >${safeNote}</textarea>
+                      <div style="display:flex;gap:6px;margin-top:8px">
+                        <button onclick="cancelEditProgress('${u.id}')" class="btn btn-ghost btn-sm" style="flex:1">Batal</button>
+                        <button onclick="saveEditProgress('${u.id}')" class="btn btn-primary btn-sm" style="flex:1">Simpan</button>
+                      </div>
+                    </div>
                   </div>
-                </div>`).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px 0">Belum ada update progress</p>'}
+                </div>`
+              }).join('') : '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:12px 0">Belum ada update progress</p>'}
             </div>
           </div>
         </div>
@@ -1387,6 +1416,56 @@
       notifyCustomer('progress', { percentage: pct })
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
+  }
+
+  window.startEditProgress = function(uid) {
+    document.getElementById(`pd-${uid}`).style.display = 'none'
+    document.getElementById(`pf-${uid}`).style.display = 'block'
+    document.getElementById(`pnote-${uid}`).focus()
+  }
+
+  window.cancelEditProgress = function(uid) {
+    document.getElementById(`pd-${uid}`).style.display = ''
+    document.getElementById(`pf-${uid}`).style.display = 'none'
+  }
+
+  window.saveEditProgress = async function(uid) {
+    const note = document.getElementById(`pnote-${uid}`).value.trim()
+    const pct  = Number(document.getElementById(`prange-${uid}`).value)
+    if (!note) return
+    const btn = event?.target
+    if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…' }
+    try {
+      await updateDoc(doc(db, 'orders', orderId, 'progress_updates', uid), {
+        note, percentage: pct, editedAt: Timestamp.now(),
+      })
+      // Update order's progressPercentage to the latest entry's pct
+      const allUpdates = order.progressUpdates || []
+      const idx = allUpdates.findIndex(u => u.id === uid)
+      if (idx === 0) {
+        await updateDoc(doc(db, 'orders', orderId), {
+          progressPercentage: pct, updatedAt: Timestamp.now(),
+        })
+      }
+      await loadOrder(getProfile())
+    } catch(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Simpan' }
+      alert('Gagal simpan: ' + err.message)
+    }
+  }
+
+  window.deleteProgressEntry = async function(uid) {
+    if (!confirm('Hapus update progress ini?')) return
+    try {
+      await deleteDoc(doc(db, 'orders', orderId, 'progress_updates', uid))
+      // Recalculate progressPercentage from remaining entries
+      const remaining = (order.progressUpdates || []).filter(u => u.id !== uid)
+      const newPct = remaining.length ? remaining[0].percentage : 0
+      await updateDoc(doc(db, 'orders', orderId), {
+        progressPercentage: newPct, updatedAt: Timestamp.now(),
+      })
+      await loadOrder(getProfile())
+    } catch(err) { alert('Gagal hapus: ' + err.message) }
   }
 
   async function compressImage(file) {
