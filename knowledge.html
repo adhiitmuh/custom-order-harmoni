@@ -116,17 +116,19 @@
   async function renderTabs(profile) {
     const el = document.getElementById('divTabs')
     el.innerHTML = ''
-    const allBtn = document.createElement('button')
+    const allBtn = document.createElement('a')
+    allBtn.href = 'knowledge.html'
     allBtn.className = `btn btn-sm ${!activeDiv ? 'btn-primary' : 'btn-ghost'}`
     allBtn.textContent = '📖 Semua'
-    allBtn.onclick = () => { activeDiv = ''; history.pushState(null,'','knowledge.html'); renderTabs(profile); loadContent(profile) }
+    allBtn.onclick = (e) => { e.preventDefault(); activeDiv = ''; history.pushState(null,'','knowledge.html'); renderTabs(profile); loadContent(profile) }
     el.appendChild(allBtn)
     const divs = await getActiveDivisions()
     divs.forEach(d => {
-      const btn = document.createElement('button')
+      const btn = document.createElement('a')
+      btn.href = `knowledge.html?div=${d.key}`
       btn.className = `btn btn-sm ${activeDiv === d.key ? 'btn-primary' : 'btn-ghost'}`
       btn.innerHTML = `${d.icon} ${d.label}`
-      btn.onclick = () => { activeDiv = d.key; history.pushState(null,'',`knowledge.html?div=${d.key}`); renderTabs(profile); loadContent(profile) }
+      btn.onclick = (e) => { e.preventDefault(); activeDiv = d.key; history.pushState(null,'',`knowledge.html?div=${d.key}`); renderTabs(profile); loadContent(profile) }
       el.appendChild(btn)
     })
   }
