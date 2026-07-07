@@ -68,7 +68,6 @@
   const app  = initializeApp(firebaseConfig, 'supplier-view')
   const db   = getFirestore(app)
   const auth = getAuth(app)
-  await signInAnonymously(auth).catch(() => {})
 
   const token = new URLSearchParams(location.search).get('t')
   const el = document.getElementById('content')
@@ -76,6 +75,15 @@
   if (!token) {
     el.innerHTML = '<div class="error">Link tidak valid — tidak ada token pesanan.</div>'
     throw new Error('no token')
+  }
+
+  // Sign in anonymously — required for Firestore reads on orders collection
+  try {
+    await signInAnonymously(auth)
+  } catch(authErr) {
+    console.error('Anonymous auth failed:', authErr)
+    el.innerHTML = '<div class="error">Gagal terhubung ke server. Coba refresh halaman.<br><small style="opacity:.6">' + (authErr.code || authErr.message) + '</small></div>'
+    throw authErr
   }
 
   // Load supplier token doc
@@ -88,8 +96,15 @@
   const tokenData = tokenSnap.data()
   const { orderId, supplierNama, itemIndexes } = tokenData
 
-  const orderSnap = await getDoc(doc(db, 'orders', orderId)).catch(() => null)
-  if (!orderSnap?.exists()) {
+  let orderSnap
+  try {
+    orderSnap = await getDoc(doc(db, 'orders', orderId))
+  } catch(err) {
+    console.error('Order fetch error:', err)
+    el.innerHTML = '<div class="error">Gagal memuat data pesanan (' + (err.code || err.message) + '). Coba refresh halaman.</div>'
+    throw err
+  }
+  if (!orderSnap.exists()) {
     el.innerHTML = '<div class="error">Data pesanan tidak ditemukan.</div>'
     throw new Error('order not found')
   }
