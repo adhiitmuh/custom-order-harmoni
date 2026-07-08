@@ -211,7 +211,8 @@
     })()
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
-    setTimeout(() => { initChat(); initInternalChat() }, 200)
+    if (supplierChatUnsub) supplierChatUnsub()
+    setTimeout(() => { initChat(); initInternalChat(); initSupplierChat() }, 200)
     } catch(err) {
       clearTimeout(loadTimeout)
       document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
@@ -843,6 +844,25 @@
           <button onclick="sendInternalMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>
+
+      <!-- Chat Supplier — hanya muncul kalau ada assignment approved -->
+      ${(order.supplierAssignments||[]).some(a => a.assignStatus === 'approved') ? `
+      <div class="card no-print" style="margin-top:20px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <h2 style="font-size:14px;font-weight:700">📦 Chat Supplier</h2>
+          <span id="supplierChatBadge" style="display:none;background:#b91c1c;color:white;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px"></span>
+          <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-weight:600">Dilarang bagikan kontak di sini</span>
+        </div>
+        <div id="supplierChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
+          <div class="loading">Memuat…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <textarea id="supplierChatStaffInput" placeholder="Balas ke supplier… (Enter kirim, Shift+Enter baris baru)" rows="2"
+            style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSupplierReply()}"></textarea>
+          <button onclick="sendSupplierReply()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
+        </div>
+      </div>` : ''}
 
       <!-- Invoice (print-only) -->
       <div class="print-only" id="invoiceDoc"></div>
@@ -2084,6 +2104,7 @@
   // ===== CHAT =====
   let chatUnsub = null
   let internalChatUnsub = null
+  let supplierChatUnsub = null
 
   function initChat() {
     if (!order.chatToken) return
@@ -2347,6 +2368,80 @@
         preview:     content ? content.substring(0, 80) : '📷 Foto',
         createdAt:   Timestamp.now(),
       }).catch(() => {})
+    }
+  }
+
+  // ── Supplier Chat ─────────────────────────────────────────────
+  function initSupplierChat() {
+    const hasApproved = (order.supplierAssignments||[]).some(a => a.assignStatus === 'approved')
+    if (!hasApproved) return
+    const el = document.getElementById('supplierChatMessages')
+    if (!el) return
+
+    // Reset unread badge saat staff buka
+    updateDoc(doc(db, 'orders', orderId), { unreadSupplierChat: 0 }).catch(() => {})
+
+    const q = query(collection(db, 'orders', orderId, 'supplier_chat'), orderBy('createdAt'))
+    supplierChatUnsub = onSnapshot(q, snap => {
+      const el = document.getElementById('supplierChatMessages')
+      if (!el) return
+      if (snap.empty) {
+        el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan dari supplier.</p>'
+        return
+      }
+      const msgs = snap.docs.map(d => d.data())
+      el.innerHTML = msgs.map(m => {
+        const isSupplier = m.senderType === 'supplier'
+        const align  = isSupplier ? 'flex-start' : 'flex-end'
+        const bg     = isSupplier ? '#fef3c7' : 'var(--green)'
+        const color  = isSupplier ? '#1a1a1a' : 'white'
+        const radius = isSupplier ? '12px 12px 12px 2px' : '12px 12px 2px 12px'
+        const name   = isSupplier ? `📦 ${m.senderName}` : `💬 ${m.senderName}`
+        return `<div style="display:flex;flex-direction:column;align-items:${align}">
+          <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
+          <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%">
+            ${m.text.replace(/\n/g,'<br>')}
+          </div>
+        </div>`
+      }).join('')
+      el.scrollTop = el.scrollHeight
+
+      // Badge: hitung pesan supplier setelah balasan staff terakhir
+      let lastStaffIdx = -1
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].senderType !== 'supplier') { lastStaffIdx = i; break }
+      }
+      const unread = msgs.slice(lastStaffIdx + 1).filter(m => m.senderType === 'supplier').length
+      const badge = document.getElementById('supplierChatBadge')
+      if (badge) { badge.textContent = unread || ''; badge.style.display = unread > 0 ? '' : 'none' }
+    })
+  }
+
+  window.sendSupplierReply = async function() {
+    const input = document.getElementById('supplierChatStaffInput')
+    const text  = input.value.trim()
+    if (!text) return
+    if (hasContactInfo(text)) {
+      alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan.')
+      return
+    }
+    const profile = getProfile()
+    input.disabled = true
+    try {
+      await addDoc(collection(db, 'orders', orderId, 'supplier_chat'), {
+        text,
+        senderType: 'staff',
+        senderName: profile.name || 'Tim Harmoni',
+        senderId:   profile.id,
+        senderRole: profile.role,
+        createdAt:  Timestamp.now(),
+      })
+      input.value = ''
+    } catch(e) {
+      alert('Gagal kirim: ' + e.message)
+    } finally {
+      input.disabled = false
+      input.focus()
     }
   }
 

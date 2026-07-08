@@ -54,7 +54,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-  import { getFirestore, doc, getDoc, collection, addDoc, query, orderBy, getDocs, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getFirestore, doc, getDoc, updateDoc, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
@@ -278,6 +278,24 @@
         <div id="progressError" style="display:none;margin-top:8px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:10px;text-align:center;font-size:13px"></div>
       </div>
     </div>
+
+    <!-- Chat dengan Tim Harmoni -->
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <h2 style="font-size:14px;font-weight:700">💬 Chat dengan Tim Harmoni</h2>
+      </div>
+      <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:10px;line-height:1.5">⚠ Dilarang mengirim nomor HP, kontak, media sosial, atau mengajak komunikasi di luar platform ini.</p>
+      <div id="supplierChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
+        <p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Memuat pesan…</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="supplierChatInput" rows="2" placeholder="Tulis pesan untuk tim Harmoni…"
+          style="flex:1;margin-bottom:0;resize:none;border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;outline:none"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSupplierMsg()}"></textarea>
+        <button onclick="sendSupplierMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
+      </div>
+      <div id="supplierChatError" style="display:none;margin-top:8px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:10px;font-size:12px"></div>
+    </div>
   `
 
   window.previewPhotos = function(input) {
@@ -372,6 +390,96 @@
     } finally {
       btn.disabled = false
       btn.textContent = 'Kirim Update Progress'
+    }
+  }
+
+  // ── Supplier Chat ─────────────────────────────────────────────
+  function hasContactInfo(text) {
+    const t = text
+    if (/\b0\d{8,12}\b/.test(t)) return true
+    if (/\+62\d{7,12}/.test(t)) return true
+    if (/\b62\d{8,12}\b/.test(t)) return true
+    if (/\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/.test(t)) return true
+    if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(t)) return true
+    if (/wa\.me|t\.me|line\.me|wa\.link|bit\.ly|tinyurl|fb\.me/.test(t.toLowerCase())) return true
+    if (/@[a-zA-Z0-9_.]{3,}/.test(t)) return true
+    const tl = t.toLowerCase()
+    if (/(wa|whatsapp)\s*(saya|aku|gue|gw|ku|sy)/.test(tl)) return true
+    if (/(ig|instagram|telegram|tiktok|line)\s*(saya|aku|gue|gw|ku|sy)/.test(tl)) return true
+    if (/hubungi\s*(saya|aku|gue|gw|langsung)/.test(tl)) return true
+    if (/(lanjut|pindah|chat|diskusi|ngobrol)\s*(di\s*)?(luar|via\s*(wa|whatsapp|instagram|telegram|ig))/.test(tl)) return true
+    if (/nomor\s*(hp|handphone|telepon|wa|saya|ku|gue)/.test(tl)) return true
+    if (/(ketemuan|ketemu\s*di\s*luar|ketemu\s*langsung\s*ya)/.test(tl)) return true
+    return false
+  }
+
+  const chatCol = collection(db, 'orders', orderId, 'supplier_chat')
+  const chatQ   = query(chatCol, orderBy('createdAt'))
+  onSnapshot(chatQ, snap => {
+    const el = document.getElementById('supplierChatMessages')
+    if (!el) return
+    if (snap.empty) {
+      el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan. Mulai tanya ke tim Harmoni.</p>'
+      return
+    }
+    el.innerHTML = snap.docs.map(d => {
+      const m = d.data()
+      const isSupplier = m.senderType === 'supplier'
+      const align = isSupplier ? 'flex-end' : 'flex-start'
+      const bg    = isSupplier ? '#034543' : 'white'
+      const color = isSupplier ? '#FFFBD5' : '#1a1a1a'
+      const radius = isSupplier ? '12px 12px 2px 12px' : '12px 12px 12px 2px'
+      const name  = isSupplier ? `📦 ${m.senderName}` : `💬 Tim Harmoni`
+      return `<div style="display:flex;flex-direction:column;align-items:${align}">
+        <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
+        <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;border:1px solid rgba(3,69,67,.08)">
+          ${m.text.replace(/\n/g,'<br>')}
+        </div>
+      </div>`
+    }).join('')
+    el.scrollTop = el.scrollHeight
+  })
+
+  // Increment unread counter untuk staff
+  async function markUnreadForStaff() {
+    const { increment } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    await updateDoc(doc(db, 'orders', orderId), {
+      unreadSupplierChat: increment(1),
+      updatedAt: Timestamp.now(),
+    }).catch(() => {})
+  }
+
+  window.sendSupplierMsg = async function() {
+    const input  = document.getElementById('supplierChatInput')
+    const errEl  = document.getElementById('supplierChatError')
+    const text   = input.value.trim()
+    if (!text) return
+
+    errEl.style.display = 'none'
+
+    if (hasContactInfo(text)) {
+      errEl.textContent = '⚠ Pesan mengandung informasi yang tidak diperbolehkan (nomor HP, kontak, link, atau ajakan komunikasi di luar platform).'
+      errEl.style.display = ''
+      return
+    }
+
+    input.disabled = true
+    try {
+      await addDoc(chatCol, {
+        text,
+        senderType: 'supplier',
+        senderName: supplierNama || 'Supplier',
+        supplierToken: token,
+        createdAt: Timestamp.now(),
+      })
+      input.value = ''
+      await markUnreadForStaff()
+    } catch(e) {
+      errEl.textContent = 'Gagal kirim: ' + e.message
+      errEl.style.display = ''
+    } finally {
+      input.disabled = false
+      input.focus()
     }
   }
 </script>
