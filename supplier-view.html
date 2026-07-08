@@ -56,6 +56,7 @@
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
   import { getFirestore, doc, getDoc, collection, addDoc, query, orderBy, getDocs, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+  import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
   const firebaseConfig = {
     apiKey: "AIzaSyBNDvKe5oFqIQ-B5TvVe6EaHNVKIMp5K6U",
@@ -65,9 +66,10 @@
     messagingSenderId: "1057097237358",
     appId: "1:1057097237358:web:4ac38e6e58ca6ca35eedff"
   }
-  const app  = initializeApp(firebaseConfig, 'supplier-view')
-  const db   = getFirestore(app)
-  const auth = getAuth(app)
+  const app     = initializeApp(firebaseConfig, 'supplier-view')
+  const db      = getFirestore(app)
+  const auth    = getAuth(app)
+  const storage = getStorage(app)
 
   const token = new URLSearchParams(location.search).get('t')
   const el = document.getElementById('content')
@@ -261,7 +263,16 @@
             <span id="progressPct" style="font-size:14px;font-weight:800;color:#034543;min-width:40px">0%</span>
           </div>
         </div>
-        <textarea id="progressNotes" rows="2" placeholder="Catatan progress (opsional)…"></textarea>
+        <textarea id="progressNotes" rows="2" placeholder="Catatan progress (opsional)…" style="margin-bottom:10px"></textarea>
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px;color:rgba(3,69,67,.5);display:block;margin-bottom:6px">Foto Progress (opsional)</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;background:rgba(3,69,67,.06);border:1.5px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px 16px;cursor:pointer;font-size:13px;font-weight:600;color:#034543">
+            📷 Pilih Foto
+            <input type="file" id="progressPhotos" accept="image/*" multiple style="display:none" onchange="previewPhotos(this)">
+          </label>
+          <div id="photoPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+        </div>
+        <div id="uploadProgress" style="display:none;font-size:12px;color:#034543;margin-bottom:8px">⏳ Mengupload foto…</div>
         <button onclick="submitProgress()" class="btn btn-primary" id="submitProgressBtn">Kirim Update Progress</button>
         <div id="progressSuccess" style="display:none;margin-top:8px;background:#d1fae5;color:#065f46;border-radius:8px;padding:10px;text-align:center;font-size:13px;font-weight:600">✅ Progress berhasil diupdate!</div>
         <div id="progressError" style="display:none;margin-top:8px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:10px;text-align:center;font-size:13px"></div>
@@ -269,17 +280,53 @@
     </div>
   `
 
+  window.previewPhotos = function(input) {
+    const preview = document.getElementById('photoPreview')
+    preview.innerHTML = ''
+    Array.from(input.files).forEach(f => {
+      const url = URL.createObjectURL(f)
+      preview.innerHTML += `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1.5px solid rgba(3,69,67,.1)">`
+    })
+  }
+
   window.submitProgress = async function() {
     const pct   = parseInt(document.getElementById('progressRange').value)
     const notes = document.getElementById('progressNotes').value.trim()
     const btn   = document.getElementById('submitProgressBtn')
     const succ  = document.getElementById('progressSuccess')
     const errEl = document.getElementById('progressError')
+    const uploadEl = document.getElementById('uploadProgress')
+    const photoInput = document.getElementById('progressPhotos')
 
     btn.disabled = true
     btn.textContent = 'Mengirim…'
     succ.style.display = 'none'
     errEl.style.display = 'none'
+
+    // Upload photos first
+    const photos = []
+    const files = Array.from(photoInput.files)
+    if (files.length) {
+      uploadEl.style.display = ''
+      try {
+        for (const f of files) {
+          const sRef = storageRef(storage, `supplier_progress/${orderId}/${Date.now()}_${f.name}`)
+          const snap = await new Promise((resolve, reject) => {
+            const task = uploadBytesResumable(sRef, f)
+            task.on('state_changed', null, reject, () => resolve(task.snapshot))
+          })
+          photos.push(await getDownloadURL(snap.ref))
+        }
+      } catch(e) {
+        errEl.textContent = 'Gagal upload foto: ' + e.message
+        errEl.style.display = ''
+        btn.disabled = false
+        btn.textContent = 'Kirim Update Progress'
+        uploadEl.style.display = 'none'
+        return
+      }
+      uploadEl.style.display = 'none'
+    }
 
     try {
       await addDoc(collection(db, 'orders', orderId, 'progress_updates'), {
@@ -288,7 +335,7 @@
         createdBy: supplierNama || 'Supplier',
         createdByType: 'supplier',
         supplierToken: token,
-        photos: [],
+        photos,
         createdAt: Timestamp.now(),
       })
       // Update order progressPercentage
@@ -301,6 +348,8 @@
       document.getElementById('progressNotes').value = ''
       document.getElementById('progressRange').value = 0
       document.getElementById('progressPct').textContent = '0%'
+      photoInput.value = ''
+      document.getElementById('photoPreview').innerHTML = ''
 
       // Reload progress list
       const newSnap = await getDocs(query(collection(db, 'orders', orderId, 'progress_updates'), orderBy('createdAt', 'asc')))
@@ -315,6 +364,7 @@
             <div style="height:6px;background:#034543;border-radius:3px;width:${u.percentage||0}%"></div>
           </div>
           ${u.notes ? `<div style="font-size:12px;color:rgba(3,69,67,.6)">${u.notes}</div>` : ''}
+          ${u.photos?.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1.5px solid rgba(3,69,67,.1)"></a>`).join('')}</div>` : ''}
         </div>`).join('')
     } catch(e) {
       errEl.textContent = 'Gagal kirim: ' + e.message
