@@ -7,7 +7,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kelola Supplier — Harmoni</title>
+  <title>Kelola Vendor — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
     .sup-row { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; background:var(--white); margin-bottom:8px; border:1.5px solid rgba(3,69,67,.07); }
@@ -27,10 +27,10 @@
       <a href="orders.html" style="font-size:13px;color:rgba(3,69,67,.45);text-decoration:none">← Kembali</a>
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:8px">
         <div>
-          <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Supplier</h1>
-          <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Daftar supplier dan tempat produksi luar. Kontak tersembunyi dari karyawan — hanya owner yang bisa lihat.</p>
+          <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kelola Vendor</h1>
+          <p style="font-size:13px;color:rgba(3,69,67,.5);margin-top:4px">Daftar vendor dan tempat produksi luar. Kontak tersembunyi dari karyawan — hanya owner yang bisa lihat.</p>
         </div>
-        <button onclick="openModal()" class="btn btn-primary" style="white-space:nowrap;flex-shrink:0;margin-top:4px">＋ Tambah Supplier</button>
+        <button onclick="openModal()" class="btn btn-primary" style="white-space:nowrap;flex-shrink:0;margin-top:4px">＋ Tambah Vendor</button>
       </div>
     </div>
 
@@ -41,10 +41,10 @@
 <!-- Add / Edit Modal -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
   <div style="background:var(--white);border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
-    <h3 id="modalHeading" style="font-size:15px;font-weight:700;margin-bottom:18px">Tambah Supplier</h3>
+    <h3 id="modalHeading" style="font-size:15px;font-weight:700;margin-bottom:18px">Tambah Vendor</h3>
 
     <div class="form-group">
-      <label>Nama Supplier / Tempat Produksi <span class="req">*</span></label>
+      <label>Nama Vendor / Tempat Produksi <span class="req">*</span></label>
       <input type="text" id="fNama" placeholder="Contoh: Percetakan Maju Jaya">
     </div>
     <div class="form-group">
@@ -146,7 +146,7 @@
   window.openModal = function(id) {
     editingId = id || null
     const isNew = !id
-    document.getElementById('modalHeading').textContent = isNew ? 'Tambah Supplier' : 'Edit Supplier'
+    document.getElementById('modalHeading').textContent = isNew ? 'Tambah Vendor' : 'Edit Vendor'
     document.getElementById('modalError').style.display = 'none'
 
     // Build division checkboxes

@@ -324,7 +324,7 @@ export function renderSidebar(profile) {
         <span class="icon">🏷️</span>Kelola Divisi
       </a>
       <a href="supplier.html" class="sidebar-link ${page==='supplier.html'?'active':''}">
-        <span class="icon">🏭</span>Kelola Supplier
+        <span class="icon">🏭</span>Kelola Vendor
       </a>
       <a href="settings.html" class="sidebar-link ${page==='settings.html'?'active':''}">
         <span class="icon">⚙️</span>Pengaturan & Backup

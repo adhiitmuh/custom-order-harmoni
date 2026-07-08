@@ -469,7 +469,7 @@
           ${order.orderItems?.length && (profile.role === 'owner' || ((profile.role === 'manager' || profile.role === 'cs') && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat'))) ? `
           <div class="card no-print" id="supplierCard" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <h2 style="font-size:14px;font-weight:700">🏭 Lempar ke Supplier</h2>
+              <h2 style="font-size:14px;font-weight:700">🏭 Lempar ke Vendor</h2>
               ${profile.role === 'cs' ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">CS bisa ajukan — manager/owner approve</span>` : ''}
             </div>
             <div id="supplierAssignUI">
@@ -849,7 +849,7 @@
       ${(order.supplierAssignments||[]).some(a => a.assignStatus === 'approved') ? `
       <div class="card no-print" style="margin-top:20px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-          <h2 style="font-size:14px;font-weight:700">📦 Chat Supplier</h2>
+          <h2 style="font-size:14px;font-weight:700">📦 Chat Vendor</h2>
           <span id="supplierChatBadge" style="display:none;background:#b91c1c;color:white;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px"></span>
           <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-weight:600">Dilarang bagikan kontak di sini</span>
         </div>
