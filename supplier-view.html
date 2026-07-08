@@ -268,7 +268,7 @@
           <label style="font-size:12px;color:rgba(3,69,67,.5);display:block;margin-bottom:6px">Foto Progress (opsional)</label>
           <label style="display:inline-flex;align-items:center;gap:6px;background:rgba(3,69,67,.06);border:1.5px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px 16px;cursor:pointer;font-size:13px;font-weight:600;color:#034543">
             📷 Pilih Foto
-            <input type="file" id="progressPhotos" accept="image/*" multiple style="display:none" onchange="previewPhotos(this)">
+            <input type="file" id="progressPhotos" accept="image/*" multiple onchange="previewPhotos(this)" style="position:absolute;width:0;height:0;opacity:0;overflow:hidden">
           </label>
           <div id="photoPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
         </div>
