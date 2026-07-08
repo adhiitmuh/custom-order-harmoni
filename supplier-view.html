@@ -531,6 +531,39 @@
       input.focus()
     }
   }
+
+  // ── Drag & drop + paste foto ──────────────────────────────────────────────────
+  ;(function() {
+    const chatArea = document.getElementById('supplierChatMessages')
+    const chatTa   = document.getElementById('supplierChatInput')
+
+    function setPhotoFromFile(file) {
+      _supplierChatPhoto = file
+      document.getElementById('supplierChatPhotoName').textContent = `📷 ${file.name}`
+      document.getElementById('supplierChatPhotoPreview').style.display = 'flex'
+      chatTa.focus()
+    }
+
+    chatArea.addEventListener('dragover', e => {
+      e.preventDefault()
+      chatArea.style.outline = '2px dashed var(--green)'
+      chatArea.style.outlineOffset = '-4px'
+    })
+    chatArea.addEventListener('dragleave', () => { chatArea.style.outline = '' })
+    chatArea.addEventListener('drop', e => {
+      e.preventDefault()
+      chatArea.style.outline = ''
+      const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'))
+      if (file) setPhotoFromFile(file)
+    })
+
+    chatTa.addEventListener('paste', e => {
+      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'))
+      if (!item) return
+      e.preventDefault()
+      setPhotoFromFile(item.getAsFile())
+    })
+  })()
 </script>
 </body>
 </html>

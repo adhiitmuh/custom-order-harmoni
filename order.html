@@ -212,7 +212,7 @@
     if (chatUnsub) chatUnsub()
     if (internalChatUnsub) internalChatUnsub()
     if (supplierChatUnsub) supplierChatUnsub()
-    setTimeout(() => { initChat(); initInternalChat(); initSupplierChat() }, 200)
+    setTimeout(() => { initChat(); initInternalChat(); initSupplierChat(); setupChatDragPaste() }, 200)
     } catch(err) {
       clearTimeout(loadTimeout)
       document.getElementById('pageContent').innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Gagal memuat order: ${err.message}</p><a href="orders.html" class="btn btn-ghost btn-sm" style="margin-top:12px">← Kembali</a></div>`
@@ -830,7 +830,7 @@
         <div id="internalChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
           <div class="loading">Memuat…</div>
         </div>
-        <div id="internalPhotoPreview" style="display:none;margin-bottom:8px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:12px;color:#065f46;display:flex;align-items:center;gap:8px">
+        <div id="internalPhotoPreview" style="display:none;margin-bottom:8px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:12px;color:#065f46;align-items:center;gap:8px">
           <span id="internalPhotoName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
           <button onclick="cancelInternalPhoto()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:0">✕</button>
         </div>
@@ -856,10 +856,17 @@
         <div id="supplierChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
           <div class="loading">Memuat…</div>
         </div>
+        <div id="vendorPhotoPreview" style="display:none;margin-bottom:8px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:12px;color:#065f46;align-items:center;gap:8px">
+          <span id="vendorPhotoName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <button onclick="cancelVendorPhoto()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:0">✕</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:flex-end">
           <textarea id="supplierChatStaffInput" placeholder="Balas ke supplier… (Enter kirim, Shift+Enter baris baru)" rows="2"
-            style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px"
+            style="flex:1;margin-bottom:0;resize:none;border-radius:10px;font-size:13px;min-width:0"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSupplierReply()}"></textarea>
+          <label title="Kirim foto" style="background:var(--beige-soft);border:1.5px solid rgba(3,69,67,.15);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;display:flex;align-items:center">
+            📎<input type="file" id="vendorPhotoInput" accept="image/*" style="display:none" onchange="selectVendorPhoto(this)">
+          </label>
           <button onclick="sendSupplierReply()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
         </div>
       </div>` : ''}
@@ -2420,19 +2427,51 @@
     })
   }
 
+  let _vendorPhotoFile = null
+
+  window.selectVendorPhoto = function(input) {
+    const file = input.files[0]
+    if (!file) return
+    _vendorPhotoFile = file
+    document.getElementById('vendorPhotoName').textContent = '📷 ' + file.name
+    document.getElementById('vendorPhotoPreview').style.display = 'flex'
+    input.value = ''
+  }
+
+  window.cancelVendorPhoto = function() {
+    _vendorPhotoFile = null
+    document.getElementById('vendorPhotoPreview').style.display = 'none'
+    document.getElementById('vendorPhotoName').textContent = ''
+  }
+
   window.sendSupplierReply = async function() {
     const input = document.getElementById('supplierChatStaffInput')
     const text  = input.value.trim()
-    if (!text) return
-    if (hasContactInfo(text)) {
+    const file  = _vendorPhotoFile
+    if (!text && !file) return
+    if (text && hasContactInfo(text)) {
       alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan.')
       return
     }
     const profile = getProfile()
     input.disabled = true
     try {
+      let imageUrl = null
+      if (file) {
+        const path = `vendor_chat/${orderId}/${Date.now()}_${file.name}`
+        const storageRef = ref(storage, path)
+        await new Promise((resolve, reject) => {
+          const task = uploadBytesResumable(storageRef, file)
+          task.on('state_changed', null, reject, async () => {
+            imageUrl = await getDownloadURL(storageRef)
+            resolve()
+          })
+        })
+        cancelVendorPhoto()
+      }
       await addDoc(collection(db, 'orders', orderId, 'supplier_chat'), {
-        text,
+        text: text || '',
+        imageUrl: imageUrl || null,
         senderType: 'staff',
         senderName: profile.name || 'Tim Harmoni',
         senderId:   profile.id,
@@ -2445,6 +2484,72 @@
     } finally {
       input.disabled = false
       input.focus()
+    }
+  }
+
+  function setupChatDragPaste() {
+    // Internal chat
+    const intMsgs = document.getElementById('internalChatMessages')
+    const intTa   = document.getElementById('internalChatInput')
+    if (intMsgs) {
+      intMsgs.addEventListener('dragover', e => {
+        e.preventDefault()
+        intMsgs.style.outline = '2px dashed var(--green)'
+        intMsgs.style.outlineOffset = '-4px'
+      })
+      intMsgs.addEventListener('dragleave', () => { intMsgs.style.outline = '' })
+      intMsgs.addEventListener('drop', e => {
+        e.preventDefault()
+        intMsgs.style.outline = ''
+        const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'))
+        if (!file) return
+        _internalPhotoFile = file
+        document.getElementById('internalPhotoName').textContent = '📷 ' + file.name
+        document.getElementById('internalPhotoPreview').style.display = 'flex'
+        if (intTa) intTa.focus()
+      })
+    }
+    if (intTa) {
+      intTa.addEventListener('paste', e => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'))
+        if (!item) return
+        e.preventDefault()
+        _internalPhotoFile = item.getAsFile()
+        document.getElementById('internalPhotoName').textContent = '📷 ' + _internalPhotoFile.name
+        document.getElementById('internalPhotoPreview').style.display = 'flex'
+      })
+    }
+
+    // Vendor chat
+    const venMsgs = document.getElementById('supplierChatMessages')
+    const venTa   = document.getElementById('supplierChatStaffInput')
+    if (venMsgs) {
+      venMsgs.addEventListener('dragover', e => {
+        e.preventDefault()
+        venMsgs.style.outline = '2px dashed var(--green)'
+        venMsgs.style.outlineOffset = '-4px'
+      })
+      venMsgs.addEventListener('dragleave', () => { venMsgs.style.outline = '' })
+      venMsgs.addEventListener('drop', e => {
+        e.preventDefault()
+        venMsgs.style.outline = ''
+        const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'))
+        if (!file) return
+        _vendorPhotoFile = file
+        document.getElementById('vendorPhotoName').textContent = '📷 ' + file.name
+        document.getElementById('vendorPhotoPreview').style.display = 'flex'
+        if (venTa) venTa.focus()
+      })
+    }
+    if (venTa) {
+      venTa.addEventListener('paste', e => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'))
+        if (!item) return
+        e.preventDefault()
+        _vendorPhotoFile = item.getAsFile()
+        document.getElementById('vendorPhotoName').textContent = '📷 ' + _vendorPhotoFile.name
+        document.getElementById('vendorPhotoPreview').style.display = 'flex'
+      })
     }
   }
 

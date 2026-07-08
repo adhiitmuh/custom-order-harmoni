@@ -368,6 +368,30 @@
 
     initChatListener(orderInfo)
     initFeedback(orderInfo)
+
+    // Drag & drop + paste foto
+    const chatMsgs = document.getElementById('chatMessages')
+    chatMsgs.addEventListener('dragover', e => {
+      e.preventDefault()
+      chatMsgs.style.outline = '2px dashed var(--green)'
+      chatMsgs.style.outlineOffset = '-4px'
+    })
+    chatMsgs.addEventListener('dragleave', () => { chatMsgs.style.outline = '' })
+    chatMsgs.addEventListener('drop', e => {
+      e.preventDefault()
+      chatMsgs.style.outline = ''
+      const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'))
+      if (file) _doSendFile(file)
+    })
+    const chatTa = document.getElementById('chatInput')
+    if (chatTa) {
+      chatTa.addEventListener('paste', e => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'))
+        if (!item) return
+        e.preventDefault()
+        _doSendFile(item.getAsFile())
+      })
+    }
   }
 
   async function initFeedback(orderInfo) {
@@ -738,11 +762,9 @@
     })
   }
 
-  window.sendFile = async function(input) {
-    if (!input.files[0]) return
-    const rawFile = input.files[0]
+  async function _doSendFile(rawFile) {
     const btn = document.getElementById('sendBtn')
-    btn.disabled = true
+    if (btn) btn.disabled = true
     try {
       const snap = await getDoc(doc(db,'public_order_info',token))
       const name = snap.exists() ? snap.data().customerName : 'Customer'
@@ -763,7 +785,6 @@
         senderRole: 'customer',
         createdAt: Timestamp.now(),
       })
-
       if (WORKER_URL && NOTIFY_KEY) {
         fetch(`${WORKER_URL}/notify-cs`, {
           method: 'POST',
@@ -778,7 +799,13 @@
           }),
         }).catch(() => {})
       }
-    } finally { btn.disabled=false; input.value='' }
+    } finally { if (btn) btn.disabled = false }
+  }
+
+  window.sendFile = async function(input) {
+    if (!input.files[0]) return
+    await _doSendFile(input.files[0])
+    input.value = ''
   }
 </script>
 </body>

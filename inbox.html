@@ -451,6 +451,44 @@ window.openThread = function(threadId) {
       }
     )
   }
+
+  // Drag & drop + paste foto (re-attach each time thread opens — panel HTML is rebuilt)
+  ;(function() {
+    const msgArea = document.getElementById('msgAreaEl')
+    const ta = document.getElementById('replyTa')
+
+    function setInboxPhoto(file) {
+      _inboxPhotoFile = file
+      const nameEl = document.getElementById('inboxPhotoName')
+      const prevEl = document.getElementById('inboxPhotoPreview')
+      if (nameEl) nameEl.textContent = '📷 ' + file.name
+      if (prevEl) prevEl.style.display = 'flex'
+      if (ta) ta.focus()
+    }
+
+    if (msgArea) {
+      msgArea.addEventListener('dragover', e => {
+        e.preventDefault()
+        msgArea.style.background = '#f0fdf4'
+      })
+      msgArea.addEventListener('dragleave', () => { msgArea.style.background = '' })
+      msgArea.addEventListener('drop', e => {
+        e.preventDefault()
+        msgArea.style.background = ''
+        const file = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'))
+        if (file) setInboxPhoto(file)
+      })
+    }
+
+    if (ta) {
+      ta.addEventListener('paste', e => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'))
+        if (!item) return
+        e.preventDefault()
+        setInboxPhoto(item.getAsFile())
+      })
+    }
+  })()
 }
 
 // ─── Render messages ──────────────────────────────────────────────────────────
