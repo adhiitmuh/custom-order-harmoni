@@ -43,7 +43,7 @@
 <body>
 <div class="topbar">
   <div>
-    <div class="topbar-logo">harmoni</div>
+    <img src="img/logo-beige.png" alt="harmoni" style="height:28px;display:block;margin-bottom:2px">
     <div class="topbar-sub">Portal Supplier</div>
   </div>
 </div>
@@ -59,12 +59,12 @@
   import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
   const firebaseConfig = {
-    apiKey: "AIzaSyBNDvKe5oFqIQ-B5TvVe6EaHNVKIMp5K6U",
+    apiKey: "AIzaSyAy4w2mhgZQfMBto7a9A8dhsrK2Envprf4",
     authDomain: "harmoni-custom-order.firebaseapp.com",
     projectId: "harmoni-custom-order",
-    storageBucket: "harmoni-custom-order.appspot.com",
-    messagingSenderId: "1057097237358",
-    appId: "1:1057097237358:web:4ac38e6e58ca6ca35eedff"
+    storageBucket: "harmoni-custom-order.firebasestorage.app",
+    messagingSenderId: "230484579154",
+    appId: "1:230484579154:web:929f7772c2db041466608b"
   }
   const app     = initializeApp(firebaseConfig, 'supplier-view')
   const db      = getFirestore(app)
