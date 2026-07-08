@@ -2397,10 +2397,13 @@
         const color  = isSupplier ? '#1a1a1a' : 'white'
         const radius = isSupplier ? '12px 12px 12px 2px' : '12px 12px 2px 12px'
         const name   = isSupplier ? `📦 ${m.senderName}` : `💬 ${m.senderName}`
+        const imgHtml = m.imageUrl
+          ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
+          : ''
         return `<div style="display:flex;flex-direction:column;align-items:${align}">
           <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
           <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%">
-            ${m.text.replace(/\n/g,'<br>')}
+            ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
           </div>
         </div>`
       }).join('')

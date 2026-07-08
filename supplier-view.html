@@ -288,10 +288,17 @@
       <div id="supplierChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
         <p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Memuat pesan…</p>
       </div>
+      <div id="supplierChatPhotoPreview" style="display:none;margin-bottom:8px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:12px;color:#065f46;display:flex;align-items:center;gap:8px">
+        <span id="supplierChatPhotoName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <button onclick="cancelSupplierPhoto()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:0">✕</button>
+      </div>
       <div style="display:flex;gap:8px;align-items:flex-end">
         <textarea id="supplierChatInput" rows="2" placeholder="Tulis pesan untuk tim Harmoni…"
           style="flex:1;margin-bottom:0;resize:none;border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;outline:none"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSupplierMsg()}"></textarea>
+        <label style="background:rgba(3,69,67,.06);border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:8px 10px;cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;display:flex;align-items:center" title="Kirim foto">
+          📎<input type="file" id="supplierChatPhoto" accept="image/*" onchange="selectSupplierPhoto(this)" style="position:absolute;width:0;height:0;opacity:0;overflow:hidden">
+        </label>
         <button onclick="sendSupplierMsg()" class="btn btn-primary btn-sm" style="padding:8px 14px;flex-shrink:0">Kirim</button>
       </div>
       <div id="supplierChatError" style="display:none;margin-top:8px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:10px;font-size:12px"></div>
@@ -425,15 +432,18 @@
     el.innerHTML = snap.docs.map(d => {
       const m = d.data()
       const isSupplier = m.senderType === 'supplier'
-      const align = isSupplier ? 'flex-end' : 'flex-start'
-      const bg    = isSupplier ? '#034543' : 'white'
-      const color = isSupplier ? '#FFFBD5' : '#1a1a1a'
+      const align  = isSupplier ? 'flex-end' : 'flex-start'
+      const bg     = isSupplier ? '#034543' : 'white'
+      const color  = isSupplier ? '#FFFBD5' : '#1a1a1a'
       const radius = isSupplier ? '12px 12px 2px 12px' : '12px 12px 12px 2px'
-      const name  = isSupplier ? `📦 ${m.senderName}` : `💬 Tim Harmoni`
+      const name   = isSupplier ? `📦 ${m.senderName}` : `💬 Tim Harmoni`
+      const imgHtml = m.imageUrl
+        ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
+        : ''
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
         <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
         <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;border:1px solid rgba(3,69,67,.08)">
-          ${m.text.replace(/\n/g,'<br>')}
+          ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
         </div>
       </div>`
     }).join('')
@@ -449,30 +459,68 @@
     }).catch(() => {})
   }
 
+  let _supplierChatPhoto = null
+
+  window.selectSupplierPhoto = function(input) {
+    const f = input.files[0]
+    if (!f) return
+    _supplierChatPhoto = f
+    const preview = document.getElementById('supplierChatPhotoPreview')
+    document.getElementById('supplierChatPhotoName').textContent = `📷 ${f.name}`
+    preview.style.display = 'flex'
+  }
+
+  window.cancelSupplierPhoto = function() {
+    _supplierChatPhoto = null
+    document.getElementById('supplierChatPhoto').value = ''
+    document.getElementById('supplierChatPhotoPreview').style.display = 'none'
+  }
+
   window.sendSupplierMsg = async function() {
     const input  = document.getElementById('supplierChatInput')
     const errEl  = document.getElementById('supplierChatError')
     const text   = input.value.trim()
-    if (!text) return
+
+    if (!text && !_supplierChatPhoto) return
 
     errEl.style.display = 'none'
 
-    if (hasContactInfo(text)) {
+    if (text && hasContactInfo(text)) {
       errEl.textContent = '⚠ Pesan mengandung informasi yang tidak diperbolehkan (nomor HP, kontak, link, atau ajakan komunikasi di luar platform).'
       errEl.style.display = ''
       return
     }
 
     input.disabled = true
+    let imageUrl = null
+
+    if (_supplierChatPhoto) {
+      try {
+        const sRef = storageRef(storage, `supplier_chat/${orderId}/${Date.now()}_${_supplierChatPhoto.name}`)
+        const snap = await new Promise((resolve, reject) => {
+          const task = uploadBytesResumable(sRef, _supplierChatPhoto)
+          task.on('state_changed', null, reject, () => resolve(task.snapshot))
+        })
+        imageUrl = await getDownloadURL(snap.ref)
+      } catch(e) {
+        errEl.textContent = 'Gagal upload foto: ' + e.message
+        errEl.style.display = ''
+        input.disabled = false
+        return
+      }
+    }
+
     try {
       await addDoc(chatCol, {
-        text,
+        text: text || '',
+        imageUrl: imageUrl || null,
         senderType: 'supplier',
         senderName: supplierNama || 'Supplier',
         supplierToken: token,
         createdAt: Timestamp.now(),
       })
       input.value = ''
+      cancelSupplierPhoto()
       await markUnreadForStaff()
     } catch(e) {
       errEl.textContent = 'Gagal kirim: ' + e.message
