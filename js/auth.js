@@ -599,6 +599,7 @@ function initNotifications(profile) {
           return false
         }
         if (profile.role !== 'owner') {
+          if (profile.role === 'divisi' && profile.divisi) return n.division === profile.divisi
           if (profile.divisions?.length) return profile.divisions.includes(n.division)
           return !n.lokasiId || n.lokasiId === profile.lokasiId
         }

@@ -230,7 +230,7 @@
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
     const canUpdateProgress = canEdit || hasProductionAccess(profile, order.division) || isDivisiOwner
-    const canSeeInternalChat = profile.role !== 'production' || isDivisiOwner
+    const canSeeInternalChat = (profile.role !== 'production' && profile.role !== 'divisi') || isDivisiOwner
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const pStatus = paymentStatus(order.totalPrice, order.depositPaid)
     const isPaid = sisa <= 0 && (order.totalPrice||0) > 0
