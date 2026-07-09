@@ -142,28 +142,31 @@
   let currentTo = null
 
   requireAuth((profile) => {
-    if (profile.role !== 'owner') {
-      window.location.href = 'dashboard.html'; return
-    }
+    const isOwner = profile.role === 'owner'
+    const isDivisiOwner = profile.role === 'divisi' && !!profile.divisi
+    if (!isOwner && !isDivisiOwner) { window.location.href = 'dashboard.html'; return }
     setupPeriodBtns()
-    if (profile.role === 'owner') {
+    if (isOwner) {
       document.getElementById('lokasiSection').style.display = ''
       document.getElementById('profitSection').style.display = ''
+      document.getElementById('kewajibanSection').style.display = ''
+    } else if (isDivisiOwner) {
+      // Pemilik divisi hanya lihat section kewajiban (pendapatan mereka dari lokasi)
       document.getElementById('kewajibanSection').style.display = ''
     }
 
     dataAuthReady.then(() => Promise.all([
       getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))),
-      profile.role === 'owner'
+      (isOwner || isDivisiOwner)
         ? getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))
         : Promise.resolve({ docs: [] }),
-      profile.role === 'owner'
+      (isOwner || isDivisiOwner)
         ? import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
             .then(({ doc, getDoc }) => getDoc(doc(db, 'settings', 'payment_info')))
             .then(snap => snap.exists() ? snap.data() : {})
             .catch(() => ({}))
         : Promise.resolve({}),
-      profile.role === 'owner'
+      (isOwner || isDivisiOwner)
         ? getDocs(collection(db, 'divisions')).catch(() => ({ docs: [] }))
         : Promise.resolve({ docs: [] })
     ])).then(([ordersSnap, lokasiSnap, paymentInfo, divisionsSnap]) => {
@@ -172,6 +175,8 @@
       divisiPemilikMap = {}
       divisionsSnap.docs.forEach(d => { if (d.data().pemilik) divisiPemilikMap[d.id] = d.data().pemilik })
       allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Pemilik divisi hanya melihat order divisi mereka
+      if (isDivisiOwner) allOrders = allOrders.filter(o => o.division === profile.divisi)
       setPeriod('month')
     }).catch(err => {
       document.getElementById('summaryCards').innerHTML = `<div class="stat-card" style="grid-column:1/-1"><p style="color:red;font-size:13px">Gagal memuat data: ${err.message}</p></div>`
@@ -472,10 +477,16 @@
   }
 
   function renderKewajibanDivisi(orders) {
-    if (getProfile()?.role !== 'owner') return
+    const profile = getProfile()
+    const isOwner = profile?.role === 'owner'
+    const isDivisiOwner = profile?.role === 'divisi' && !!profile?.divisi
+    if (!isOwner && !isDivisiOwner) return
     const el = document.getElementById('kewajibanTable')
     const sumEl = document.getElementById('kewajibanSummary')
     if (!el || !sumEl) return
+
+    // For divisi role, only show their own division's data
+    const activeDivisions = isDivisiOwner ? [profile.divisi] : DIVISIONS
 
     function getBankForDiv(div) {
       const byDiv = bankList.filter(b => {
@@ -494,7 +505,7 @@
     lokasiList.forEach(l => { if (l.divisiPemilik) lokasiDivMap[l.id] = l.divisiPemilik })
 
     // Per divisi: pisah internal vs eksternal
-    const divData = DIVISIONS.map(d => {
+    const divData = activeDivisions.map(d => {
       const divOrders     = orders.filter(o => o.division === d)
       const eksternalOrders = divOrders.filter(o => lokasiDivMap[o.lokasiId] !== d)
       const internalOrders  = divOrders.filter(o => lokasiDivMap[o.lokasiId] === d)
@@ -529,13 +540,13 @@
           <div class="stat-lbl">${rows.map(d => `${DIVISION_META[d.div]?.icon||''} ${DIVISION_META[d.div]?.label||d.div}`).join(', ')}</div>
           ${banks.length ? banks.map(b => `<div style="margin-top:6px;font-size:11px;color:var(--green);font-weight:700">🏦 ${b.bankName} · <span style="font-family:monospace">${b.accountNumber}</span></div>`).join('') : `<div style="font-size:10px;color:rgba(3,69,67,.35);margin-top:4px">Belum ada rekening</div>`}
         </div>`
-    }).join('') + `
+    }).join('') + (isDivisiOwner ? '' : `
       <div class="stat-card">
         <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:6px">📊 Total Semua</div>
         <div class="stat-val" style="color:#b91c1c;font-size:20px">${fmtCurrency(totalKewajiban)}</div>
         <div class="stat-lbl">${pemilikList.length} pemilik · ${divData.length} divisi aktif</div>
         ${totalOrderTanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:4px">⚠ ${totalOrderTanpaModal} order belum ada modal</div>` : `<div style="font-size:10px;color:#059669;margin-top:4px">Semua order sudah ada data modal ✓</div>`}
-      </div>`
+      </div>`)
 
     if (!divData.length) {
       el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:16px">Belum ada order di periode ini</p>'
@@ -599,12 +610,12 @@
         </tr>
       </thead>
       <tbody>${tableRows}</tbody>
-      <tfoot>
+      ${isDivisiOwner ? '' : `<tfoot>
         <tr style="border-top:2px solid rgba(3,69,67,.1);background:rgba(3,69,67,.03)">
           <td colspan="4" style="padding:12px 6px;font-weight:800;font-size:14px">TOTAL SEMUA KEWAJIBAN</td>
           <td style="padding:12px 6px;text-align:right;font-weight:800;font-size:18px;color:#b91c1c">${fmtCurrency(totalKewajiban)}</td>
         </tr>
-      </tfoot>
+      </tfoot>`}
     </table></div>
     ${totalOrderTanpaModal > 0 ? `
       <div style="background:rgba(251,191,36,.1);border:1.5px solid rgba(251,191,36,.4);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12px;color:#92400e">

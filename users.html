@@ -44,6 +44,7 @@
             <option value="cs">CS (Customer Service)</option>
             <option value="manager">Kepala Cabang</option>
             <option value="production">Tim Produksi</option>
+            <option value="divisi">Pemilik Divisi</option>
             <option value="data">Data Entry (input modal, perlu approval)</option>
             <option value="owner">Owner</option>
           </select>
@@ -61,6 +62,13 @@
           <label>Divisi <span class="req">*</span> <span style="font-size:11px;font-weight:400;color:rgba(3,69,67,.4)">(boleh lebih dari satu)</span></label>
           <div id="divisionCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
           <p class="form-hint">Tim produksi hanya melihat order dari divisi yang dipilih</p>
+        </div>
+        <div class="form-group" id="divisiOwnerWrap" style="grid-column:1/-1;display:none">
+          <label>Divisi yang Dimiliki <span class="req">*</span></label>
+          <select id="newDivisi">
+            <option value="">— Pilih divisi —</option>
+          </select>
+          <p class="form-hint">Pemilik divisi hanya bisa melihat order dan laporan kewajiban untuk divisi ini</p>
         </div>
         <div class="form-group" id="pinWrap" style="grid-column:1/-1;display:none">
           <label>PIN Approval <span class="req">*</span></label>
@@ -102,7 +110,7 @@
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
-  const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi', data: 'Data Entry' }
+  const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi', data: 'Data Entry', divisi: 'Pemilik Divisi' }
 
   let lokasiOptions = []
 
@@ -123,7 +131,7 @@
     } catch(e) { console.warn('loadLokasiOptions:', e.message) }
   }
 
-  // Populate division checkboxes
+  // Populate division checkboxes (multi-select for production/cs)
   const divContainer = document.getElementById('divisionCheckboxes')
   DIVISIONS.forEach(d => {
     const lbl = document.createElement('label')
@@ -132,8 +140,18 @@
     divContainer.appendChild(lbl)
   })
 
+  // Populate divisi owner single-select
+  const divOwnerSel = document.getElementById('newDivisi')
+  DIVISIONS.forEach(d => {
+    const opt = document.createElement('option')
+    opt.value = d
+    opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
+    divOwnerSel.appendChild(opt)
+  })
+
   window.onRoleChange = function(role) {
     document.getElementById('divisiWrap').style.display = (role === 'production' || role === 'cs') ? '' : 'none'
+    document.getElementById('divisiOwnerWrap').style.display = role === 'divisi' ? '' : 'none'
     document.getElementById('pinWrap').style.display = role === 'manager' ? '' : 'none'
     const hint = document.querySelector('#divisiWrap .form-hint')
     if (hint) hint.textContent = role === 'production'
@@ -175,7 +193,7 @@
           <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.lokasiNama}</div>` : (u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : '')}
-          ${(() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()}
+          ${u.role === 'divisi' && u.divisi ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">🏭 ${DIVISION_META[u.divisi]?.icon||''} ${DIVISION_META[u.divisi]?.label||u.divisi}</div>` : (() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()}
         </div>
         <span class="badge badge-pill" style="background:rgba(3,69,67,.08);color:var(--green)">${ROLE_LABEL[u.role]||u.role}</span>
         ${u.id !== getProfile()?.id ? `
@@ -219,10 +237,12 @@
       const lokasiNama = lokasiObj?.nama || ''
       const lokasiTipe = lokasiObj?.tipe || ''
       const divisions = (role === 'production' || role === 'cs') ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
+      const divisi = role === 'divisi' ? document.getElementById('newDivisi').value : ''
       const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
       if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
+      if (role === 'divisi' && !divisi) throw new Error('Pilih divisi yang dimiliki')
       if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
-      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, lokasiTipe, divisions, pin, createdAt: Timestamp.now() })
+      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, lokasiTipe, divisions, divisi, pin, createdAt: Timestamp.now() })
 
       // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
       // → harus sign out lalu owner login ulang

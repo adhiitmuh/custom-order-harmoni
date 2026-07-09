@@ -91,7 +91,7 @@
       divSel.appendChild(opt)
     })
     _activeDivsMeta = Object.fromEntries(activeDivs.map(d => [d.key, d]))
-    if (profile.role !== 'production') document.getElementById('newOrderBtn').style.display = ''
+    if (profile.role !== 'production' && profile.role !== 'divisi') document.getElementById('newOrderBtn').style.display = ''
 
     if (profile.role === 'production') {
       const userDivs = profile.divisions?.length ? profile.divisions : (profile.division ? [profile.division] : [])
@@ -109,7 +109,15 @@
       }
     }
 
-    if (profile.role !== 'production') {
+    if (profile.role === 'divisi' && profile.divisi) {
+      lockedDivision = profile.divisi
+      const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
+      document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
+      document.getElementById('divLockBadge').style.display = 'inline-flex'
+      document.getElementById('divFilter').style.display = 'none'
+    }
+
+    if (profile.role !== 'production' && profile.role !== 'divisi') {
       document.getElementById('divTabs').style.display = 'flex'
     }
 
