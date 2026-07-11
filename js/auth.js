@@ -388,12 +388,21 @@ window.toggleNotifPanel = function() {
   if (willOpen) window.markNotifsRead()
 }
 
+let _vendorUnreadCount = 0
+
 window.markNotifsRead = function() {
   if (!_profile) return
   localStorage.setItem(`notifReadAt_${_profile.id}`, Date.now().toString())
   const badge = document.getElementById('notifBadge')
-  if (badge) badge.style.display = 'none'
-  document.querySelectorAll('#notifList .notif-item').forEach(el => {
+  if (badge) {
+    if (_vendorUnreadCount > 0) {
+      badge.textContent = _vendorUnreadCount > 9 ? '9+' : String(_vendorUnreadCount)
+      badge.style.display = ''
+    } else {
+      badge.style.display = 'none'
+    }
+  }
+  document.querySelectorAll('#notifList .notif-item:not([data-vendor])').forEach(el => {
     el.style.background = 'transparent'
   })
 }
@@ -443,110 +452,149 @@ function initNotifications(profile) {
 
   // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
   dataAuthReady.then(() => {
-  const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
-  onSnapshot(q, snap => {
-    let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    let _vendorOrders = []
+    let _lastNotifItems = []
+    let _lastReadAt = getLastRead()
 
-    // Filter sesuai role + lokasi + divisi
-    notifs = notifs.filter(n => {
-      if (n.fromUid === profile.id) return false
-      // @mention khusus untuk user ini
-      if (n.type === 'mention') return n.targetUid === profile.id
-      // Price approval — owner lihat semua tier, manager lihat promo saja
-      if (n.type === 'price_approval') {
-        if (profile.role === 'owner') return true
-        if (profile.role === 'manager' && n.priceApprovalTier === 'promo') {
+    const updateBadge = () => {
+      const lastReadAt = getLastRead()
+      const mainUnread = _lastNotifItems.reduce((sum, n) => {
+        if (n.type === 'mention') {
+          const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+          return sum + (ts > lastReadAt ? 1 : 0)
+        }
+        return sum + (n._unreadCount > 0 ? 1 : 0)
+      }, 0)
+      const total = mainUnread + _vendorUnreadCount
+      const badge = document.getElementById('notifBadge')
+      if (badge) {
+        badge.textContent = total > 9 ? '9+' : String(total)
+        badge.style.display = total > 0 ? '' : 'none'
+      }
+    }
+
+    const renderPanel = () => {
+      const list = document.getElementById('notifList')
+      if (!list) return
+      const lastReadAt = getLastRead()
+
+      const vendorItems = _vendorOrders.map(o => ({
+        _isVendor: true,
+        orderId: o.id,
+        orderNumber: o.orderNumber || '—',
+        unreadCount: o.unreadSupplierChat || 0,
+        updatedAt: o.updatedAt,
+      }))
+
+      const allItems = [...vendorItems, ..._lastNotifItems]
+      if (!allItems.length) {
+        list.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>'
+        return
+      }
+
+      list.innerHTML = allItems.slice(0, 20).map(n => {
+        if (n._isVendor) {
+          return `<div class="notif-item" data-vendor="1" onclick="window.goToOrderFromNotif('${n.orderId}')"
+            style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:rgba(217,119,6,.06)"
+            onmouseover="this.style.background='rgba(3,69,67,.08)'"
+            onmouseout="this.style.background='rgba(217,119,6,.06)'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+              <span style="font-size:11px;font-weight:700;color:#034543">📦 ${n.orderNumber}
+                <span style="background:#d97706;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n.unreadCount} baru</span>
+              </span>
+              <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.updatedAt)}</span>
+            </div>
+            <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4">Pesan baru dari vendor — klik untuk buka order</div>
+          </div>`
+        }
+
+        const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+        const isMention = n.type === 'mention'
+        const isUnread = isMention ? ts > lastReadAt : n._unreadCount > 0
+        const isApproval = n.type === 'price_approval'
+        const approvalBadge = isApproval
+          ? (n.priceApprovalTier === 'admin'
+              ? `<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;margin-right:4px">🔒 Admin</span>`
+              : `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">💰 Promo</span>`)
+          : ''
+        const label = isMention
+          ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
+          : `${approvalBadge}${n.orderNumber || '—'}`
+        const countBadge = (!isMention && !isApproval && n._unreadCount > 0)
+          ? `<span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n._unreadCount} baru</span>`
+          : ''
+
+        return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId || ''}')"
+          style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
+          onmouseover="this.style.background='rgba(3,69,67,.08)'"
+          onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+            <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : isApproval ? '🔔' : '🔔'} ${label}${countBadge}</span>
+            <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
+          </div>
+          <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
+        </div>`
+      }).join('')
+    }
+
+    // Vendor chat unread listener
+    onSnapshot(query(collection(db, 'orders'), where('unreadSupplierChat', '>', 0)), snap => {
+      let orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (profile.role !== 'owner') {
+        if (profile.divisions?.length) orders = orders.filter(o => profile.divisions.includes(o.division))
+        else orders = orders.filter(o => !o.lokasiId || o.lokasiId === profile.lokasiId)
+      }
+      _vendorOrders = orders
+      _vendorUnreadCount = orders.length
+      updateBadge()
+      renderPanel()
+    }, () => {})
+
+    // Internal notifications listener
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
+    onSnapshot(q, snap => {
+      let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      notifs = notifs.filter(n => {
+        if (n.fromUid === profile.id) return false
+        if (n.type === 'mention') return n.targetUid === profile.id
+        if (n.type === 'price_approval') {
+          if (profile.role === 'owner') return true
+          if (profile.role === 'manager' && n.priceApprovalTier === 'promo') {
+            if (profile.divisions?.length) return profile.divisions.includes(n.division)
+            return !n.lokasiId || n.lokasiId === profile.lokasiId
+          }
+          return false
+        }
+        if (profile.role !== 'owner') {
           if (profile.divisions?.length) return profile.divisions.includes(n.division)
           return !n.lokasiId || n.lokasiId === profile.lokasiId
         }
-        return false
-      }
-      // Order notifications: owner lihat semua, staff filter by divisi/lokasi
-      if (profile.role !== 'owner') {
-        if (profile.divisions?.length) return profile.divisions.includes(n.division)
-        return !n.lokasiId || n.lokasiId === profile.lokasiId
-      }
-      return true
-    })
+        return true
+      })
 
-    const lastReadAt = getLastRead()
+      const lastReadAt = getLastRead()
+      const mentions = notifs.filter(n => n.type === 'mention')
+      const chatNotifs = notifs.filter(n => n.type !== 'mention')
 
-    // Pisah @mention (tetap individual) vs internal_chat (di-group per order)
-    const mentions = notifs.filter(n => n.type === 'mention')
-    const chatNotifs = notifs.filter(n => n.type !== 'mention')
+      const orderMap = {}
+      chatNotifs.forEach(n => {
+        const key = n.orderId || '_no_order'
+        if (!orderMap[key]) orderMap[key] = []
+        orderMap[key].push(n)
+      })
+      const grouped = Object.values(orderMap).map(msgs => {
+        const latest = msgs[0]
+        const unreadInOrder = msgs.filter(n => {
+          const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
+          return ts > lastReadAt
+        }).length
+        return { ...latest, _unreadCount: unreadInOrder, _totalCount: msgs.length }
+      }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
 
-    // Group chat notifs by orderId — ambil pesan terbaru + hitung unread per order
-    const orderMap = {}
-    chatNotifs.forEach(n => {
-      const key = n.orderId || '_no_order'
-      if (!orderMap[key]) orderMap[key] = []
-      orderMap[key].push(n)
-    })
-    const grouped = Object.values(orderMap).map(msgs => {
-      const latest = msgs[0] // sudah sorted desc dari query
-      const unreadInOrder = msgs.filter(n => {
-        const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
-        return ts > lastReadAt
-      }).length
-      return { ...latest, _unreadCount: unreadInOrder, _totalCount: msgs.length }
-    }).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-
-    // Badge = jumlah order unread + mention unread
-    const unreadMentions = mentions.filter(n => {
-      const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
-      return ts > lastReadAt
-    }).length
-    const unreadOrders = grouped.filter(g => g._unreadCount > 0).length
-    const unread = unreadMentions + unreadOrders
-
-    const badge = document.getElementById('notifBadge')
-    if (badge) {
-      badge.textContent = unread > 9 ? '9+' : String(unread)
-      badge.style.display = unread > 0 ? '' : 'none'
-    }
-
-    const list = document.getElementById('notifList')
-    if (!list) return
-
-    const allItems = [...mentions, ...grouped]
-    if (!allItems.length) {
-      list.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>'
-      return
-    }
-
-    list.innerHTML = allItems.slice(0, 20).map(n => {
-      const ts = n.createdAt?.seconds ? n.createdAt.seconds * 1000 : 0
-      const isMention = n.type === 'mention'
-      const isUnread = isMention
-        ? ts > lastReadAt
-        : n._unreadCount > 0
-
-      const isApproval = n.type === 'price_approval'
-      const approvalBadge = isApproval
-        ? (n.priceApprovalTier === 'admin'
-            ? `<span style="font-size:10px;font-weight:700;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:4px;margin-right:4px">🔒 Admin</span>`
-            : `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">💰 Promo</span>`)
-        : ''
-
-      const label = isMention
-        ? `<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-right:4px">@mention</span>${n.orderNumber || ''}`
-        : `${approvalBadge}${n.orderNumber || '—'}`
-
-      const countBadge = (!isMention && !isApproval && n._unreadCount > 0)
-        ? `<span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n._unreadCount} baru</span>`
-        : ''
-
-      return `<div class="notif-item" onclick="window.goToOrderFromNotif('${n.orderId || ''}')"
-        style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}"
-        onmouseover="this.style.background='rgba(3,69,67,.08)'"
-        onmouseout="this.style.background='${isUnread ? 'rgba(3,69,67,.04)' : 'transparent'}'">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : isApproval ? '🔔' : '🔔'} ${label}${countBadge}</span>
-          <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
-        </div>
-        <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
-      </div>`
-    }).join('')
-  }, () => {})
+      _lastNotifItems = [...mentions, ...grouped]
+      updateBadge()
+      renderPanel()
+    }, () => {})
   }) // dataAuthReady.then
 }

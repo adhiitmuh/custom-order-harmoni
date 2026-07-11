@@ -55,7 +55,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-  import { getFirestore, doc, getDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getFirestore, doc, getDoc, updateDoc, deleteDoc, increment, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
@@ -516,11 +516,10 @@
 
   // Increment unread counter untuk staff
   async function markUnreadForStaff() {
-    const { increment } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
     await updateDoc(doc(db, 'orders', orderId), {
       unreadSupplierChat: increment(1),
       updatedAt: Timestamp.now(),
-    }).catch(() => {})
+    }).catch(e => console.warn('[supplier-view] markUnreadForStaff failed:', e))
   }
 
   let _supplierChatPhoto = null
