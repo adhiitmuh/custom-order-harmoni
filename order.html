@@ -2379,52 +2379,107 @@
   }
 
   // ── Supplier Chat ─────────────────────────────────────────────
+  let _vendorChatMsgs = []
+
+  function renderVendorChatMsgs(msgs) {
+    _vendorChatMsgs = msgs
+    const el = document.getElementById('supplierChatMessages')
+    if (!el) return
+    if (!msgs.length) {
+      el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan dari supplier.</p>'
+      return
+    }
+    const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
+    el.innerHTML = msgs.map(m => {
+      const isSupplier = m.senderType === 'supplier'
+      const align  = isSupplier ? 'flex-start' : 'flex-end'
+      const bg     = isSupplier ? '#fef3c7' : 'var(--green)'
+      const color  = isSupplier ? '#1a1a1a' : 'white'
+      const radius = isSupplier ? '12px 12px 12px 2px' : '12px 12px 2px 12px'
+      const name   = isSupplier ? `📦 ${m.senderName}` : `💬 ${m.senderName}`
+      const editedTag = m.edited ? ' · <span style="opacity:.5">diedit</span>' : ''
+      const imgHtml = m.imageUrl
+        ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
+        : ''
+      const actionBtns = !isSupplier ? `
+        <div style="display:flex;gap:4px;margin-top:3px;justify-content:flex-end">
+          ${m.text ? `<button onclick="editVendorMsg('${m.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0 4px;font-family:inherit">✏ Edit</button>` : ''}
+          <button onclick="deleteVendorMsg('${m.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(185,28,28,.45);padding:0 4px;font-family:inherit">🗑 Hapus</button>
+        </div>` : ''
+      return `<div style="display:flex;flex-direction:column;align-items:${align}">
+        <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}${editedTag}</span>
+        <div id="vcmsg-${m.id}" style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%">
+          ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
+        </div>
+        ${actionBtns}
+      </div>`
+    }).join('')
+    if (wasAtBottom) el.scrollTop = el.scrollHeight
+
+    // Badge: unread vendor messages after last staff reply
+    let lastStaffIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].senderType !== 'supplier') { lastStaffIdx = i; break }
+    }
+    const unread = msgs.slice(lastStaffIdx + 1).filter(m => m.senderType === 'supplier').length
+    const badge = document.getElementById('supplierChatBadge')
+    if (badge) { badge.textContent = unread || ''; badge.style.display = unread > 0 ? '' : 'none' }
+  }
+
   function initSupplierChat() {
     const hasApproved = (order.supplierAssignments||[]).some(a => a.assignStatus === 'approved')
     if (!hasApproved) return
     const el = document.getElementById('supplierChatMessages')
     if (!el) return
 
-    // Reset unread badge saat staff buka
     updateDoc(doc(db, 'orders', orderId), { unreadSupplierChat: 0 }).catch(() => {})
 
     const q = query(collection(db, 'orders', orderId, 'supplier_chat'), orderBy('createdAt'))
     supplierChatUnsub = onSnapshot(q, snap => {
-      const el = document.getElementById('supplierChatMessages')
-      if (!el) return
-      if (snap.empty) {
-        el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan dari supplier.</p>'
-        return
-      }
-      const msgs = snap.docs.map(d => d.data())
-      el.innerHTML = msgs.map(m => {
-        const isSupplier = m.senderType === 'supplier'
-        const align  = isSupplier ? 'flex-start' : 'flex-end'
-        const bg     = isSupplier ? '#fef3c7' : 'var(--green)'
-        const color  = isSupplier ? '#1a1a1a' : 'white'
-        const radius = isSupplier ? '12px 12px 12px 2px' : '12px 12px 2px 12px'
-        const name   = isSupplier ? `📦 ${m.senderName}` : `💬 ${m.senderName}`
-        const imgHtml = m.imageUrl
-          ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
-          : ''
-        return `<div style="display:flex;flex-direction:column;align-items:${align}">
-          <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
-          <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%">
-            ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
-          </div>
-        </div>`
-      }).join('')
-      el.scrollTop = el.scrollHeight
-
-      // Badge: hitung pesan supplier setelah balasan staff terakhir
-      let lastStaffIdx = -1
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].senderType !== 'supplier') { lastStaffIdx = i; break }
-      }
-      const unread = msgs.slice(lastStaffIdx + 1).filter(m => m.senderType === 'supplier').length
-      const badge = document.getElementById('supplierChatBadge')
-      if (badge) { badge.textContent = unread || ''; badge.style.display = unread > 0 ? '' : 'none' }
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      renderVendorChatMsgs(msgs)
     })
+  }
+
+  window.editVendorMsg = function(msgId) {
+    const m = _vendorChatMsgs.find(x => x.id === msgId)
+    if (!m || !m.text) return
+    const el = document.getElementById(`vcmsg-${msgId}`)
+    if (!el) return
+    const imgHtml = m.imageUrl
+      ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;margin-bottom:6px"></a>`
+      : ''
+    el.innerHTML = `${imgHtml}
+      <textarea id="vcedit-${msgId}" style="width:100%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:6px;color:white;font-size:13px;padding:5px 7px;resize:none;font-family:inherit;box-sizing:border-box" rows="2">${m.text}</textarea>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button onclick="saveVendorMsg('${msgId}')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);border-radius:5px;cursor:pointer;font-size:11px;color:white;padding:3px 10px;font-family:inherit;font-weight:600">Simpan</button>
+        <button onclick="cancelVendorMsg('${msgId}')" style="background:none;border:1px solid rgba(255,255,255,.2);border-radius:5px;cursor:pointer;font-size:11px;color:rgba(255,255,255,.6);padding:3px 10px;font-family:inherit">Batal</button>
+      </div>`
+    document.getElementById(`vcedit-${msgId}`)?.focus()
+  }
+
+  window.saveVendorMsg = async function(msgId) {
+    const ta = document.getElementById(`vcedit-${msgId}`)
+    if (!ta) return
+    const newText = ta.value.trim()
+    if (!newText) return
+    if (hasContactInfo(newText)) { alert('⚠ Pesan mengandung informasi kontak.'); return }
+    try {
+      await updateDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId), {
+        text: newText, edited: true, editedAt: Timestamp.now()
+      })
+    } catch(e) { alert('Gagal simpan: ' + e.message) }
+  }
+
+  window.cancelVendorMsg = function(msgId) {
+    renderVendorChatMsgs(_vendorChatMsgs)
+  }
+
+  window.deleteVendorMsg = async function(msgId) {
+    if (!confirm('Hapus pesan ini?')) return
+    try {
+      await deleteDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId))
+    } catch(e) { alert('Gagal hapus: ' + e.message) }
   }
 
   let _vendorPhotoFile = null

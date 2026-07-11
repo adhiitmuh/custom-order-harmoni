@@ -55,7 +55,7 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-  import { getFirestore, doc, getDoc, updateDoc, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { getFirestore, doc, getDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
@@ -423,33 +423,96 @@
 
   const chatCol = collection(db, 'orders', orderId, 'supplier_chat')
   const chatQ   = query(chatCol, orderBy('createdAt'))
-  onSnapshot(chatQ, snap => {
+
+  let _chatMsgs = []
+
+  function renderChat(msgs) {
+    _chatMsgs = msgs
     const el = document.getElementById('supplierChatMessages')
     if (!el) return
-    if (snap.empty) {
+    if (!msgs.length) {
       el.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:20px">Belum ada pesan. Mulai tanya ke tim Harmoni.</p>'
       return
     }
-    el.innerHTML = snap.docs.map(d => {
-      const m = d.data()
+    const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
+    el.innerHTML = msgs.map(m => {
       const isSupplier = m.senderType === 'supplier'
       const align  = isSupplier ? 'flex-end' : 'flex-start'
       const bg     = isSupplier ? '#034543' : 'white'
       const color  = isSupplier ? '#FFFBD5' : '#1a1a1a'
       const radius = isSupplier ? '12px 12px 2px 12px' : '12px 12px 12px 2px'
       const name   = isSupplier ? `📦 ${m.senderName}` : `💬 Tim Harmoni`
+      const editedTag = m.edited ? ' · <span style="opacity:.5">diedit</span>' : ''
       const imgHtml = m.imageUrl
         ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
         : ''
+      const actionBtns = isSupplier ? `
+        <div style="display:flex;gap:4px;margin-top:3px;justify-content:flex-end">
+          ${m.text ? `<button onclick="editMyMsg('${m.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0 4px;font-family:inherit">✏ Edit</button>` : ''}
+          <button onclick="deleteMyMsg('${m.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:rgba(185,28,28,.45);padding:0 4px;font-family:inherit">🗑 Hapus</button>
+        </div>` : ''
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
-        <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}</span>
-        <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;border:1px solid rgba(3,69,67,.08)">
+        <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}${editedTag}</span>
+        <div id="smsg-${m.id}" style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;border:1px solid rgba(3,69,67,.08)">
           ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
         </div>
+        ${actionBtns}
       </div>`
     }).join('')
-    el.scrollTop = el.scrollHeight
+    if (wasAtBottom) el.scrollTop = el.scrollHeight
+  }
+
+  onSnapshot(chatQ, snap => {
+    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    renderChat(msgs)
   })
+
+  window.editMyMsg = function(msgId) {
+    const m = _chatMsgs.find(x => x.id === msgId)
+    if (!m || !m.text) return
+    const el = document.getElementById(`smsg-${msgId}`)
+    if (!el) return
+    const imgHtml = m.imageUrl
+      ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;margin-bottom:6px"></a>`
+      : ''
+    el.innerHTML = `${imgHtml}
+      <textarea id="sedit-${msgId}" style="width:100%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:6px;color:#FFFBD5;font-size:13px;padding:5px 7px;resize:none;font-family:inherit;box-sizing:border-box" rows="2">${m.text}</textarea>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button onclick="saveMyMsg('${msgId}')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:5px;cursor:pointer;font-size:11px;color:#FFFBD5;padding:3px 10px;font-family:inherit;font-weight:600">Simpan</button>
+        <button onclick="cancelMyMsg('${msgId}')" style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;cursor:pointer;font-size:11px;color:rgba(255,251,213,.6);padding:3px 10px;font-family:inherit">Batal</button>
+      </div>`
+    document.getElementById(`sedit-${msgId}`)?.focus()
+  }
+
+  window.saveMyMsg = async function(msgId) {
+    const ta = document.getElementById(`sedit-${msgId}`)
+    if (!ta) return
+    const newText = ta.value.trim()
+    if (!newText) return
+    if (hasContactInfo(newText)) {
+      const errEl = document.getElementById('supplierChatError')
+      errEl.textContent = '⚠ Pesan mengandung informasi yang tidak diperbolehkan.'
+      errEl.style.display = ''
+      cancelMyMsg(msgId)
+      return
+    }
+    try {
+      await updateDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId), {
+        text: newText, edited: true, editedAt: Timestamp.now()
+      })
+    } catch(e) { alert('Gagal simpan: ' + e.message) }
+  }
+
+  window.cancelMyMsg = function(msgId) {
+    renderChat(_chatMsgs)
+  }
+
+  window.deleteMyMsg = async function(msgId) {
+    if (!confirm('Hapus pesan ini?')) return
+    try {
+      await deleteDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId))
+    } catch(e) { alert('Gagal hapus: ' + e.message) }
+  }
 
   // Increment unread counter untuk staff
   async function markUnreadForStaff() {
