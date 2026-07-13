@@ -36,7 +36,7 @@ dataAuthReady.then(async (anonUser) => {
     const p = JSON.parse(cached)
     if (!p.role) { _firestoreReadyResolve(); return }
     await setDoc(doc(db, 'users', anonUser.uid),
-      { role: p.role, name: p.name || '', email: p.email || '', branch: p.branch || '' },
+      { role: p.role, name: p.name || '', email: p.email || '', branch: p.branch || '', divisi: p.divisi || '' },
       { merge: true })
   } catch {}
   _firestoreReadyResolve()
@@ -90,6 +90,21 @@ export function hasProductionAccess(profile, division) {
   if (profile.role !== 'production') return false
   const userDivs = profile.divisions || []
   return userDivs.length === 0 || !division || userDivs.includes(division)
+}
+
+export function isDivisiOwner(profile) {
+  return profile?.role === 'divisi'
+}
+
+export function isDivisiOwnerOf(profile, division) {
+  return profile?.role === 'divisi' && !!division && profile?.divisi === division
+}
+
+export function canAccessDivisi(profile, division) {
+  if (!profile) return false
+  if (profile.role === 'owner' || profile.role === 'manager') return true
+  if (isDivisiOwnerOf(profile, division)) return true
+  return hasProductionAccess(profile, division)
 }
 
 function showAccessDenied(msg) {
@@ -146,7 +161,7 @@ export function requireAuth(callback) {
         return
       }
 
-      let appRole, appDivisions = []
+      let appRole, appDivisions = [], appDivisi = ''
       if (data.role === 'owner') {
         appRole = 'owner'
       } else {
@@ -158,9 +173,11 @@ export function requireAuth(callback) {
         appRole = appAccess.role || 'cs'
         // Divisi tim produksi diatur di Portal Utama (apps.custom_order.divisions)
         appDivisions = appAccess.divisions || []
+        // Divisi pemilik (role=divisi) — satu divisi yang dimiliki
+        appDivisi = appAccess.divisi || data.divisi || ''
       }
 
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, divisi: appDivisi }
 
       // Fetch lokasiId + divisions fallback dari operational db (harmoni-custom-order)
       try {
@@ -180,7 +197,7 @@ export function requireAuth(callback) {
       // Sync role to harmoni-custom-order so Firestore Rules can check it.
       // Also write under the anon UID (from dataAuth) because Firestore rules
       // check request.auth.uid = anon UID, not the portal UID.
-      const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '' }
+      const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '', divisi: appDivisi || '' }
       // Write portal UID doc and anon UID doc — both must complete before callback
       // so Firestore rules (isStaffAuth checks users/{anonUID}) pass immediately
       await setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
@@ -228,11 +245,20 @@ export function renderSidebar(profile) {
     ? true
     : localStorage.getItem('sidebar_divisi_open') !== 'false'
 
+  const isDivisi = profile.role === 'divisi'
   const activeDivs = _divisions || _staticDivisions()
-  const divLinks = activeDivs.map(d => `
+
+  // For divisi role: only show their own division in sidebar
+  const sidebarDivs = isDivisi && profile.divisi
+    ? activeDivs.filter(d => d.key === profile.divisi)
+    : activeDivs
+
+  const divLinks = sidebarDivs.map(d => `
     <a href="knowledge.html?div=${d.key}" class="sidebar-link ${onKnowledge && activeDiv === d.key ? 'active' : ''}">
       <span class="icon">${d.icon}</span>${d.label}
     </a>`).join('')
+
+  const roleLabel = { owner:'OWNER', manager:'MANAGER', cs:'CS', production:'PRODUKSI', data:'DATA', divisi:'PEMILIK DIVISI' }[profile.role] || (profile.role||'').toUpperCase()
 
   el.innerHTML = `
     <div class="sidebar-nav">
@@ -250,10 +276,14 @@ export function renderSidebar(profile) {
 
     <div class="sidebar-section">
       <div class="sidebar-label">PESANAN</div>
+      ${isDivisi && profile.divisi ? `
+      <a href="orders.html?div=${profile.divisi}" class="sidebar-link ${page==='orders.html'?'active':''}">
+        <span class="icon">📋</span>Order Divisi Saya
+      </a>` : `
       <a href="orders.html" class="sidebar-link ${page==='orders.html'?'active':''}">
         <span class="icon">📋</span>Semua Order
-      </a>
-      ${profile.role !== 'production' && profile.role !== 'data' ? `
+      </a>`}
+      ${!isDivisi && profile.role !== 'production' && profile.role !== 'data' ? `
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
         <span class="icon">＋</span>Order Baru
       </a>` : ''}
@@ -278,12 +308,13 @@ export function renderSidebar(profile) {
       <a href="kalender.html" class="sidebar-link ${page==='kalender.html'?'active':''}">
         <span class="icon">📅</span>Kalender Produksi
       </a>
+      ${!isDivisi || profile.divisi === 'bordir' || profile.divisi === 'papan-nama' ? `
       <a href="production-sheet.html" class="sidebar-link ${page==='production-sheet.html'?'active':''}">
         <span class="icon">🗂️</span>Papan Nama Sheet
-      </a>
+      </a>` : ''}
     </div>
 
-    ${(profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
+    ${!isDivisi && (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `
     <div class="sidebar-section">
       <div class="sidebar-label">KOMUNIKASI</div>
       <a href="inbox.html" class="sidebar-link ${page==='inbox.html'?'active':''}">
@@ -297,15 +328,16 @@ export function renderSidebar(profile) {
       </a>` : ''}
     </div>` : ''}
 
-    ${profile.role === 'owner' ? `
+    ${profile.role === 'owner' || isDivisi ? `
     <div class="sidebar-section">
-      <div class="sidebar-label">PELANGGAN & KEUANGAN</div>
+      <div class="sidebar-label">KEUANGAN</div>
+      <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
+        <span class="icon">📊</span>${isDivisi ? 'Laporan Kewajiban' : 'Laporan Keuangan'}
+      </a>
+      ${profile.role === 'owner' ? `
       <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
         <span class="icon">👥</span>CRM Pelanggan
-      </a>
-      <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
-        <span class="icon">📊</span>Laporan Keuangan
-      </a>
+      </a>` : ''}
     </div>` : ''}
 
     <div class="sidebar-section">
@@ -336,7 +368,7 @@ export function renderSidebar(profile) {
       <div class="avatar">${(profile.name||'U')[0].toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="user-name">${profile.name}</div>
-        <div class="user-role">${(profile.role||'').toUpperCase()}${profile.branch ? ' · ' + profile.branch : ''}</div>
+        <div class="user-role">${roleLabel}${profile.branch ? ' · ' + profile.branch : ''}</div>
       </div>
       <button id="notifBell" onclick="window.toggleNotifPanel()" title="Notifikasi" style="position:relative;background:none;border:none;cursor:pointer;color:#FFFBD5;font-size:15px;padding:4px;line-height:1;opacity:.6;flex-shrink:0">🔔<span id="notifBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ef4444;color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:0 3px;min-width:13px;text-align:center;line-height:1.6">0</span></button>
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
@@ -567,6 +599,7 @@ function initNotifications(profile) {
           return false
         }
         if (profile.role !== 'owner') {
+          if (profile.role === 'divisi' && profile.divisi) return n.division === profile.divisi
           if (profile.divisions?.length) return profile.divisions.includes(n.division)
           return !n.lokasiId || n.lokasiId === profile.lokasiId
         }
