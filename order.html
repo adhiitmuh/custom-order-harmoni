@@ -1294,7 +1294,8 @@
                 <select id="supSel-${i}" style="border:1.5px solid rgba(3,69,67,.15);border-radius:7px;padding:4px 6px;font-size:12px;font-family:inherit;background:var(--white)">
                   <option value="">— Pilih supplier</option>
                   ${supplierSelect}
-                </select>` : `<span style="font-size:12px;color:rgba(3,69,67,.6)">${asgn?.supplierNama||'—'}</span>`}
+                </select>` : `<span style="font-size:12px;color:rgba(3,69,67,.6)">${asgn?.supplierNama||'—'}</span>
+                ${(asgn?.fileUrls||[]).length ? `<div style="font-size:10px;color:rgba(3,69,67,.4);margin-top:3px">📎 ${asgn.fileUrls.length} file dipilih</div>` : ''}`}
               </td>
               <td style="padding:8px 4px;text-align:center">${statusBadge}</td>
               <td style="padding:8px 4px;display:flex;gap:4px;flex-wrap:wrap">${actionBtn}${shareBtn}</td>
@@ -1302,7 +1303,26 @@
           }).join('')}
         </tbody>
       </table>
-      ${canAssign ? `<button onclick="submitSupplierAssign()" class="btn btn-ghost btn-sm" style="font-size:12px">Ajukan ke Supplier</button>` : ''}
+      ${(order.designFiles||[]).length && canAssign ? `
+      <div style="margin-top:10px;padding:10px 12px;border:1.5px solid rgba(3,69,67,.1);border-radius:8px;background:rgba(3,69,67,.03)">
+        <div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.45);margin-bottom:8px;letter-spacing:.04em">📎 FILE DESAIN PER ITEM</div>
+        ${(order.orderItems||[]).map((it, i) => {
+          const asgn2 = assignments.find(a => a.itemIndex === i)
+          if (asgn2?.assignStatus === 'approved') return ''
+          const fname = url => { try { return decodeURIComponent(url.split('/o/')[1]?.split('?')[0]?.split('/').pop() || url.split('/').pop().split('?')[0]).slice(0,35) } catch { return 'File' } }
+          return `<div style="margin-bottom:10px">
+            <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.6);margin-bottom:4px">${it.name||'Item '+(i+1)}</div>
+            ${(order.designFiles||[]).map((url, fi) => {
+              const checked = asgn2?.fileUrls ? (asgn2.fileUrls.includes(url) ? 'checked' : '') : 'checked'
+              return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:3px;cursor:pointer">
+                <input type="checkbox" class="fcb-${i}" data-fi="${fi}" ${checked} style="width:13px;height:13px;accent-color:var(--green)">
+                <span style="color:rgba(3,69,67,.7);word-break:break-all">${fname(url)}</span>
+              </label>`
+            }).join('')}
+          </div>`
+        }).join('')}
+      </div>` : ''}
+      ${canAssign ? `<button onclick="submitSupplierAssign()" class="btn btn-ghost btn-sm" style="font-size:12px;margin-top:8px">Ajukan ke Supplier</button>` : ''}
     `
   }
 
@@ -1318,6 +1338,7 @@
       if (!supplier) return
       hasSelection = true
       const existing = (order.supplierAssignments||[]).find(a => a.itemIndex === i)
+      const fileUrls = [...document.querySelectorAll(`.fcb-${i}:checked`)].map(el => order.designFiles[+el.dataset.fi]).filter(Boolean)
       if (!existing || existing.supplierId !== supplier.id) {
         newAssignments.push({
           itemIndex: i,
@@ -1328,7 +1349,10 @@
           assignedByName: profile.name,
           assignedAt: Timestamp.now(),
           supplierToken: null,
+          fileUrls,
         })
+      } else if (fileUrls.length !== (existing.fileUrls||[]).length || fileUrls.some((u,idx) => u !== (existing.fileUrls||[])[idx])) {
+        newAssignments.push({ ...existing, fileUrls })
       }
     })
 
@@ -1355,6 +1379,7 @@
       supplierNama: asgn.supplierNama,
       divisiLabel: divMeta?.label || order.division,
       itemIndexes: [itemIndex],
+      fileUrls: asgn.fileUrls || [],
       createdBy: profile.id,
       createdAt: Timestamp.now(),
     })

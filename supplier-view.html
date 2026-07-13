@@ -157,7 +157,7 @@
   const sizeEntries = order.sizeBreakdown ? Object.entries(order.sizeBreakdown).filter(([,v]) => v > 0) : []
 
   // Design files
-  const files = order.designFiles || []
+  const files = tokenData.fileUrls?.length ? tokenData.fileUrls : (order.designFiles || [])
 
   el.innerHTML = `
     <div class="card" style="background:#034543;color:#FFFBD5;padding:16px 20px;margin-bottom:14px">
