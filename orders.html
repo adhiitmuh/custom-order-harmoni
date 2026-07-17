@@ -117,16 +117,38 @@
       document.getElementById('divFilter').style.display = 'none'
     }
 
-    if (profile.role !== 'production' && profile.role !== 'divisi') {
+    // CS di pusat dengan divisi yang di-assign → hanya lihat divisi itu dari semua lokasi
+    // CS di cabang/titik → tidak difilter divisi (lihat semua divisi di lokasinya)
+    const csAtPusat = profile.role === 'cs' && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat')
+    if (csAtPusat && profile.divisions?.length) {
+      const userDivs = profile.divisions
+      if (userDivs.length === 1) {
+        lockedDivision = userDivs[0]
+        const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
+        document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
+        document.getElementById('divLockBadge').style.display = 'inline-flex'
+        document.getElementById('divFilter').style.display = 'none'
+      } else if (userDivs.length > 1) {
+        lockedDivisions = userDivs
+        document.getElementById('divLockBadge').innerHTML = userDivs.map(d=>{const m=activeDivs.find(x=>x.key===d)||DIVISION_META[d]||{};return`${m.icon||''} ${m.label||d}`}).join(' · ')
+        document.getElementById('divLockBadge').style.display = 'inline-flex'
+        document.getElementById('divFilter').style.display = 'none'
+      }
+    }
+
+    if (profile.role !== 'production' && profile.role !== 'divisi' && !(csAtPusat && profile.divisions?.length)) {
       document.getElementById('divTabs').style.display = 'flex'
     }
 
-    if ((profile.role === 'manager' || profile.role === 'cs') && profile.lokasiId) {
+    // Location lock: manager + CS cabang/titik dikunci ke lokasi mereka
+    // CS pusat TIDAK dikunci lokasi — mereka lihat semua lokasi (difilter divisi saja)
+    const csAtBranchOrTitik = profile.role === 'cs' && (profile.lokasiTipe === 'cabang' || profile.lokasiTipe === 'titik')
+    if ((profile.role === 'manager' || csAtBranchOrTitik) && profile.lokasiId) {
       lockedLokasiId = profile.lokasiId
       const badge = document.getElementById('branchLockBadge')
       badge.innerHTML = `📍 ${profile.lokasiNama || profile.lokasiId}`
       badge.style.display = 'inline-flex'
-    } else if ((profile.role === 'manager' || profile.role === 'cs') && profile.branch) {
+    } else if ((profile.role === 'manager' || csAtBranchOrTitik) && profile.branch) {
       lockedBranch = profile.branch
       const badge = document.getElementById('branchLockBadge')
       badge.innerHTML = `📍 ${profile.branch}`
