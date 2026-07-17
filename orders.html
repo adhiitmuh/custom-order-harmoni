@@ -173,8 +173,12 @@
       document.getElementById('lokasiFilter').value = ''
       document.getElementById('statusFilter').value = ''
       document.getElementById('payFilter').value = ''
+      try { sessionStorage.removeItem(FILTER_KEY) } catch {}
       render()
     })
+
+    // Restore filter state dari sessionStorage (setelah refresh, filter terakhir dipakai lagi)
+    restoreFilters()
 
     // Timeout fallback — kalau 10 detik masih loading, minta refresh
     const loadTimeout = setTimeout(() => {
@@ -244,6 +248,34 @@
     render()
   }
 
+  const FILTER_KEY = 'orders_filters'
+  function saveFilters() {
+    try {
+      sessionStorage.setItem(FILTER_KEY, JSON.stringify({
+        q: document.getElementById('searchInput').value,
+        div: document.getElementById('divFilter').value,
+        branch: document.getElementById('branchFilter')?.value || '',
+        lokasi: document.getElementById('lokasiFilter').value,
+        status: document.getElementById('statusFilter').value,
+        pay: document.getElementById('payFilter').value,
+        tab: activeDivTab,
+      }))
+    } catch {}
+  }
+  function restoreFilters() {
+    try {
+      const s = JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}')
+      if (s.q) document.getElementById('searchInput').value = s.q
+      if (s.div) document.getElementById('divFilter').value = s.div
+      const br = document.getElementById('branchFilter')
+      if (s.branch && br) br.value = s.branch
+      if (s.lokasi) document.getElementById('lokasiFilter').value = s.lokasi
+      if (s.status) document.getElementById('statusFilter').value = s.status
+      if (s.pay) document.getElementById('payFilter').value = s.pay
+      if (s.tab) activeDivTab = s.tab
+    } catch {}
+  }
+
   function render() {
     const search = document.getElementById('searchInput').value.toLowerCase()
     const div = document.getElementById('divFilter').value
@@ -253,6 +285,7 @@
     const branch = document.getElementById('branchFilter')?.value || ''
     const isFiltered = search || div || branch || lokasiF || status || pay
     document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
+    saveFilters()
 
     const profile = getProfile()
     const showContact = profile?.role === 'owner'

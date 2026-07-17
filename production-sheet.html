@@ -144,13 +144,18 @@
       return
     }
 
+    // Restore last-used tab dari sessionStorage
+    const savedFilters = restoreFilters()
+    const savedDiv = savedFilters?.div && sheetDivs.some(d => d.key === savedFilters.div) ? savedFilters.div : sheetDivs[0].key
+    const initialIdx = sheetDivs.findIndex(d => d.key === savedDiv)
+
     const tabEl = document.getElementById('sheetTabs')
     tabEl.innerHTML = sheetDivs.map((d, i) => `
-      <button class="sheet-tab${i===0?' active':''}" onclick="switchDiv('${d.key}', this)">
+      <button class="sheet-tab${i===initialIdx?' active':''}" onclick="switchDiv('${d.key}', this)">
         ${d.icon || '📦'} ${d.label}
       </button>`).join('')
 
-    await switchDiv(sheetDivs[0].key, tabEl.firstElementChild)
+    await switchDiv(savedDiv, tabEl.children[initialIdx])
   })
 
   window.switchDiv = async function(divKey, btnEl) {
@@ -200,6 +205,11 @@
     }
 
     refreshLokasiFilter()
+    // Restore lokasi filter setelah refreshLokasiFilter rebuild options
+    try {
+      const s = JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}')
+      if (s.lokasi) document.getElementById('lokasiFilter').value = s.lokasi
+    } catch {}
     applyFilter()
   }
 
@@ -211,11 +221,35 @@
       + lokasis.map(l => `<option value="${l}"${l===current?' selected':''}>${l}</option>`).join('')
   }
 
+  const FILTER_KEY = 'productionsheet_filters'
+  function saveFilters() {
+    try {
+      sessionStorage.setItem(FILTER_KEY, JSON.stringify({
+        div: activeDiv,
+        q: document.getElementById('searchInput').value,
+        status: document.getElementById('statusFilter').value,
+        urgent: document.getElementById('urgentFilter').value,
+        lokasi: document.getElementById('lokasiFilter').value,
+      }))
+    } catch {}
+  }
+  function restoreFilters() {
+    try {
+      const s = JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}')
+      if (s.q) document.getElementById('searchInput').value = s.q
+      if (s.status) document.getElementById('statusFilter').value = s.status
+      if (s.urgent) document.getElementById('urgentFilter').value = s.urgent
+      if (s.lokasi) document.getElementById('lokasiFilter').value = s.lokasi
+      return s
+    } catch { return {} }
+  }
+
   window.applyFilter = function() {
     const search = document.getElementById('searchInput').value.toLowerCase()
     const statusF = document.getElementById('statusFilter').value
     const urgentF = document.getElementById('urgentFilter').value
     const lokasiF = document.getElementById('lokasiFilter').value
+    saveFilters()
 
     filteredOrders = allOrders.filter(o => {
       if (search && !((o.customerName||'').toLowerCase().includes(search) || (o.orderNumber||'').toLowerCase().includes(search))) return false

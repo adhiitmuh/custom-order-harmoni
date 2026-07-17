@@ -177,7 +177,32 @@
       allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       // Pemilik divisi hanya melihat order divisi mereka
       if (isDivisiOwner) allOrders = allOrders.filter(o => o.division === profile.divisi)
-      setPeriod('month')
+
+      // Restore period + table filter dari sessionStorage
+      let saved = {}
+      try { saved = JSON.parse(sessionStorage.getItem('laporan_filters') || '{}') } catch {}
+      if (saved.period === 'custom' && saved.dateFrom && saved.dateTo) {
+        document.getElementById('dateFrom').value = saved.dateFrom
+        document.getElementById('dateTo').value = saved.dateTo
+        window.applyCustom()
+      } else {
+        const period = saved.period || 'month'
+        setPeriod(period)
+        document.querySelectorAll('.period-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.period === period)
+        })
+      }
+      // Restore table filter setelah render selesai (setPeriod me-reset filter)
+      const tbl = saved.tbl || {}
+      if (tbl.search || tbl.divisi || tbl.status || tbl.lokasi) {
+        setTimeout(() => {
+          if (tbl.search)  document.getElementById('tblSearch').value  = tbl.search
+          if (tbl.divisi)  document.getElementById('tblDivisi').value  = tbl.divisi
+          if (tbl.status)  document.getElementById('tblStatus').value  = tbl.status
+          if (tbl.lokasi)  document.getElementById('tblLokasi').value  = tbl.lokasi
+          window.onTableFilter()
+        }, 0)
+      }
     }).catch(err => {
       document.getElementById('summaryCards').innerHTML = `<div class="stat-card" style="grid-column:1/-1"><p style="color:red;font-size:13px">Gagal memuat data: ${err.message}</p></div>`
     })
@@ -195,11 +220,19 @@
     }
   }
 
+  function saveLaporanFilters(patch) {
+    try {
+      const cur = JSON.parse(sessionStorage.getItem('laporan_filters') || '{}')
+      sessionStorage.setItem('laporan_filters', JSON.stringify({ ...cur, ...patch }))
+    } catch {}
+  }
+
   function setPeriod(period) {
     const [from, to] = getDateRange(period)
     currentFrom = from; currentTo = to
     render(from, to)
     document.getElementById('periodLabel').textContent = `Periode: ${from.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — ${to.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})}`
+    saveLaporanFilters({ period, dateFrom: '', dateTo: '', tbl: {} })
   }
 
   window.applyCustom = function() {
@@ -211,6 +244,7 @@
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'))
     render(currentFrom, currentTo)
     document.getElementById('periodLabel').textContent = `Periode: ${currentFrom.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — ${currentTo.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})}`
+    saveLaporanFilters({ period: 'custom', dateFrom: from, dateTo: to, tbl: {} })
   }
 
   function setupPeriodBtns() {
@@ -347,6 +381,7 @@
     const divisi = document.getElementById('tblDivisi')?.value || ''
     const status = document.getElementById('tblStatus')?.value || ''
     const lokasi = document.getElementById('tblLokasi')?.value || ''
+    saveLaporanFilters({ tbl: { search, divisi, status, lokasi } })
     const filtered = currentPeriodOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
       if (divisi && o.division !== divisi) return false
@@ -364,6 +399,7 @@
   window.resetTableFilter = function() {
     ;['tblSearch','tblDivisi','tblStatus','tblLokasi'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
     document.getElementById('tblResetBtn').style.display = 'none'
+    saveLaporanFilters({ tbl: {} })
     renderOrderTable(currentPeriodOrders)
   }
 

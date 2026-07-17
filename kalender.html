@@ -70,10 +70,23 @@
   import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
 
-  let currentDate = new Date()
+  const FILTER_KEY = 'kalender_filters'
+  let _restored = null
+  try { _restored = JSON.parse(sessionStorage.getItem(FILTER_KEY) || 'null') } catch {}
+
+  let currentDate = _restored?.date ? new Date(_restored.date) : new Date()
   let allOrders = []
-  let activeDivFilter = null
+  let activeDivFilter = _restored?.div || null
   let profile = null
+
+  function saveFilters() {
+    try {
+      sessionStorage.setItem(FILTER_KEY, JSON.stringify({
+        div: activeDivFilter,
+        date: currentDate.toISOString(),
+      }))
+    } catch {}
+  }
 
   requireAuth((p) => {
     profile = p
@@ -111,6 +124,7 @@
 
   window.setDivFilter = function(div) {
     activeDivFilter = div
+    saveFilters()
     renderDivFilter()
     render()
     renderWeek()
@@ -222,9 +236,9 @@
     }).join('')
   }
 
-  window.prevMonth = () => { currentDate.setMonth(currentDate.getMonth()-1); render() }
-  window.nextMonth = () => { currentDate.setMonth(currentDate.getMonth()+1); render() }
-  window.goToday = () => { currentDate = new Date(); render() }
+  window.prevMonth = () => { currentDate.setMonth(currentDate.getMonth()-1); saveFilters(); render() }
+  window.nextMonth = () => { currentDate.setMonth(currentDate.getMonth()+1); saveFilters(); render() }
+  window.goToday = () => { currentDate = new Date(); saveFilters(); render() }
 </script>
 </body>
 </html>
