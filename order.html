@@ -1309,7 +1309,12 @@
         ${(order.orderItems||[]).map((it, i) => {
           const asgn2 = assignments.find(a => a.itemIndex === i)
           if (asgn2?.assignStatus === 'approved') return ''
-          const fname = url => { try { return decodeURIComponent(url.split('/o/')[1]?.split('?')[0]?.split('/').pop() || url.split('/').pop().split('?')[0]).slice(0,35) } catch { return 'File' } }
+          const fname = url => {
+            try {
+              const path = decodeURIComponent(url.split('/o/')[1]?.split('?')[0] || url.split('?')[0])
+              return (path.split('/').pop() || 'File').slice(0, 35)
+            } catch { return 'File' }
+          }
           return `<div style="margin-bottom:10px">
             <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.6);margin-bottom:4px">${it.name||'Item '+(i+1)}</div>
             ${(order.designFiles||[]).map((url, fi) => {
