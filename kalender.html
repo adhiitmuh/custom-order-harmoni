@@ -66,7 +66,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { requireAuth, dataAuthReady, canSeeOrder } from './js/auth.js'
   import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff } from './js/utils.js'
 
@@ -81,6 +81,7 @@
     getDocs(collection(db,'orders'))).then(snap => {
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(o => !['cancelled'].includes(o.status))
+        .filter(o => canSeeOrder(o, profile))
       renderDivFilter()
       render()
       renderWeek()

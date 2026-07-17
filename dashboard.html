@@ -49,7 +49,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, canSeeOrder } from './js/auth.js'
   import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc, where, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, paymentStatus, daysDiff } from './js/utils.js'
 
@@ -58,36 +58,6 @@
     loadRecent(profile)
     loadNotifSummary(profile)
   })
-
-  // Filter order per role — konsisten dengan orders.html
-  // - Owner: semua
-  // - Production: hanya divisi yang di-assign
-  // - Divisi role: hanya divisi yang dimiliki
-  // - CS pusat + divisi: hanya divisi itu (semua lokasi)
-  // - CS pusat tanpa divisi: semua order
-  // - CS cabang/titik: hanya order dari lokasinya
-  // - Manager: hanya order dari lokasinya (jika di-assign)
-  function canSeeOrder(o, profile) {
-    if (!profile) return false
-    if (profile.role === 'owner') return true
-    if (profile.role === 'production') {
-      return !profile.divisions?.length || profile.divisions.includes(o.division)
-    }
-    if (profile.role === 'divisi') {
-      return !profile.divisi || o.division === profile.divisi
-    }
-    if (profile.role === 'cs') {
-      const isPusat = !profile.lokasiTipe || profile.lokasiTipe === 'pusat'
-      if (isPusat) {
-        return !profile.divisions?.length || profile.divisions.includes(o.division)
-      }
-      return !profile.lokasiId || o.lokasiId === profile.lokasiId
-    }
-    if (profile.role === 'manager') {
-      return !profile.lokasiId || o.lokasiId === profile.lokasiId
-    }
-    return true
-  }
 
   function notifTimeAgo(ts) {
     if (!ts) return ''

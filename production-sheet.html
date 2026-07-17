@@ -96,7 +96,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
@@ -190,6 +190,8 @@
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(o => !DONE_STATUSES.includes(o.status))
       }
+      // Filter per-role — CS cabang/titik hanya lihat lokasinya
+      allOrders = allOrders.filter(o => canSeeOrder(o, _profile))
       // Sort by dueDate ascending in JS (avoids composite Firestore index requirement)
       allOrders.sort((a, b) => (a.dueDate || '') < (b.dueDate || '') ? -1 : 1)
     } catch(e) {

@@ -107,6 +107,36 @@ export function canAccessDivisi(profile, division) {
   return hasProductionAccess(profile, division)
 }
 
+// Filter order per role — dipakai di dashboard, orders, kalender, crm, laporan, production-sheet
+// - Owner/data: semua
+// - Production: hanya divisi yang di-assign
+// - Divisi role: hanya divisi yang dimiliki
+// - CS pusat + divisi: hanya divisi itu (semua lokasi)
+// - CS pusat tanpa divisi: semua order
+// - CS cabang/titik: hanya order dari lokasinya
+// - Manager: hanya order dari lokasinya (jika di-assign)
+export function canSeeOrder(o, profile) {
+  if (!profile || !o) return false
+  if (profile.role === 'owner' || profile.role === 'data') return true
+  if (profile.role === 'production') {
+    return !profile.divisions?.length || profile.divisions.includes(o.division)
+  }
+  if (profile.role === 'divisi') {
+    return !profile.divisi || o.division === profile.divisi
+  }
+  if (profile.role === 'cs') {
+    const isPusat = !profile.lokasiTipe || profile.lokasiTipe === 'pusat'
+    if (isPusat) {
+      return !profile.divisions?.length || profile.divisions.includes(o.division)
+    }
+    return !profile.lokasiId || o.lokasiId === profile.lokasiId
+  }
+  if (profile.role === 'manager') {
+    return !profile.lokasiId || o.lokasiId === profile.lokasiId
+  }
+  return true
+}
+
 function showAccessDenied(msg) {
   document.body.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#f9fafb;font-family:sans-serif;text-align:center;padding:24px;">
