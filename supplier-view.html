@@ -97,7 +97,7 @@
   }
 
   const tokenData = tokenSnap.data()
-  const { orderId, supplierNama, itemIndexes } = tokenData
+  const { orderId, supplierId, supplierNama, itemIndexes } = tokenData
 
   let orderSnap
   try {
@@ -421,7 +421,20 @@
     return false
   }
 
-  const chatCol = collection(db, 'orders', orderId, 'supplier_chat')
+  // Chat path: per-supplier untuk order baru, fallback ke path lama untuk order yg belum migrate
+  // Deteksi legacy: kalau path lama punya messages DAN path baru kosong → pakai lama.
+  const newChatCol = supplierId ? collection(db, 'orders', orderId, 'supplier_chats', supplierId, 'messages') : null
+  const legacyChatCol = collection(db, 'orders', orderId, 'supplier_chat')
+  let _useLegacy = false
+  if (newChatCol) {
+    try {
+      const [newSnap, oldSnap] = await Promise.all([getDocs(newChatCol), getDocs(legacyChatCol)])
+      _useLegacy = newSnap.empty && !oldSnap.empty
+    } catch { _useLegacy = false }
+  } else {
+    _useLegacy = true // token lama tanpa supplierId → fallback
+  }
+  const chatCol = _useLegacy ? legacyChatCol : newChatCol
   const chatQ   = query(chatCol, orderBy('createdAt'))
 
   let _chatMsgs = []
@@ -484,6 +497,12 @@
     document.getElementById(`sedit-${msgId}`)?.focus()
   }
 
+  function chatMsgRef(msgId) {
+    return _useLegacy
+      ? doc(db, 'orders', orderId, 'supplier_chat', msgId)
+      : doc(db, 'orders', orderId, 'supplier_chats', supplierId, 'messages', msgId)
+  }
+
   window.saveMyMsg = async function(msgId) {
     const ta = document.getElementById(`sedit-${msgId}`)
     if (!ta) return
@@ -497,7 +516,7 @@
       return
     }
     try {
-      await updateDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId), {
+      await updateDoc(chatMsgRef(msgId), {
         text: newText, edited: true, editedAt: Timestamp.now()
       })
     } catch(e) { alert('Gagal simpan: ' + e.message) }
@@ -510,7 +529,7 @@
   window.deleteMyMsg = async function(msgId) {
     if (!confirm('Hapus pesan ini?')) return
     try {
-      await deleteDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId))
+      await deleteDoc(chatMsgRef(msgId))
     } catch(e) { alert('Gagal hapus: ' + e.message) }
   }
 
@@ -559,7 +578,7 @@
 
     if (_supplierChatPhoto) {
       try {
-        const sRef = storageRef(storage, `supplier_chat/${orderId}/${Date.now()}_${_supplierChatPhoto.name}`)
+        const sRef = storageRef(storage, `supplier_chat/${orderId}/${supplierId || 'legacy'}/${Date.now()}_${_supplierChatPhoto.name}`)
         const snap = await new Promise((resolve, reject) => {
           const task = uploadBytesResumable(sRef, _supplierChatPhoto)
           task.on('state_changed', null, reject, () => resolve(task.snapshot))

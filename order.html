@@ -851,11 +851,12 @@
       <!-- Chat Supplier — hanya muncul kalau ada assignment approved -->
       ${(order.supplierAssignments||[]).some(a => a.assignStatus === 'approved') ? `
       <div class="card no-print" style="margin-top:20px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
           <h2 style="font-size:14px;font-weight:700">📦 Chat Vendor</h2>
           <span id="supplierChatBadge" style="display:none;background:#b91c1c;color:white;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px"></span>
           <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-weight:600">Dilarang bagikan kontak di sini</span>
         </div>
+        <div id="supplierChatTabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
         <div id="supplierChatMessages" style="height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;border:1px solid rgba(3,69,67,.08);border-radius:10px;padding:12px;margin-bottom:12px;background:#f8fafc">
           <div class="loading">Memuat…</div>
         </div>
@@ -2534,16 +2535,84 @@
     if (badge) { badge.textContent = unread || ''; badge.style.display = unread > 0 ? '' : 'none' }
   }
 
-  function initSupplierChat() {
-    const hasApproved = (order.supplierAssignments||[]).some(a => a.assignStatus === 'approved')
-    if (!hasApproved) return
+  // Chat vendor: 1 tab per supplier (path: orders/{orderId}/supplier_chats/{supplierId}/messages/)
+  // Backward compat: kalau path lama (orders/{orderId}/supplier_chat/) punya messages,
+  // tampil sebagai tab '📜 Chat Lama' (read-only).
+  let _activeSupplierTab = null   // supplierId string, atau '__legacy__'
+  let _hasLegacyChat = false      // true kalau old path punya messages
+
+  async function initSupplierChat() {
+    const approved = (order.supplierAssignments||[]).filter(a => a.assignStatus === 'approved')
+    if (!approved.length) return
     const el = document.getElementById('supplierChatMessages')
     if (!el) return
 
     updateDoc(doc(db, 'orders', orderId), { unreadSupplierChat: 0 }).catch(() => {})
 
-    const q = query(collection(db, 'orders', orderId, 'supplier_chat'), orderBy('createdAt'))
-    supplierChatUnsub = onSnapshot(q, snap => {
+    // Cek path lama sekali di awal
+    try {
+      const legacySnap = await getDocs(query(collection(db, 'orders', orderId, 'supplier_chat')))
+      _hasLegacyChat = !legacySnap.empty
+    } catch { _hasLegacyChat = false }
+
+    // Deduplikasi assignments berdasarkan supplierId (item beda tapi supplier sama = 1 tab)
+    const uniqSuppliers = []
+    const seen = new Set()
+    for (const a of approved) {
+      if (a.supplierId && !seen.has(a.supplierId)) {
+        seen.add(a.supplierId)
+        uniqSuppliers.push({ id: a.supplierId, nama: a.supplierNama || 'Supplier' })
+      }
+    }
+
+    // Pilih tab default: supplier pertama, atau legacy kalau tidak ada supplier baru
+    if (!_activeSupplierTab) {
+      _activeSupplierTab = uniqSuppliers[0]?.id || (_hasLegacyChat ? '__legacy__' : null)
+    }
+    renderSupplierChatTabs(uniqSuppliers)
+    subscribeSupplierChat()
+  }
+
+  function renderSupplierChatTabs(uniqSuppliers) {
+    const bar = document.getElementById('supplierChatTabs')
+    if (!bar) return
+    const tabs = [...uniqSuppliers]
+    if (_hasLegacyChat) tabs.push({ id: '__legacy__', nama: '📜 Chat Lama' })
+    // Kalau cuma 1 supplier & tidak ada legacy → sembunyikan tab bar (chat tunggal)
+    if (tabs.length <= 1) { bar.style.display = 'none'; return }
+    bar.style.display = 'flex'
+    bar.innerHTML = tabs.map(t => {
+      const active = _activeSupplierTab === t.id
+      const isLegacy = t.id === '__legacy__'
+      const label = isLegacy ? t.nama : `📦 ${t.nama}`
+      return `<button onclick="setSupplierChatTab('${t.id}')"
+        style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${active?'var(--green)':'rgba(3,69,67,.15)'};background:${active?'var(--green)':'transparent'};color:${active?'var(--beige)':'var(--green)'};font-family:inherit;transition:all .12s">${label}</button>`
+    }).join('')
+  }
+
+  window.setSupplierChatTab = function(supId) {
+    _activeSupplierTab = supId
+    const approved = (order.supplierAssignments||[]).filter(a => a.assignStatus === 'approved')
+    const uniq = []
+    const seen = new Set()
+    for (const a of approved) {
+      if (a.supplierId && !seen.has(a.supplierId)) { seen.add(a.supplierId); uniq.push({ id: a.supplierId, nama: a.supplierNama || 'Supplier' }) }
+    }
+    renderSupplierChatTabs(uniq)
+    subscribeSupplierChat()
+    // Hide input area kalau di tab legacy (read-only)
+    const inputRow = document.getElementById('supplierChatStaffInput')?.closest('div')
+    const preview = document.getElementById('vendorPhotoPreview')
+    if (inputRow) inputRow.style.display = supId === '__legacy__' ? 'none' : ''
+    if (preview && supId === '__legacy__') preview.style.display = 'none'
+  }
+
+  function subscribeSupplierChat() {
+    if (supplierChatUnsub) { supplierChatUnsub(); supplierChatUnsub = null }
+    const col = _activeSupplierTab === '__legacy__'
+      ? collection(db, 'orders', orderId, 'supplier_chat')
+      : collection(db, 'orders', orderId, 'supplier_chats', _activeSupplierTab, 'messages')
+    supplierChatUnsub = onSnapshot(query(col, orderBy('createdAt')), snap => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       renderVendorChatMsgs(msgs)
     })
@@ -2566,6 +2635,12 @@
     document.getElementById(`vcedit-${msgId}`)?.focus()
   }
 
+  function currentVendorChatDocRef(msgId) {
+    return _activeSupplierTab === '__legacy__'
+      ? doc(db, 'orders', orderId, 'supplier_chat', msgId)
+      : doc(db, 'orders', orderId, 'supplier_chats', _activeSupplierTab, 'messages', msgId)
+  }
+
   window.saveVendorMsg = async function(msgId) {
     const ta = document.getElementById(`vcedit-${msgId}`)
     if (!ta) return
@@ -2573,7 +2648,7 @@
     if (!newText) return
     if (hasContactInfo(newText)) { alert('⚠ Pesan mengandung informasi kontak.'); return }
     try {
-      await updateDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId), {
+      await updateDoc(currentVendorChatDocRef(msgId), {
         text: newText, edited: true, editedAt: Timestamp.now()
       })
     } catch(e) { alert('Gagal simpan: ' + e.message) }
@@ -2586,7 +2661,7 @@
   window.deleteVendorMsg = async function(msgId) {
     if (!confirm('Hapus pesan ini?')) return
     try {
-      await deleteDoc(doc(db, 'orders', orderId, 'supplier_chat', msgId))
+      await deleteDoc(currentVendorChatDocRef(msgId))
     } catch(e) { alert('Gagal hapus: ' + e.message) }
   }
 
@@ -2608,6 +2683,8 @@
   }
 
   window.sendSupplierReply = async function() {
+    if (_activeSupplierTab === '__legacy__') { alert('Chat lama read-only. Pilih tab supplier untuk kirim balasan.'); return }
+    if (!_activeSupplierTab) { alert('Belum ada supplier aktif untuk chat.'); return }
     const input = document.getElementById('supplierChatStaffInput')
     const text  = input.value.trim()
     const file  = _vendorPhotoFile
@@ -2621,7 +2698,7 @@
     try {
       let imageUrl = null
       if (file) {
-        const path = `vendor_chat/${orderId}/${Date.now()}_${file.name}`
+        const path = `vendor_chat/${orderId}/${_activeSupplierTab}/${Date.now()}_${file.name}`
         const storageRef = ref(storage, path)
         await new Promise((resolve, reject) => {
           const task = uploadBytesResumable(storageRef, file)
@@ -2632,7 +2709,7 @@
         })
         cancelVendorPhoto()
       }
-      await addDoc(collection(db, 'orders', orderId, 'supplier_chat'), {
+      await addDoc(collection(db, 'orders', orderId, 'supplier_chats', _activeSupplierTab, 'messages'), {
         text: text || '',
         imageUrl: imageUrl || null,
         senderType: 'staff',

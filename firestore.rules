@@ -43,6 +43,13 @@ service cloud.firestore {
       allow update: if isAuth();
       allow delete: if isAuth();
     }
+    // Per-supplier chat (order baru dengan 1+ supplier terpisah)
+    match /orders/{orderId}/supplier_chats/{supplierId}/messages/{msgId} {
+      allow read: if isAuth();   // supplier akses via anonymous auth + token
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
     match /product_knowledge/{id} {
       allow read: if true; // Public — customer can read
       allow write: if isOwner() || isData() || isDivisiOwnerOf(id);
