@@ -78,7 +78,7 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, doc, getDocs, setDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { DIVISION_META } from './js/utils.js'
+  import { DIVISION_META, DIVISIONS } from './js/utils.js'
 
   let allSuppliers = []
   let allDivisions = []
@@ -149,12 +149,21 @@
     document.getElementById('modalHeading').textContent = isNew ? 'Tambah Vendor' : 'Edit Vendor'
     document.getElementById('modalError').style.display = 'none'
 
-    // Build division checkboxes
+    // Build division checkboxes — always show all 11 divisions from static meta
+    // so vendor capability form is complete regardless of which divisions are active
     const cbWrap = document.getElementById('divisiCheckboxes')
-    cbWrap.innerHTML = allDivisions.map(d => `
-      <label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;cursor:pointer;padding:5px 4px;border-radius:6px;line-height:1.4;user-select:none">
+    const divOptions = DIVISIONS.map(key => {
+      const fromFS = allDivisions.find(d => d.key === key)
+      return {
+        key,
+        label: fromFS?.label || DIVISION_META[key]?.label || key,
+        icon:  fromFS?.icon  || DIVISION_META[key]?.icon  || '📦'
+      }
+    })
+    cbWrap.innerHTML = divOptions.map(d => `
+      <label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;cursor:pointer;padding:5px 4px;border-radius:6px;line-height:1.4;user-select:none;color:var(--black)">
         <input type="checkbox" class="div-cb" value="${d.key}" style="accent-color:var(--green);flex-shrink:0;margin-top:2px">
-        <span>${d.icon || '📦'} ${d.label}</span>
+        <span>${d.icon} ${d.label}</span>
       </label>`).join('')
 
     if (id) {
