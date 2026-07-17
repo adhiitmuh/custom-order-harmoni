@@ -336,6 +336,22 @@ supplierToken   string    — key di supplier_tokens (setelah approved)
 | `manager` | ✅ | ✅ | ✅ | ✅ (promo tier) | — |
 | `cs` | ✅ | — | ✅ | — | — |
 | `production` | — | — | ✅ (progress) | — | — |
+| `divisi` | — | — | — | — | — |
+| `data` | — | — | — | — | — |
+
+**Scope visibility order (via `canSeeOrder` di `js/auth.js`):**
+
+| Role | Cakupan |
+|---|---|
+| Owner / data | Semua order |
+| Production | Order dari divisi yang di-assign (`users.divisions[]`) |
+| Divisi | Order dari divisi yang dimiliki (`users.divisi`) |
+| Manager | Order dari lokasi yang di-assign (`users.lokasiId`) |
+| CS pusat + divisi | Order dari divisi itu di **semua lokasi** (untuk CS spesialis per divisi) |
+| CS pusat tanpa divisi | Semua order (CS umum di HQ) |
+| CS cabang / titik | Order dari lokasi mereka saja, semua divisi |
+
+Aturan: CS cabang/titik **tidak boleh** di-assign `divisions[]` (kosongkan). Kalau ke-set, tetap difilter lokasi (divisi diabaikan). Hint di form users.html sudah bilang ini.
 
 ---
 
@@ -444,6 +460,10 @@ cancelled         → Dibatalkan
 - ✅ **Filter bar Daftar Order di laporan.html** — search nama/no.order + filter divisi + filter status + filter lokasi, footer TOTAL update dinamis mengikuti baris yang terfilter, reset otomatis saat ganti periode
 - ✅ **Right-click / open in new tab** — semua tab navigasi di app menggunakan `<a href>` bukan `<button>`, sehingga bisa diklik kanan → "Buka di tab baru". Diterapkan pertama di knowledge.html (tab divisi) dengan `onclick` + `e.preventDefault()` + `history.pushState` untuk tetap SPA
 - ✅ **`firestoreReady` promise di auth.js** — menyelesaikan circular dependency isStaffAuth: `requireAuth()` delay callback halaman sampai `users/{anonUID}` berhasil ditulis ke Firestore (write rule sekarang `isAuth() && uid == request.auth.uid`). Ada safety timeout 5 detik. Tanpa ini, semua halaman REFERENSI error "Missing or insufficient permissions" saat first load
+- ✅ **Filter order per-role (`canSeeOrder` helper di `js/auth.js`)** — 1 fungsi tunggal yang dipakai di dashboard, orders, kalender, production-sheet, notif bell, vendor badge. Aturannya: **Owner/data** lihat semua · **Production** filter divisi assigned · **Divisi role** filter divisi yang dimiliki · **CS pusat + divisi** filter divisi itu di semua lokasi · **CS pusat tanpa divisi** lihat semua · **CS cabang/titik** filter lokasi mereka (divisi diabaikan) · **Manager** filter lokasi. Fix bug lama: CS pusat dulu difilter lokasi walau ada divisi assigned.
+- ✅ **Filter inbox per-lokasi** — di `inbox.html` dan badge 💬 sidebar: CS/manager di cabang/titik hanya lihat thread `chat_threads` + `consultations` di lokasi mereka. CS pusat & owner lihat semua thread (thread pra-order tidak punya field divisi).
+- ✅ **Persist filter via `sessionStorage`** — orders, kalender, production-sheet, laporan tetap di filter yang sama setelah refresh. Reset saat tab ditutup. Reset button juga menghapus state. Key: `orders_filters`, `kalender_filters`, `productionsheet_filters`, `laporan_filters`.
+- ✅ **Vendor form show all 11 divisi** — `supplier.html` tambah vendor: checkbox divisi selalu tampil 11 divisi dari `DIVISION_META` (bukan `getActiveDivisions()`), karena ini soal kapabilitas vendor, bukan status aktif bisnis. Label pakai `DIVISION_META` fallback + `color:var(--black)` explicit.
 
 ---
 
