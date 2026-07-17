@@ -1303,48 +1303,41 @@
           }).join('')}
         </tbody>
       </table>
-      ${(order.designFiles||[]).length && canAssign ? `
-      <div style="margin-top:10px;padding:10px 12px;border:1.5px solid rgba(3,69,67,.1);border-radius:8px;background:rgba(3,69,67,.03)">
-        <div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.45);margin-bottom:8px;letter-spacing:.04em">📎 FILE DESAIN PER ITEM</div>
-        ${(order.orderItems||[]).map((it, i) => {
-          const asgn2 = assignments.find(a => a.itemIndex === i)
-          if (asgn2?.assignStatus === 'approved') return ''
-          const fname = url => {
-            try {
-              const path = decodeURIComponent(url.split('/o/')[1]?.split('?')[0] || url.split('?')[0])
-              return (path.split('/').pop() || 'File').slice(0, 35)
-            } catch { return 'File' }
-          }
-          const isImage = url => /\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
-          const fileIcon = url => {
-            const n = fname(url).toLowerCase()
-            if (n.endsWith('.pdf')) return '📄'
-            if (n.match(/\.(doc|docx)$/)) return '📝'
-            if (n.match(/\.(xls|xlsx|csv)$/)) return '📊'
-            if (n.match(/\.(zip|rar|7z)$/)) return '🗜️'
-            return '📎'
-          }
-          return `<div style="margin-bottom:12px">
-            <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.6);margin-bottom:6px">${it.name||'Item '+(i+1)}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
-            ${(order.designFiles||[]).map((url, fi) => {
-              const checked = asgn2?.fileUrls ? (asgn2.fileUrls.includes(url) ? 'checked' : '') : 'checked'
-              const isChecked = checked === 'checked'
-              const preview = isImage(url)
-                ? `<img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:20px;background:#f1f5f9">${fileIcon(url)}</div>`
-                : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;background:#f1f5f9">${fileIcon(url)}</div>`
-              return `<label title="${fname(url)}" style="display:flex;flex-direction:column;align-items:stretch;gap:0;font-size:10px;cursor:pointer;width:64px;border:1.5px solid ${isChecked?'var(--green)':'rgba(3,69,67,.15)'};border-radius:8px;overflow:hidden;background:#fff;position:relative">
-                <div style="position:absolute;top:4px;left:4px;background:rgba(255,255,255,.9);border-radius:3px;padding:0 2px;z-index:1">
-                  <input type="checkbox" class="fcb-${i}" data-fi="${fi}" ${checked} onchange="this.closest('label').style.borderColor=this.checked?'var(--green)':'rgba(3,69,67,.15)'" style="width:12px;height:12px;accent-color:var(--green);display:block;margin:0">
-                </div>
-                <div style="width:64px;height:64px;background:#f8fafc">${preview}</div>
-                <div style="padding:3px 4px;color:rgba(3,69,67,.7);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">${fname(url)}</div>
-              </label>`
-            }).join('')}
-            </div>
-          </div>`
-        }).join('')}
-      </div>` : ''}
+      ${(order.designFiles||[]).length && canAssign ? (() => {
+        const fname = url => {
+          try {
+            const path = decodeURIComponent(url.split('/o/')[1]?.split('?')[0] || url.split('?')[0])
+            return (path.split('/').pop() || 'File').slice(0, 35)
+          } catch { return 'File' }
+        }
+        const isImage = url => /\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
+        const fileIcon = url => {
+          const n = fname(url).toLowerCase()
+          if (n.endsWith('.pdf')) return '📄'
+          if (n.match(/\.(doc|docx)$/)) return '📝'
+          if (n.match(/\.(xls|xlsx|csv)$/)) return '📊'
+          if (n.match(/\.(zip|rar|7z)$/)) return '🗜️'
+          return '📎'
+        }
+        return `<div style="margin-top:10px;padding:10px 12px;border:1.5px solid rgba(3,69,67,.1);border-radius:8px;background:rgba(3,69,67,.03)">
+          <div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.45);margin-bottom:6px;letter-spacing:.04em">📎 FILE DESAIN YANG DIKIRIM KE SUPPLIER</div>
+          <div style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Berlaku untuk semua item yang di-assign di atas</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${(order.designFiles||[]).map((url, fi) => {
+            const preview = isImage(url)
+              ? `<img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:20px;background:#f1f5f9">${fileIcon(url)}</div>`
+              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;background:#f1f5f9">${fileIcon(url)}</div>`
+            return `<label title="${fname(url)}" style="display:flex;flex-direction:column;align-items:stretch;gap:0;font-size:10px;cursor:pointer;width:72px;border:1.5px solid var(--green);border-radius:8px;overflow:hidden;background:#fff;position:relative">
+              <div style="position:absolute;top:4px;left:4px;background:rgba(255,255,255,.9);border-radius:3px;padding:0 2px;z-index:1">
+                <input type="checkbox" class="fcb-global" data-fi="${fi}" checked onchange="this.closest('label').style.borderColor=this.checked?'var(--green)':'rgba(3,69,67,.15)'" style="width:12px;height:12px;accent-color:var(--green);display:block;margin:0">
+              </div>
+              <div style="width:72px;height:72px;background:#f8fafc">${preview}</div>
+              <div style="padding:3px 4px;color:rgba(3,69,67,.7);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">${fname(url)}</div>
+            </label>`
+          }).join('')}
+          </div>
+        </div>`
+      })() : ''}
       ${canAssign ? `<button onclick="submitSupplierAssign()" class="btn btn-ghost btn-sm" style="font-size:12px;margin-top:8px">Ajukan ke Supplier</button>` : ''}
     `
   }
@@ -1354,6 +1347,10 @@
     const newAssignments = []
     let hasSelection = false
 
+    // File desain global — sama untuk semua item yang di-assign
+    const globalFileUrls = [...document.querySelectorAll('.fcb-global:checked')]
+      .map(el => order.designFiles[+el.dataset.fi]).filter(Boolean)
+
     ;(order.orderItems||[]).forEach((it, i) => {
       const sel = document.getElementById(`supSel-${i}`)
       if (!sel || !sel.value) return
@@ -1361,7 +1358,7 @@
       if (!supplier) return
       hasSelection = true
       const existing = (order.supplierAssignments||[]).find(a => a.itemIndex === i)
-      const fileUrls = [...document.querySelectorAll(`.fcb-${i}:checked`)].map(el => order.designFiles[+el.dataset.fi]).filter(Boolean)
+      const fileUrls = globalFileUrls
       if (!existing || existing.supplierId !== supplier.id) {
         newAssignments.push({
           itemIndex: i,
