@@ -247,6 +247,10 @@ requireAuth(async (profile) => {
 
   const userLokasiId = profile.lokasiId || null
   const isOwner = profile.role === 'owner'
+  // CS pusat & owner lihat semua thread inbox.
+  // CS/manager di cabang/titik hanya lihat thread lokasinya.
+  const isBranchStaff = !isOwner && userLokasiId && profile.lokasiTipe && profile.lokasiTipe !== 'pusat'
+  const filterByLokasi = (t) => !isBranchStaff || !t.lokasiId || t.lokasiId === userLokasiId
 
   // Listener 1: WA bot threads
   let waThreads = []
@@ -254,7 +258,7 @@ requireAuth(async (profile) => {
     query(collection(db, 'chat_threads'), orderBy('lastMessageAt', 'desc')),
     snap => {
       const all = snap.docs.map(d => ({ id: d.id, _type: 'thread', ...d.data() }))
-      waThreads = isOwner ? all : all.filter(t => !t.lokasiId || t.lokasiId === userLokasiId)
+      waThreads = all.filter(filterByLokasi)
       mergeAndRender(waThreads, consultations)
     },
     () => {}
@@ -277,7 +281,7 @@ requireAuth(async (profile) => {
         hasFlag: d.data().hasFlag || false,
         division: d.data().division || '',
         ...d.data(),
-      }))
+      })).filter(filterByLokasi)
       mergeAndRender(waThreads, consultations)
     },
     () => {}

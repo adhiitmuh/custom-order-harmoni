@@ -501,12 +501,25 @@ function initNotifications(profile) {
           badge.style.display = total > 0 ? '' : 'none'
         }
       }
+      // Filter per-lokasi untuk CS cabang/titik + manager cabang.
+      // CS pusat & owner: lihat semua thread. Thread tidak punya divisi jadi CS pusat
+      // dengan assign divisi tetap lihat semua thread inbox (untuk chat pra-order).
+      const filterThreadByLokasi = (docs) => {
+        const isBranchStaff = (profile.role === 'manager' || profile.role === 'cs')
+          && profile.lokasiId
+          && profile.lokasiTipe && profile.lokasiTipe !== 'pusat'
+        if (!isBranchStaff) return docs.length
+        return docs.filter(d => {
+          const t = d.data()
+          return !t.lokasiId || t.lokasiId === profile.lokasiId
+        }).length
+      }
       onSnapshot(query(collection(db, 'chat_threads'), where('unreadCount', '>', 0)), snap => {
-        _chatUnread = snap.docs.length
+        _chatUnread = filterThreadByLokasi(snap.docs)
         _updateInboxBadge()
       }, () => {})
       onSnapshot(query(collection(db, 'consultations'), where('unreadCount', '>', 0)), snap => {
-        _consultUnread = snap.docs.length
+        _consultUnread = filterThreadByLokasi(snap.docs)
         _updateInboxBadge()
       }, () => {})
     }
@@ -599,13 +612,9 @@ function initNotifications(profile) {
       }).join('')
     }
 
-    // Vendor chat unread listener
+    // Vendor chat unread listener — pakai canSeeOrder untuk konsistensi
     onSnapshot(query(collection(db, 'orders'), where('unreadSupplierChat', '>', 0)), snap => {
-      let orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      if (profile.role !== 'owner') {
-        if (profile.divisions?.length) orders = orders.filter(o => profile.divisions.includes(o.division))
-        else orders = orders.filter(o => !o.lokasiId || o.lokasiId === profile.lokasiId)
-      }
+      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
       _vendorOrders = orders
       _vendorUnreadCount = orders.length
       updateBadge()
@@ -620,20 +629,16 @@ function initNotifications(profile) {
       notifs = notifs.filter(n => {
         if (n.fromUid === profile.id) return false
         if (n.type === 'mention') return n.targetUid === profile.id
+        // Untuk internal_chat & price_approval — cek apakah profile bisa lihat order-nya
+        // (canSeeOrder butuh `division` + `lokasiId`, keduanya di-set saat notif dibuat)
+        const canSee = canSeeOrder({ division: n.division, lokasiId: n.lokasiId }, profile)
         if (n.type === 'price_approval') {
-          if (profile.role === 'owner') return true
-          if (profile.role === 'manager' && n.priceApprovalTier === 'promo') {
-            if (profile.divisions?.length) return profile.divisions.includes(n.division)
-            return !n.lokasiId || n.lokasiId === profile.lokasiId
-          }
+          // Hanya yang bisa approve yang dapat notif — owner semua tier, manager promo saja
+          if (profile.role === 'owner') return canSee
+          if (profile.role === 'manager' && n.priceApprovalTier === 'promo') return canSee
           return false
         }
-        if (profile.role !== 'owner') {
-          if (profile.role === 'divisi' && profile.divisi) return n.division === profile.divisi
-          if (profile.divisions?.length) return profile.divisions.includes(n.division)
-          return !n.lokasiId || n.lokasiId === profile.lokasiId
-        }
-        return true
+        return canSee
       })
 
       const lastReadAt = getLastRead()
