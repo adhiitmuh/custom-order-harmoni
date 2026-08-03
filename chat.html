@@ -661,7 +661,7 @@
 
       // Badge 💬 langsung ke Firestore — tidak bergantung pada Worker
       if (info.orderId && !info.isConsultation) {
-        updateDoc(doc(db,'orders',info.orderId), { unreadCustomerChat: increment(1) }).catch(() => {})
+        updateDoc(doc(db,'orders',info.orderId), { unreadCustomerChat: increment(1), lastCustomerMsgAt: Timestamp.now() }).catch(() => {})
       }
 
       if (WORKER_URL) {
@@ -792,7 +792,7 @@
       })
       // Badge 💬 langsung ke Firestore — tidak bergantung pada Worker
       if (info.orderId && !info.isConsultation) {
-        updateDoc(doc(db,'orders',info.orderId), { unreadCustomerChat: increment(1) }).catch(() => {})
+        updateDoc(doc(db,'orders',info.orderId), { unreadCustomerChat: increment(1), lastCustomerMsgAt: Timestamp.now() }).catch(() => {})
       }
       if (WORKER_URL) {
         fetch(`${WORKER_URL}/notify-cs`, {
