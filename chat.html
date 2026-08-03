@@ -659,7 +659,7 @@
         createdAt: Timestamp.now(),
       })
 
-      if (WORKER_URL && NOTIFY_KEY) {
+      if (WORKER_URL) {
         fetch(`${WORKER_URL}/notify-cs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
@@ -785,7 +785,7 @@
         senderRole: 'customer',
         createdAt: Timestamp.now(),
       })
-      if (WORKER_URL && NOTIFY_KEY) {
+      if (WORKER_URL) {
         fetch(`${WORKER_URL}/notify-cs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
