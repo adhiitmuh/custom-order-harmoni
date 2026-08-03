@@ -332,32 +332,14 @@ async function handleNotifyCS(request, env) {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  if (!env.FONNTE_API_KEY || !env.OWNER_WA_NUMBER) {
-    return json({ error: 'Fonnte belum dikonfigurasi' }, 503)
-  }
-
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid JSON' }, 400)
 
   const { orderNumber, customerName, division, previewText, orderId, isConsultation } = body
-  const divLabel = DIVISION_LABELS[division] || division || ''
 
-  const msg = [
-    `💬 *Pesan baru dari customer!*`,
-    ``,
-    `Pesanan: *${orderNumber || '-'}*`,
-    `Customer: ${customerName || '-'}`,
-    divLabel ? `Divisi: ${divLabel}` : '',
-    previewText ? `Pesan: _"${previewText}"_` : '',
-    ``,
-    `🔗 https://adhiitmuh.github.io/custom-order-harmoni/orders.html`,
-  ].filter(Boolean).join('\n')
-
-  await fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, msg).catch(() => {})
-
-  // Increment unreadCustomerChat di order secara atomic (fire-and-forget)
+  // Increment unreadCustomerChat dulu (badge 💬) — tidak boleh bergantung pada konfigurasi Fonnte
   if (orderId && !isConsultation) {
-    getFirebaseToken(env).then(token => {
+    await getFirebaseToken(env).then(token => {
       const projectId = env.FIREBASE_PROJECT_ID
       return fetch(
         `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
@@ -375,6 +357,22 @@ async function handleNotifyCS(request, env) {
         }
       )
     }).catch(() => {})
+  }
+
+  // WA ke owner — hanya jika Fonnte sudah dikonfigurasi
+  if (env.FONNTE_API_KEY && env.OWNER_WA_NUMBER) {
+    const divLabel = DIVISION_LABELS[division] || division || ''
+    const msg = [
+      `💬 *Pesan baru dari customer!*`,
+      ``,
+      `Pesanan: *${orderNumber || '-'}*`,
+      `Customer: ${customerName || '-'}`,
+      divLabel ? `Divisi: ${divLabel}` : '',
+      previewText ? `Pesan: _"${previewText}"_` : '',
+      ``,
+      `🔗 https://adhiitmuh.github.io/custom-order-harmoni/orders.html`,
+    ].filter(Boolean).join('\n')
+    await fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, msg).catch(() => {})
   }
 
   return json({ success: true }, 200)
