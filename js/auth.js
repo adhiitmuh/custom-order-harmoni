@@ -451,20 +451,24 @@ window.toggleNotifPanel = function() {
 }
 
 let _vendorUnreadCount = 0
+let _customerUnreadCount = 0
 
 window.markNotifsRead = function() {
   if (!_profile) return
   localStorage.setItem(`notifReadAt_${_profile.id}`, Date.now().toString())
+  // Badge customer & vendor chat tidak hilang saat panel dibuka —
+  // hanya hilang setelah chat-nya benar-benar dibuka (reset counter di order.html)
+  const persist = _vendorUnreadCount + _customerUnreadCount
   const badge = document.getElementById('notifBadge')
   if (badge) {
-    if (_vendorUnreadCount > 0) {
-      badge.textContent = _vendorUnreadCount > 9 ? '9+' : String(_vendorUnreadCount)
+    if (persist > 0) {
+      badge.textContent = persist > 9 ? '9+' : String(persist)
       badge.style.display = ''
     } else {
       badge.style.display = 'none'
     }
   }
-  document.querySelectorAll('#notifList .notif-item:not([data-vendor])').forEach(el => {
+  document.querySelectorAll('#notifList .notif-item:not([data-vendor]):not([data-customer])').forEach(el => {
     el.style.background = 'transparent'
   })
 }
@@ -528,6 +532,7 @@ function initNotifications(profile) {
   // Tunggu dataAuth (harmoni-custom-order anon login) selesai sebelum query Firestore
   dataAuthReady.then(() => {
     let _vendorOrders = []
+    let _customerOrders = []
     let _lastNotifItems = []
     let _lastReadAt = getLastRead()
 
@@ -540,7 +545,7 @@ function initNotifications(profile) {
         }
         return sum + (n._unreadCount > 0 ? 1 : 0)
       }, 0)
-      const total = mainUnread + _vendorUnreadCount
+      const total = mainUnread + _vendorUnreadCount + _customerUnreadCount
       const badge = document.getElementById('notifBadge')
       if (badge) {
         badge.textContent = total > 9 ? '9+' : String(total)
@@ -553,6 +558,15 @@ function initNotifications(profile) {
       if (!list) return
       const lastReadAt = getLastRead()
 
+      const customerItems = _customerOrders.map(o => ({
+        _isCustomer: true,
+        orderId: o.id,
+        orderNumber: o.orderNumber || '—',
+        customerName: o.customerName || 'Customer',
+        unreadCount: o.unreadCustomerChat || 0,
+        updatedAt: o.lastCustomerMsgAt || o.updatedAt,
+      }))
+
       const vendorItems = _vendorOrders.map(o => ({
         _isVendor: true,
         orderId: o.id,
@@ -561,13 +575,27 @@ function initNotifications(profile) {
         updatedAt: o.updatedAt,
       }))
 
-      const allItems = [...vendorItems, ..._lastNotifItems]
+      const allItems = [...customerItems, ...vendorItems, ..._lastNotifItems]
       if (!allItems.length) {
         list.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:rgba(3,69,67,.35)">Belum ada notifikasi</div>'
         return
       }
 
       list.innerHTML = allItems.slice(0, 20).map(n => {
+        if (n._isCustomer) {
+          return `<div class="notif-item" data-customer="1" onclick="window.goToOrderFromNotif('${n.orderId}')"
+            style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:rgba(239,68,68,.06)"
+            onmouseover="this.style.background='rgba(3,69,67,.08)'"
+            onmouseout="this.style.background='rgba(239,68,68,.06)'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+              <span style="font-size:11px;font-weight:700;color:#034543">💬 ${n.orderNumber}
+                <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${n.unreadCount} baru</span>
+              </span>
+              <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.updatedAt)}</span>
+            </div>
+            <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.customerName}</span> menunggu balasan — klik untuk balas</div>
+          </div>`
+        }
         if (n._isVendor) {
           return `<div class="notif-item" data-vendor="1" onclick="window.goToOrderFromNotif('${n.orderId}')"
             style="padding:11px 14px;border-bottom:1px solid rgba(3,69,67,.05);cursor:pointer;background:rgba(217,119,6,.06)"
@@ -617,6 +645,15 @@ function initNotifications(profile) {
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
       _vendorOrders = orders
       _vendorUnreadCount = orders.length
+      updateBadge()
+      renderPanel()
+    }, () => {})
+
+    // Customer chat unread listener — pesan customer belum dibalas tampil di 🔔 semua halaman
+    onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), snap => {
+      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
+      _customerOrders = orders
+      _customerUnreadCount = orders.length
       updateBadge()
       renderPanel()
     }, () => {})
