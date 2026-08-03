@@ -335,29 +335,10 @@ async function handleNotifyCS(request, env) {
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid JSON' }, 400)
 
-  const { orderNumber, customerName, division, previewText, orderId, isConsultation } = body
+  const { orderNumber, customerName, division, previewText } = body
 
-  // Increment unreadCustomerChat dulu (badge 💬) — tidak boleh bergantung pada konfigurasi Fonnte
-  if (orderId && !isConsultation) {
-    await getFirebaseToken(env).then(token => {
-      const projectId = env.FIREBASE_PROJECT_ID
-      return fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            writes: [{
-              transform: {
-                document: `projects/${projectId}/databases/(default)/documents/orders/${orderId}`,
-                fieldTransforms: [{ fieldPath: 'unreadCustomerChat', increment: { integerValue: '1' } }],
-              }
-            }]
-          }),
-        }
-      )
-    }).catch(() => {})
-  }
+  // Catatan: increment unreadCustomerChat (badge 💬) kini dilakukan langsung
+  // oleh chat.html via Firestore SDK — endpoint ini hanya untuk WA notif.
 
   // WA ke owner — hanya jika Fonnte sudah dikonfigurasi
   if (env.FONNTE_API_KEY && env.OWNER_WA_NUMBER) {
