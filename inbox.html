@@ -225,6 +225,7 @@ import {
   collection, doc, query, orderBy, onSnapshot, updateDoc, addDoc, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { timeAgo, DIVISION_META, DIVISIONS, hasContactInfo, detectSuspiciousMsg } from './js/utils.js'
+import { compressImage } from './js/image.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
@@ -559,7 +560,7 @@ window.sendReply = async function() {
   const ta  = document.getElementById('replyTa')
   const btn = document.getElementById('sendBtnEl')
   const msg = ta?.value.trim()
-  const file = _inboxPhotoFile
+  let file = _inboxPhotoFile
   if (!msg && !file || !activeThreadId) return
 
   const thread = allThreads.find(t => t.id === activeThreadId)
@@ -589,6 +590,7 @@ window.sendReply = async function() {
     // Upload photo first if any
     let imageUrl = null
     if (file) {
+      file = await compressImage(file)
       const path = `inbox/${activeThreadId}/${Date.now()}_${file.name}`
       const storRef = ref(storage, path)
       await new Promise((resolve, reject) => {

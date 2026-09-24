@@ -56,6 +56,7 @@
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
   import { getFirestore, doc, getDoc, updateDoc, deleteDoc, increment, collection, addDoc, query, orderBy, getDocs, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { compressImage } from './js/image.js'
   import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
 
@@ -335,7 +336,8 @@
     if (files.length) {
       uploadEl.style.display = ''
       try {
-        for (const f of files) {
+        for (const rawF of files) {
+          const f = await compressImage(rawF)
           const sRef = storageRef(storage, `supplier_progress/${orderId}/${Date.now()}_${f.name}`)
           const snap = await new Promise((resolve, reject) => {
             const task = uploadBytesResumable(sRef, f)
@@ -578,6 +580,7 @@
 
     if (_supplierChatPhoto) {
       try {
+        _supplierChatPhoto = await compressImage(_supplierChatPhoto)
         const sRef = storageRef(storage, `supplier_chat/${orderId}/${supplierId || 'legacy'}/${Date.now()}_${_supplierChatPhoto.name}`)
         const snap = await new Promise((resolve, reject) => {
           const task = uploadBytesResumable(sRef, _supplierChatPhoto)

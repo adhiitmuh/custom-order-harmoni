@@ -213,6 +213,7 @@
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
@@ -1007,26 +1008,6 @@
     return `HRM-${code}-${year}-${String(count).padStart(4,'0')}`
   }
 
-  async function compressImage(file) {
-    if (!file.type.startsWith('image/')) return file
-    return new Promise(resolve => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        URL.revokeObjectURL(url)
-        let { width, height } = img
-        const MAX = 1920
-        if (width <= MAX && height <= MAX) { resolve(file); return }
-        if (width > height) { height = Math.round(height * MAX / width); width = MAX }
-        else { width = Math.round(width * MAX / height); height = MAX }
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.85)
-      }
-      img.src = url
-    })
-  }
 
   async function uploadFiles(orderId, files) {
     const urls = []
