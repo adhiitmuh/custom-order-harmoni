@@ -81,6 +81,7 @@
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
@@ -1520,7 +1521,8 @@
       // Upload foto jika ada
       const files = document.getElementById('progressFiles')?.files || []
       const photos = []
-      for (const f of files) {
+      for (const rawF of files) {
+        const f = await compressImage(rawF)
         const storRef = ref(storage, `orders/${orderId}/progress/${Date.now()}_${f.name}`)
         const snap = await new Promise((res, rej) => {
           const task = uploadBytesResumable(storRef, f)
@@ -1604,26 +1606,6 @@
     } catch(err) { alert('Gagal hapus: ' + err.message) }
   }
 
-  async function compressImage(file) {
-    if (!file.type.startsWith('image/')) return file
-    return new Promise(resolve => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        URL.revokeObjectURL(url)
-        let { width, height } = img
-        const MAX = 1920
-        if (width <= MAX && height <= MAX) { resolve(file); return }
-        if (width > height) { height = Math.round(height * MAX / width); width = MAX }
-        else { width = Math.round(width * MAX / height); height = MAX }
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.85)
-      }
-      img.src = url
-    })
-  }
 
   window.addDesignFiles = async function(input) {
     if (!input.files.length) return
@@ -1976,7 +1958,7 @@
 
   window.uploadPaymentProof = async function(input) {
     if (!input.files[0]) return
-    const file = input.files[0]
+    const file = await compressImage(input.files[0])
     const label = document.getElementById('proofUploadLabel')
     if (label) label.style.opacity = '0.5'
     try {
@@ -2430,7 +2412,7 @@
   window.sendInternalMsg = async function() {
     const input = document.getElementById('internalChatInput')
     const content = input?.value.trim()
-    const file = _internalPhotoFile
+    const file = _internalPhotoFile ? await compressImage(_internalPhotoFile) : null
     if (!content && !file) return
     const profile = getProfile()
     const staffList = await loadStaff().catch(() => [])
@@ -2687,7 +2669,7 @@
     if (!_activeSupplierTab) { alert('Belum ada supplier aktif untuk chat.'); return }
     const input = document.getElementById('supplierChatStaffInput')
     const text  = input.value.trim()
-    const file  = _vendorPhotoFile
+    const file  = _vendorPhotoFile ? await compressImage(_vendorPhotoFile) : null
     if (!text && !file) return
     if (text && hasContactInfo(text)) {
       alert('⚠ Pesan mengandung informasi kontak yang tidak boleh dibagikan.')
