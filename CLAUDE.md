@@ -68,9 +68,16 @@ Config ada di `js/config.js` — hardcoded, ini aman untuk repo publik (anon key
 
 **Catatan:** `chat.html` standalone — hardcode config sendiri karena tidak pakai `js/config.js` (halaman ini diakses publik tanpa auth).
 
+**Login staff (project data `harmoni-custom-order`):**
+- Staff login di Portal (`harmoni-indonesia`), lalu `js/auth.js` menukar ID token Portal ke Worker `/custom-token`
+- Worker membaca `users/{uid}` Portal (aktif + `apps.custom_order`) dan menerbitkan custom token: uid = uid Portal, klaim `staff: true`, `role`, `divisi`
+- Firestore & Storage Rules membaca role dari **klaim token** (`request.auth.token.role`), bukan dari dokumen `users/{uid}` — dokumen itu hanya salinan nama/role untuk daftar staff & @mention
+- Role baru berlaku saat halaman dimuat ulang (custom token diperbarui setiap load)
+- Deploy: push `api/**` → workflow Deploy Worker; push `firestore.rules`/`storage.rules` → workflow Deploy Firebase Rules
+
 **Auth level di Firestore Rules:**
-- `isAuth()` — siapapun yang login, **termasuk anonymous auth** (dipakai hanya untuk `orders` agar supplier-view.html tetap bisa baca order via anonymous auth)
-- `isStaffAuth()` — hanya yang login dengan **email/password** (bukan anonymous); dipakai untuk semua koleksi sensitif
+- `isAuth()` — siapapun yang login, **termasuk anonymous auth** (customer di chat.html, supplier di supplier-view.html); untuk `orders` hanya boleh `get` satu order dan mengubah kolom penghitung chat/progress
+- `isStaffAuth()` — hanya sesi dengan klaim `staff` dari custom token Worker; dipakai untuk semua koleksi sensitif
 - Halaman publik yang pakai `signInAnonymously`: `chat.html` (customer), `supplier-view.html` (supplier)
 - Koleksi yang masih `isAuth()` (bukan isStaffAuth): `orders`, `orders/progress_updates` — karena supplier-view.html perlu baca data order; `divisions` (read) + `price_list` (read) — karena chat.html (anonymous) perlu filter divisi aktif dan tampil harga ke customer
 
@@ -459,7 +466,8 @@ cancelled         → Dibatalkan
 - ✅ **Harga modal tidak bocor ke customer** — price_list diblokir untuk anonymous auth; chat.html fetch price_list di-wrap try/catch (gagal gracefully) + priceModal di-strip client-side sebagai defence-in-depth. Customer hanya bisa lihat konten product_knowledge (teks markdown)
 - ✅ **Filter bar Daftar Order di laporan.html** — search nama/no.order + filter divisi + filter status + filter lokasi, footer TOTAL update dinamis mengikuti baris yang terfilter, reset otomatis saat ganti periode
 - ✅ **Right-click / open in new tab** — semua tab navigasi di app menggunakan `<a href>` bukan `<button>`, sehingga bisa diklik kanan → "Buka di tab baru". Diterapkan pertama di knowledge.html (tab divisi) dengan `onclick` + `e.preventDefault()` + `history.pushState` untuk tetap SPA
-- ✅ **`firestoreReady` promise di auth.js** — menyelesaikan circular dependency isStaffAuth: `requireAuth()` delay callback halaman sampai `users/{anonUID}` berhasil ditulis ke Firestore (write rule sekarang `isAuth() && uid == request.auth.uid`). Ada safety timeout 5 detik. Tanpa ini, semua halaman REFERENSI error "Missing or insufficient permissions" saat first load
+- ✅ **`firestoreReady` promise di auth.js** — `requireAuth()` menunda callback halaman sampai sesi data (custom token dari Worker) siap, dengan batas 8 detik. Tanpa ini query pertama error "Missing or insufficient permissions"
+- ✅ **Role dari custom token** — role tidak lagi ditulis sendiri oleh browser ke `users/{anonUID}`; Worker `/custom-token` memverifikasi profil Portal dan Rules membaca klaim token. Sidebar owner menampilkan "🔐 Sesi aman" bila sesi custom token aktif
 - ✅ **Filter order per-role (`canSeeOrder` helper di `js/auth.js`)** — 1 fungsi tunggal yang dipakai di dashboard, orders, kalender, production-sheet, notif bell, vendor badge. Aturannya: **Owner/data** lihat semua · **Production** filter divisi assigned · **Divisi role** filter divisi yang dimiliki · **CS pusat + divisi** filter divisi itu di semua lokasi · **CS pusat tanpa divisi** lihat semua · **CS cabang/titik** filter lokasi mereka (divisi diabaikan) · **Manager** filter lokasi. Fix bug lama: CS pusat dulu difilter lokasi walau ada divisi assigned.
 - ✅ **Filter inbox per-lokasi** — di `inbox.html` dan badge 💬 sidebar: CS/manager di cabang/titik hanya lihat thread `chat_threads` + `consultations` di lokasi mereka. CS pusat & owner lihat semua thread (thread pra-order tidak punya field divisi).
 - ✅ **Persist filter via `sessionStorage`** — orders, kalender, production-sheet, laporan tetap di filter yang sama setelah refresh. Reset saat tab ditutup. Reset button juga menghapus state. Key: `orders_filters`, `kalender_filters`, `productionsheet_filters`, `laporan_filters`.

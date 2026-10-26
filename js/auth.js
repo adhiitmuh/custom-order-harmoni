@@ -1,5 +1,5 @@
 import { auth, authDb, db, dataAuth } from './config.js'
-import { onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+import { onAuthStateChanged, signOut, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
@@ -31,9 +31,9 @@ async function signInDataAuth(portalUser) {
   } catch (e) {
     console.warn('[auth] custom token gagal:', e)
   }
-  // Cadangan sementara selama Worker / Rules lama masih dipakai
-  if (dataAuth.currentUser) return dataAuth.currentUser
-  return signInAnonymously(dataAuth).then(cred => cred.user).catch(() => null)
+  // Worker tidak terjangkau: sesi data user yang sama (klaim masih berlaku) tetap dipakai
+  const current = dataAuth.currentUser
+  return current && !current.isAnonymous && current.uid === portalUser.uid ? current : null
 }
 
 // Promise supaya halaman bisa tunggu sesi data siap sebelum query Firestore
@@ -55,27 +55,9 @@ export const dataAuthReady = Promise.race([
   new Promise(resolve => setTimeout(() => resolve(dataAuth.currentUser), 8000))
 ])
 
-// firestoreReady resolves when the data session can query Firestore.
-// Legacy anonymous sessions still write users/{anonUID} so the old rules pass.
-let _firestoreReadyResolve = () => {}
-export const firestoreReady = new Promise(resolve => { _firestoreReadyResolve = resolve })
-setTimeout(() => _firestoreReadyResolve(), 8000) // safety: never hang longer than 8s
-
-dataAuthReady.then(async (anonUser) => {
-  if (!anonUser || !anonUser.isAnonymous) { _firestoreReadyResolve(); return }
-  const cachedUid = sessionStorage.getItem('harmoni_uid')
-  if (!cachedUid) { _firestoreReadyResolve(); return }
-  const cached = sessionStorage.getItem(`profile_${cachedUid}`)
-  if (!cached) { _firestoreReadyResolve(); return }
-  try {
-    const p = JSON.parse(cached)
-    if (!p.role) { _firestoreReadyResolve(); return }
-    await setDoc(doc(db, 'users', anonUser.uid),
-      { role: p.role, name: p.name || '', email: p.email || '', branch: p.branch || '', divisi: p.divisi || '' },
-      { merge: true })
-  } catch {}
-  _firestoreReadyResolve()
-})
+// requireAuth() menunggu ini sebelum menjalankan callback halaman, supaya query
+// Firestore pertama sudah memakai sesi data (custom token).
+export const firestoreReady = dataAuthReady
 
 let _user = null
 let _profile = null
@@ -186,8 +168,8 @@ let _callbackFired = false
 
 export function requireAuth(callback) {
   // ── Optimistic render: render sidebar immediately from sessionStorage ──
-  // Fire the page callback only after firestoreReady so that users/{anonUID}
-  // is written before any Firestore query runs (fixes "Missing or insufficient permissions").
+  // Fire the page callback only after firestoreReady so the data session (custom token)
+  // exists before any Firestore query runs (fixes "Missing or insufficient permissions").
   const cachedUid = sessionStorage.getItem('harmoni_uid')
   if (cachedUid) {
     const cached = sessionStorage.getItem(`profile_${cachedUid}`)
@@ -265,10 +247,6 @@ export function requireAuth(callback) {
       // Hak akses di Rules diambil dari klaim custom token, bukan dari dokumen ini.
       const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '', divisi: appDivisi || '' }
       await setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
-      if (dataUser && dataUser.isAnonymous) {
-        // Sesi anonim (cadangan selama Rules lama masih aktif)
-        await setDoc(doc(db, 'users', dataUser.uid), roleDoc, { merge: true }).catch(() => {})
-      }
       fresh.sesiAman = !!dataUser && !dataUser.isAnonymous
 
       _profile = fresh

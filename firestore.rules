@@ -2,28 +2,40 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAuth() { return request.auth != null; }
-    // Staff login always has a document in users/{uid}.
-    // Anonymous auth (chat.html, supplier-view.html) never does.
-    function isStaffAuth() { return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
-    function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    // Staff login lewat custom token dari Worker: klaim `staff`, `role`, `divisi` diisi
+    // Worker berdasarkan profil Portal. Sesi anonim (chat.html, supplier-view.html) tidak punya klaim ini.
+    function isStaffAuth() { return isAuth() && request.auth.token.get('staff', false) == true; }
+    function role() { return request.auth.token.get('role', ''); }
     function isOwner() { return isStaffAuth() && role() == 'owner'; }
     function isOwnerOrCS() { return isStaffAuth() && role() in ['owner','cs']; }
     function isData() { return isStaffAuth() && role() == 'data'; }
     function isDivisiOwner() { return isStaffAuth() && role() == 'divisi'; }
-    function userDivisi() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.divisi; }
+    function userDivisi() { return request.auth.token.get('divisi', ''); }
     function isDivisiOwnerOf(div) { return isDivisiOwner() && userDivisi() == div; }
+    // Kolom yang hanya boleh diatur owner (users.html)
+    function kolomOwner() { return ['lokasiId', 'lokasiNama', 'lokasiTipe', 'pin', 'divisions']; }
 
     match /users/{uid} {
       allow read: if isStaffAuth();
-      // Self-write allowed for any authenticated user so the anonymous UID doc
-      // can be bootstrapped on first session (breaks the circular dependency
-      // where isStaffAuth requires the doc to exist before it can be created).
-      allow write: if isOwner() || (isAuth() && request.auth.uid == uid);
+      // Staff boleh menyalin nama/email ke dokumennya sendiri; role harus sama dengan klaim token
+      allow create: if isOwner() || (isStaffAuth() && request.auth.uid == uid
+        && request.resource.data.get('role', '') == role()
+        && !request.resource.data.keys().hasAny(kolomOwner()));
+      allow update: if isOwner() || (isStaffAuth() && request.auth.uid == uid
+        && request.resource.data.get('role', '') == role()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(kolomOwner()));
+      allow delete: if isOwner();
     }
     match /orders/{orderId} {
-      allow read: if isAuth();   // isAuth() (not isStaffAuth) — supplier-view.html uses anonymous auth
+      // Customer (chat.html) & supplier (supplier-view.html) memakai sesi anonim dan
+      // hanya membuka satu order lewat ID; daftar semua order khusus staff.
+      allow get: if isAuth();
+      allow list: if isStaffAuth();
       allow create: if isStaffAuth();
-      allow update: if isAuth();
+      // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
+      allow update: if isStaffAuth() || (isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['unreadCustomerChat', 'lastCustomerMsgAt', 'unreadSupplierChat', 'progressPercentage', 'updatedAt']));
       allow delete: if isOwner();
     }
     match /orders/{orderId}/progress_updates/{id} {
@@ -63,6 +75,12 @@ service cloud.firestore {
     }
     match /settings/{id} {
       allow read: if isStaffAuth();
+      allow write: if isOwner();   // rekening bank, QRIS, target omzet — hanya owner
+    }
+
+    // Badge @mention per user
+    match /user_mentions/{uid} {
+      allow read: if isStaffAuth() && request.auth.uid == uid;
       allow write: if isStaffAuth();
     }
 
