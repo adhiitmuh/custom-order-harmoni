@@ -48,8 +48,8 @@
 </div>
 
 <script type="module">
-  import { auth, dataAuth } from './js/config.js'
-  import { signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+  import { auth } from './js/config.js'
+  import { signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 
   onAuthStateChanged(auth, user => {
     if (user) window.location.href = 'dashboard.html'
@@ -77,11 +77,7 @@
     try {
       // Sign in ke harmoni-indonesia (auth utama)
       await signInWithEmailAndPassword(auth, email, password)
-      // Sign in ke harmoni-custom-order agar Firestore db punya auth token
-      // Jika akun tidak ada di sana, fallback ke anonymous auth
-      signInWithEmailAndPassword(dataAuth, email, password).catch(() => {
-        signInAnonymously(dataAuth).catch(() => {})
-      })
+      // Sesi project data (harmoni-custom-order) dibuat oleh js/auth.js lewat custom token
       window.location.href = 'dashboard.html'
     } catch (err) {
       const msgs = {

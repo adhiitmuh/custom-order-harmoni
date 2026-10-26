@@ -79,11 +79,7 @@
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'orders.html'; return }
-    const anonUser = await dataAuthReady
-    // Pastikan users/{anonUID} ada di Firestore sebelum onSnapshot agar isOwner() di rules bisa resolve
-    if (anonUser) {
-      await setDoc(doc(db, 'users', anonUser.uid), { role: 'owner', name: profile.name }, { merge: true }).catch(() => {})
-    }
+    await dataAuthReady
 
     onSnapshot(
       query(collection(db, 'chat_flags'), orderBy('createdAt', 'desc')),

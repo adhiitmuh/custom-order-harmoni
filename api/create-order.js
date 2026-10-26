@@ -141,6 +141,11 @@ export default {
       return json({ success: true })
     }
 
+    // /custom-token: tukar ID token Portal dengan custom token project data (role dari Portal)
+    if (request.method === 'POST' && url.pathname === '/custom-token') {
+      return handleCustomToken(request, env)
+    }
+
     // /send-chat-reply: dari inbox.html, verifikasi Firebase ID token (tidak perlu API_SECRET_KEY)
     if (request.method === 'POST' && url.pathname === '/send-chat-reply') {
       return handleSendChatReply(request, env)
@@ -837,6 +842,8 @@ async function handleSendChatReply(request, env) {
 
   const firebaseUser = await verifyFirebaseIdToken(idToken, env)
   if (!firebaseUser) return json({ error: 'Token tidak valid atau sudah expired' }, 401)
+  const staff = await getPortalStaff(idToken, firebaseUser)
+  if (!staff || !INBOX_ROLES.includes(staff.role)) return json({ error: 'Akun tidak punya akses Chat Inbox' }, 403)
 
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid body' }, 400)
@@ -914,6 +921,8 @@ async function handleCreateOrderFromChat(request, env) {
 
   const firebaseUser = await verifyFirebaseIdToken(idToken, env)
   if (!firebaseUser) return json({ error: 'Token tidak valid' }, 401)
+  const staff = await getPortalStaff(idToken, firebaseUser)
+  if (!staff || !INBOX_ROLES.includes(staff.role)) return json({ error: 'Akun tidak punya akses Chat Inbox' }, 403)
 
   const body = await request.json().catch(() => null)
   if (!body) return json({ error: 'Invalid body' }, 400)
@@ -1097,10 +1106,75 @@ async function verifyFirebaseIdToken(idToken, env) {
   if (!resp.ok) {
     const errBody = await resp.json().catch(() => ({}))
     console.error('verifyToken HTTP error:', resp.status, JSON.stringify(errBody))
-    return { _error: `HTTP ${resp.status}: ${errBody?.error?.message || 'unknown'}` }
+    return null
   }
   const data = await resp.json()
   return data.users?.[0] || null
+}
+
+const PORTAL_PROJECT_ID = 'harmoni-indonesia'
+const INBOX_ROLES = ['owner', 'manager', 'cs']
+
+// Profil staff dari Portal (users/{uid} di harmoni-indonesia), dibaca memakai ID token
+// user itu sendiri sehingga Firestore Rules Portal ikut memverifikasi tokennya.
+// Null jika akun belum aktif atau tidak punya akses Custom Order.
+async function getPortalStaff(idToken, firebaseUser) {
+  const uid = firebaseUser?.localId
+  if (!uid) return null
+  const doc = await firestoreGet(PORTAL_PROJECT_ID, idToken, `users/${uid}`)
+  if (!doc?.fields) return null
+  const p = parseFields(doc.fields)
+  if (p.aktif !== true) return null
+  if (p.role === 'owner') {
+    return { uid, role: 'owner', divisi: '', divisions: [], nama: p.nama || '', email: p.email || firebaseUser.email || '' }
+  }
+  const app = p.apps?.custom_order
+  if (!app?.akses) return null
+  return {
+    uid,
+    role: app.role || 'cs',
+    divisi: app.divisi || p.divisi || '',
+    divisions: Array.isArray(app.divisions) ? app.divisions : [],
+    nama: p.nama || '',
+    email: p.email || firebaseUser.email || '',
+  }
+}
+
+// Custom token untuk project data (harmoni-custom-order): uid = uid Portal, role dari Portal.
+// Firestore Rules Custom Order membaca role dari klaim token ini, bukan dari dokumen yang
+// bisa ditulis user sendiri.
+async function createDataCustomToken(env, staff) {
+  const sa = parseServiceAccountKey(env.FIREBASE_SERVICE_ACCOUNT_KEY)
+  const now = Math.floor(Date.now() / 1000)
+  const b64url = (s) => btoa(unescape(encodeURIComponent(s))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = b64url(JSON.stringify({
+    iss: sa.client_email,
+    sub: sa.client_email,
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+    iat: now,
+    exp: now + 3600,
+    uid: staff.uid,
+    claims: { staff: true, role: staff.role, divisi: staff.divisi },
+  }))
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8', pemToBuffer(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${header}.${payload}`))
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  return `${header}.${payload}.${sigB64}`
+}
+
+async function handleCustomToken(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const firebaseUser = await verifyFirebaseIdToken(idToken, env)
+  if (!firebaseUser) return json({ error: 'Token tidak valid atau sudah expired' }, 401)
+  const staff = await getPortalStaff(idToken, firebaseUser)
+  if (!staff) return json({ error: 'Akun belum aktif atau tidak punya akses Custom Order' }, 403)
+  const token = await createDataCustomToken(env, staff)
+  return json({ token, role: staff.role })
 }
 
 async function firestoreGet(projectId, token, docPath) {

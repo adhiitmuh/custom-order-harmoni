@@ -1,5 +1,5 @@
 import { auth, authDb, db, dataAuth } from './config.js'
-import { onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+import { onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
 
@@ -7,27 +7,62 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
 }
 
-// Pastikan dataAuth (harmoni-custom-order) selalu punya sesi agar Firestore rules isAuth() lolos
-// Juga expose promise supaya halaman bisa tunggu sebelum query Firestore
+const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
+
+// Login ke project data (harmoni-custom-order) dengan custom token dari Worker.
+// Worker memeriksa role di Portal, lalu menaruhnya sebagai klaim token yang dibaca
+// Firestore Rules — role tidak bisa diakui sendiri oleh browser.
+async function signInDataAuth(portalUser) {
+  try {
+    const idToken = await portalUser.getIdToken()
+    const res = await fetch(`${WORKER_URL}/custom-token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+    if (res.ok) {
+      const { token } = await res.json()
+      const cred = await signInWithCustomToken(dataAuth, token)
+      return cred.user
+    }
+    if (res.status === 403) {
+      await signOut(dataAuth).catch(() => {})
+      return null
+    }
+  } catch (e) {
+    console.warn('[auth] custom token gagal:', e)
+  }
+  // Cadangan sementara selama Worker / Rules lama masih dipakai
+  if (dataAuth.currentUser) return dataAuth.currentUser
+  return signInAnonymously(dataAuth).then(cred => cred.user).catch(() => null)
+}
+
+// Promise supaya halaman bisa tunggu sesi data siap sebelum query Firestore
 export const dataAuthReady = Promise.race([
   new Promise(resolve => {
-    onAuthStateChanged(dataAuth, (u) => {
-      if (u) { resolve(u); return }
-      signInAnonymously(dataAuth).then(cred => resolve(cred.user)).catch(() => resolve(null))
+    const unsub = onAuthStateChanged(auth, (portalUser) => {
+      unsub()
+      if (!portalUser) { resolve(null); return }
+      const current = dataAuth.currentUser
+      if (current && current.uid === portalUser.uid) {
+        // Sesi data milik user yang sama sudah ada: pakai langsung, perbarui role di latar belakang
+        resolve(current)
+        signInDataAuth(portalUser)
+      } else {
+        signInDataAuth(portalUser).then(resolve)
+      }
     })
   }),
-  new Promise(resolve => setTimeout(() => resolve(null), 5000))
+  new Promise(resolve => setTimeout(() => resolve(dataAuth.currentUser), 8000))
 ])
 
-// firestoreReady resolves after users/{anonUID} is written to Firestore.
-// requireAuth() waits for this before firing the page callback so that
-// isStaffAuth() Firestore rules pass on the very first query.
+// firestoreReady resolves when the data session can query Firestore.
+// Legacy anonymous sessions still write users/{anonUID} so the old rules pass.
 let _firestoreReadyResolve = () => {}
 export const firestoreReady = new Promise(resolve => { _firestoreReadyResolve = resolve })
-setTimeout(() => _firestoreReadyResolve(), 5000) // safety: never hang longer than 5s
+setTimeout(() => _firestoreReadyResolve(), 8000) // safety: never hang longer than 8s
 
 dataAuthReady.then(async (anonUser) => {
-  if (!anonUser) { _firestoreReadyResolve(); return }
+  if (!anonUser || !anonUser.isAnonymous) { _firestoreReadyResolve(); return }
   const cachedUid = sessionStorage.getItem('harmoni_uid')
   if (!cachedUid) { _firestoreReadyResolve(); return }
   const cached = sessionStorage.getItem(`profile_${cachedUid}`)
@@ -209,6 +244,8 @@ export function requireAuth(callback) {
 
       const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, divisi: appDivisi }
 
+      const dataUser = await dataAuthReady
+
       // Fetch lokasiId + divisions fallback dari operational db (harmoni-custom-order)
       try {
         const opSnap = await getDoc(doc(db, 'users', snap.id))
@@ -224,17 +261,15 @@ export function requireAuth(callback) {
 
       sessionStorage.setItem(`profile_${snap.id}`, JSON.stringify(fresh))
 
-      // Sync role to harmoni-custom-order so Firestore Rules can check it.
-      // Also write under the anon UID (from dataAuth) because Firestore rules
-      // check request.auth.uid = anon UID, not the portal UID.
+      // Salin nama & role ke users/{uid} di harmoni-custom-order (dipakai daftar staff / @mention).
+      // Hak akses di Rules diambil dari klaim custom token, bukan dari dokumen ini.
       const roleDoc = { role: appRole, branch: data.branch || '', name: data.nama || user.email, email: data.email || user.email || '', divisi: appDivisi || '' }
-      // Write portal UID doc and anon UID doc — both must complete before callback
-      // so Firestore rules (isStaffAuth checks users/{anonUID}) pass immediately
       await setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
-      const anonUser = await dataAuthReady
-      if (anonUser && anonUser.uid !== snap.id) {
-        await setDoc(doc(db, 'users', anonUser.uid), roleDoc, { merge: true }).catch(() => {})
+      if (dataUser && dataUser.isAnonymous) {
+        // Sesi anonim (cadangan selama Rules lama masih aktif)
+        await setDoc(doc(db, 'users', dataUser.uid), roleDoc, { merge: true }).catch(() => {})
       }
+      fresh.sesiAman = !!dataUser && !dataUser.isAnonymous
 
       _profile = fresh
       renderSidebar(fresh)
@@ -399,6 +434,7 @@ export function renderSidebar(profile) {
       <div style="flex:1;min-width:0">
         <div class="user-name">${profile.name}</div>
         <div class="user-role">${roleLabel}${profile.branch ? ' · ' + profile.branch : ''}</div>
+        ${profile.role === 'owner' && profile.sesiAman !== undefined ? `<div class="user-role" title="Sesi data Custom Order">${profile.sesiAman ? '🔐 Sesi aman' : '⚠️ Sesi lama'}</div>` : ''}
       </div>
       <button id="notifBell" onclick="window.toggleNotifPanel()" title="Notifikasi" style="position:relative;background:none;border:none;cursor:pointer;color:#FFFBD5;font-size:15px;padding:4px;line-height:1;opacity:.6;flex-shrink:0">🔔<span id="notifBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ef4444;color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:0 3px;min-width:13px;text-align:center;line-height:1.6">0</span></button>
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
