@@ -681,6 +681,16 @@
                   </div>`
                 }).join('') : `<p style="font-size:12px;color:rgba(3,69,67,.35)">Belum ada bukti</p>`}
               </div>
+              ${(order.depositPaid||0) > 0 ? (() => {
+                const cocok = !!order.paymentVerifiedAt && (order.paymentVerifiedAmount ?? -1) === (order.depositPaid || 0)
+                const kapan = order.paymentVerifiedAt?.toDate ? order.paymentVerifiedAt.toDate().toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}) : ''
+                if (cocok) return `<div style="margin-top:10px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 10px;font-size:12px;color:#047857">✓ Sudah dicek di mutasi rekening — ${fmtCurrency(order.paymentVerifiedAmount)} · ${order.paymentVerifiedBy||''} ${kapan}
+                  ${profile.role === 'owner' ? `<button onclick="verifikasiBayar(false)" style="margin-left:6px;background:none;border:none;color:#b91c1c;font-size:11px;cursor:pointer;text-decoration:underline">batalkan</button>` : ''}</div>`
+                const catatan = order.paymentVerifiedAt ? `<div style="font-size:11px;color:#b45309;margin-top:4px">Nominal bayar berubah sejak dicek (${fmtCurrency(order.paymentVerifiedAmount)}) — perlu dicek ulang</div>` : ''
+                return profile.role === 'owner'
+                  ? `<button onclick="verifikasiBayar(true)" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;justify-content:center;border:1px dashed rgba(3,69,67,.3)">🔍 Tandai sudah dicek di mutasi rekening (${fmtCurrency(order.depositPaid)})</button>${catatan}`
+                  : `<div style="margin-top:10px;font-size:11px;color:rgba(3,69,67,.45)">Belum dicek Owner di mutasi rekening</div>${catatan}`
+              })() : ''}
             </div>
             <div id="paymentEdit" style="display:none">
               <div class="form-group" style="margin-bottom:10px">
@@ -1981,6 +1991,22 @@
     } finally {
       if (label) label.style.opacity = '1'
       input.value = ''
+    }
+  }
+
+  // Owner menandai pembayaran sudah dicocokkan dengan mutasi rekening bank
+  window.verifikasiBayar = async function(ya) {
+    if (ya && !confirm('Sudah cek mutasi rekening dan uangnya benar-benar masuk?')) return
+    if (!ya && !confirm('Batalkan tanda sudah dicek?')) return
+    try {
+      const snap = await getDoc(doc(db, 'orders', orderId))
+      const paid = snap.data()?.depositPaid || 0
+      await updateDoc(doc(db, 'orders', orderId), ya
+        ? { paymentVerifiedAt: Timestamp.now(), paymentVerifiedBy: getProfile().name, paymentVerifiedAmount: paid }
+        : { paymentVerifiedAt: null, paymentVerifiedBy: null, paymentVerifiedAmount: null })
+      await loadOrder(getProfile())
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
     }
   }
 

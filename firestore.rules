@@ -33,7 +33,11 @@ service cloud.firestore {
       allow list: if isStaffAuth();
       allow create: if isStaffAuth();
       // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
-      allow update: if isStaffAuth() || (isAuth()
+      // Tanda "sudah dicek di mutasi rekening" hanya boleh diubah Owner
+      allow update: if (isStaffAuth()
+          && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['paymentVerifiedAt', 'paymentVerifiedBy', 'paymentVerifiedAmount'])))
+        || (isAuth()
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['unreadCustomerChat', 'lastCustomerMsgAt', 'unreadSupplierChat', 'progressPercentage', 'updatedAt']));
       allow delete: if isOwner();

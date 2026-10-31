@@ -53,6 +53,9 @@
           <option value="belum">Belum Bayar</option>
           <option value="dp">DP</option>
           <option value="lunas">Lunas</option>
+          <option value="tanpa_bukti">⚠ Sudah bayar, tanpa bukti</option>
+          <option value="belum_dicek">🔍 Bukti belum dicek</option>
+          <option value="terverifikasi">✓ Sudah dicek di mutasi</option>
         </select>
         <button id="resetBtn" class="btn btn-ghost btn-sm" style="display:none">Reset</button>
       </div>
@@ -248,6 +251,10 @@
     render()
   }
 
+  // Pembayaran dianggap terverifikasi bila Owner sudah mencocokkan dengan mutasi rekening
+  // untuk nominal DP/bayar yang tercatat sekarang (berubah nominal → perlu dicek ulang)
+  const bayarTerverifikasi = o => !!o.paymentVerifiedAt && (o.paymentVerifiedAmount ?? -1) === (o.depositPaid || 0)
+
   const FILTER_KEY = 'orders_filters'
   function saveFilters() {
     try {
@@ -306,6 +313,9 @@
         if (pay==='belum' && !(total>0 && paid===0)) return false
         if (pay==='dp' && !(paid>0 && paid<total)) return false
         if (pay==='lunas' && !(total>0 && paid>=total)) return false
+        if (pay==='tanpa_bukti' && !(paid>0 && !o.paymentProofs?.length)) return false
+        if (pay==='belum_dicek' && !(paid>0 && !bayarTerverifikasi(o))) return false
+        if (pay==='terverifikasi' && !bayarTerverifikasi(o)) return false
       }
       return true
     })
@@ -360,6 +370,8 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;text-align:right;font-size:12px">
               ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
+              ${(o.depositPaid||0) > 0 && !o.paymentProofs?.length ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca">⚠ tanpa bukti</span>`
+                : showContact && bayarTerverifikasi(o) ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#ecfdf5;color:#047857">✓ dicek</span>` : ''}
               <div>
                 <div style="font-weight:700;color:var(--black)">${fmtCurrency(o.totalPrice)}</div>
                 ${sisa>0&&o.totalPrice>0?`<div style="color:#b91c1c;font-weight:600;font-size:11px">sisa ${fmtCurrency(sisa)}</div>`:''}
