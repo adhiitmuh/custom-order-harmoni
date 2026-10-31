@@ -120,6 +120,12 @@
           <option value="delivered">Sudah Dikirim</option>
         </select>
         <select id="tblLokasi" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)"><option value="">Semua Lokasi</option></select>
+        <select id="tblBukti" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)">
+          <option value="">Semua Bukti Bayar</option>
+          <option value="tanpa_bukti">⚠ Sudah bayar, tanpa bukti</option>
+          <option value="belum_dicek">🔍 Bukti belum dicek</option>
+          <option value="terverifikasi">✓ Sudah dicek di mutasi</option>
+        </select>
         <button id="tblResetBtn" onclick="resetTableFilter()" style="display:none;padding:7px 10px;border-radius:8px;border:1.5px solid rgba(239,68,68,.3);font-size:12px;font-family:inherit;background:none;color:#dc2626;cursor:pointer">✕ Reset</button>
       </div>
       <div id="orderTable" style="overflow-x:auto"></div>
@@ -194,12 +200,13 @@
       }
       // Restore table filter setelah render selesai (setPeriod me-reset filter)
       const tbl = saved.tbl || {}
-      if (tbl.search || tbl.divisi || tbl.status || tbl.lokasi) {
+      if (tbl.search || tbl.divisi || tbl.status || tbl.lokasi || tbl.bukti) {
         setTimeout(() => {
           if (tbl.search)  document.getElementById('tblSearch').value  = tbl.search
           if (tbl.divisi)  document.getElementById('tblDivisi').value  = tbl.divisi
           if (tbl.status)  document.getElementById('tblStatus').value  = tbl.status
           if (tbl.lokasi)  document.getElementById('tblLokasi').value  = tbl.lokasi
+          if (tbl.bukti)   document.getElementById('tblBukti').value   = tbl.bukti
           window.onTableFilter()
         }, 0)
       }
@@ -351,7 +358,7 @@
 
     // Store for table filter use, reset filters, populate dropdowns, render table
     currentPeriodOrders = orders
-    ;['tblSearch','tblDivisi','tblStatus','tblLokasi'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
     const resetBtn = document.getElementById('tblResetBtn')
     if (resetBtn) resetBtn.style.display = 'none'
     populateTableDropdowns()
@@ -381,26 +388,42 @@
     const divisi = document.getElementById('tblDivisi')?.value || ''
     const status = document.getElementById('tblStatus')?.value || ''
     const lokasi = document.getElementById('tblLokasi')?.value || ''
-    saveLaporanFilters({ tbl: { search, divisi, status, lokasi } })
+    const bukti  = document.getElementById('tblBukti')?.value || ''
+    saveLaporanFilters({ tbl: { search, divisi, status, lokasi, bukti } })
     const filtered = currentPeriodOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
       if (divisi && o.division !== divisi) return false
       if (status === '__belum_lunas__') { if ((o.depositPaid||0) >= (o.totalPrice||0)) return false }
       else if (status && o.status !== status) return false
       if (lokasi && o.lokasiId !== lokasi) return false
+      const paid = o.depositPaid || 0
+      if (bukti === 'tanpa_bukti' && !(paid > 0 && !o.paymentProofs?.length)) return false
+      if (bukti === 'belum_dicek' && !(paid > 0 && !bayarTerverifikasi(o))) return false
+      if (bukti === 'terverifikasi' && !bayarTerverifikasi(o)) return false
       return true
     })
-    const hasFilter = search || divisi || status || lokasi
+    const hasFilter = search || divisi || status || lokasi || bukti
     const resetBtn = document.getElementById('tblResetBtn')
     if (resetBtn) resetBtn.style.display = hasFilter ? '' : 'none'
     renderOrderTable(filtered)
   }
 
   window.resetTableFilter = function() {
-    ;['tblSearch','tblDivisi','tblStatus','tblLokasi'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
     document.getElementById('tblResetBtn').style.display = 'none'
     saveLaporanFilters({ tbl: {} })
     renderOrderTable(currentPeriodOrders)
+  }
+
+  // Sama dengan orders.html: terverifikasi bila Owner sudah cek mutasi untuk nominal bayar saat ini
+  function bayarTerverifikasi(o) { return !!o.paymentVerifiedAt && (o.paymentVerifiedAmount ?? -1) === (o.depositPaid || 0) }
+  function labelBukti(o) {
+    const n = o.paymentProofs?.length || 0
+    if (!(o.depositPaid > 0)) return n ? `<span style="color:rgba(3,69,67,.4)">📎${n}</span>` : '<span style="color:rgba(3,69,67,.2)">—</span>'
+    if (!n) return '<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;background:#fef2f2;color:#b91c1c">⚠ tidak ada</span>'
+    return bayarTerverifikasi(o)
+      ? `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;background:#ecfdf5;color:#047857">✓ dicek · 📎${n}</span>`
+      : `<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:999px;background:#fffbeb;color:#b45309">📎${n} belum dicek</span>`
   }
 
   function renderOrderTable(orders) {
@@ -423,6 +446,7 @@
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">TAGIHAN</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">TERBAYAR</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">SISA</th>
+            <th style="text-align:center;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">BUKTI</th>
             ${isOwner ? `<th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">MODAL</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">PROFIT</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">MARGIN</th>` : ''}
@@ -441,6 +465,7 @@
               <td style="padding:8px 6px;text-align:right;font-weight:700">${fmtCurrency(o.totalPrice)}</td>
               <td style="padding:8px 6px;text-align:right;color:#059669;font-weight:600">${fmtCurrency(o.depositPaid)}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:700;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</td>
+              <td style="padding:8px 6px;text-align:center;white-space:nowrap">${labelBukti(o)}</td>
               ${isOwner ? `<td style="padding:8px 6px;text-align:right;color:rgba(3,69,67,.5)">${o.hargaModal ? fmtCurrency(o.hargaModal) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:700;color:${profit!==null?(profit>=0?'#059669':'#b91c1c'):'rgba(3,69,67,.3)'}">${profit !== null ? fmtCurrency(profit) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:600;color:${margin!==null?(margin>=30?'#059669':margin>=15?'#d97706':'#b91c1c'):'rgba(3,69,67,.2)'}">${margin !== null ? margin + '%' : '—'}</td>` : ''}
@@ -453,6 +478,7 @@
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px">${fmtCurrency(orders.reduce((s,o)=>s+(o.totalPrice||0),0))}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#059669">${fmtCurrency(orders.reduce((s,o)=>s+(o.depositPaid||0),0))}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#b91c1c">${fmtCurrency(orders.reduce((s,o)=>s+((o.totalPrice||0)-(o.depositPaid||0)),0))}</td>
+            <td></td>
             ${isOwner ? `<td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:rgba(3,69,67,.5)">${fmtCurrency(footerModal)}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:${footerProfit>=0?'#059669':'#b91c1c'}">${fmtCurrency(footerProfit)}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:${footerMargin>=30?'#059669':footerMargin>=15?'#d97706':'#b91c1c'}">${footerMargin}%</td>` : ''}
