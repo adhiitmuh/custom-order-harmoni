@@ -104,9 +104,9 @@
 </div>
 
 <script type="module">
-  import { auth, db } from './js/config.js'
+  import { auth, db, authDb } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
-  import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
@@ -175,11 +175,30 @@
       el.innerHTML = `<div style="padding:20px;color:#dc2626;font-size:13px">⚠️ Gagal memuat: ${e.message}</div>`
       return
     }
+    // Akun Portal yang punya akses Custom Order — supaya staf baru langsung muncul
+    // (dan bisa diberi lokasi) walaupun belum pernah login ke Custom Order
+    let portal = []
+    try {
+      const ps = await getDocs(query(collection(authDb, 'users'), where('apps.custom_order.akses', '==', true)))
+      portal = ps.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.aktif !== false)
+    } catch (e) { console.warn('Gagal membaca akun Portal:', e.message) }
+
+    const opById = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }]))
+    const gabung = portal.map(p => {
+      const op = opById.get(p.id) || {}
+      opById.delete(p.id)
+      return { ...op, id: p.id, name: p.nama || op.name || p.email, email: p.email || op.email || '',
+               role: p.apps?.custom_order?.role || op.role || 'cs',
+               divisions: p.apps?.custom_order?.divisions || op.divisions,
+               merangkapProduction: p.apps?.custom_order?.merangkapProduction || false,
+               belumLogin: !op.email }
+    })
+
     // Deduplicate by email — each user has 2 docs (portalUID + anonUID), keep one per email
-    const seen = new Set()
-    const users = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(u => { if (!u.email || seen.has(u.email)) return false; seen.add(u.email); return true })
+    const seen = new Set(gabung.map(u => u.email).filter(Boolean))
+    const users = [...gabung, ...[...opById.values()]
+      .filter(u => { if (!u.email || seen.has(u.email)) return false; seen.add(u.email); return true })]
+      .sort((a, b) => (a.role === 'owner') - (b.role === 'owner') || String(a.name).localeCompare(String(b.name)))
 
     if (!users.length) {
       el.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>Belum ada pengguna</p></div>'
@@ -190,7 +209,7 @@
       <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:14px">
         <div class="avatar" style="width:40px;height:40px;font-size:16px;background:rgba(3,69,67,.1);color:var(--green)">${(u.name||'U')[0].toUpperCase()}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${u.name||'—'}</div>
+          <div style="font-weight:700;font-size:14px">${u.name||'—'}${u.belumLogin ? ' <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:#fffbeb;color:#b45309">belum pernah login</span>' : ''}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.lokasiNama}</div>` : (u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : '')}
           ${u.role === 'divisi' && u.divisi ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">🏭 ${DIVISION_META[u.divisi]?.icon||''} ${DIVISION_META[u.divisi]?.label||u.divisi}</div>` : (() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()}
@@ -293,7 +312,8 @@
     const btn = document.getElementById('saveLokasiBtn')
     btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
-      await updateDoc(doc(db, 'users', _editLokasiUid), { lokasiId, lokasiNama, lokasiTipe })
+      // merge: staf yang belum pernah login belum punya dokumen di sini
+      await setDoc(doc(db, 'users', _editLokasiUid), { lokasiId, lokasiNama, lokasiTipe }, { merge: true })
       closeLokasiModal()
       await loadUsers()
     } catch(err) {
