@@ -82,6 +82,11 @@
       <input type="text" id="fPemilik" placeholder="Nama pemilik divisi" autocomplete="off">
       <p class="form-hint">Nama anggota keluarga yang memiliki dan menjalankan divisi ini</p>
     </div>
+    <div class="form-group">
+      <label>No. WA Divisi (pemberitahuan)</label>
+      <input type="tel" id="fNoWa" placeholder="08xxxxxxxxxx" autocomplete="off">
+      <p class="form-hint">Dipakai tombol "Kabari lewat WhatsApp" saat ada chat / order baru. Hanya terlihat oleh staf.</p>
+    </div>
 
     <div class="form-group" id="keyWrap">
       <label>Key (ID unik, huruf kecil-tanda hubung) <span class="req">*</span></label>
@@ -103,8 +108,10 @@
   import { requireAuth, dataAuthReady, getActiveDivisions, invalidateDivisionsCache } from './js/auth.js'
   import { collection, doc, getDoc, getDocs, setDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, PRODUKSI_UNIT } from './js/utils.js'
+  import { loadNoWaDivisi, simpanNoWaDivisi } from './js/notifwa.js'
 
   let allDivs = []
+  let _noWa = {}   // nomor WA pemberitahuan per divisi (settings/divisi_wa)
   let editingKey = null
 
   requireAuth(async (profile) => {
@@ -119,6 +126,7 @@
   async function load() {
     const el = document.getElementById('pageContent')
     try {
+      _noWa = { ...(await loadNoWaDivisi(true)) }
       const snap = await getDocs(collection(db, 'divisions'))
       if (snap.empty) {
         await seedDefaults()
@@ -165,7 +173,7 @@
         <div class="div-icon">${d.icon || '📦'}</div>
         <div class="div-info">
           <div class="div-label">${d.label} <span style="font-size:10px;font-weight:600;color:rgba(3,69,67,.3);margin-left:4px">${d.code || ''}</span>${d.aktif === false ? ' <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-weight:700">Non-aktif</span>' : ''}</div>
-          <div class="div-meta">${d.description || '—'} · ${d.produksiUnit || '—'}${d.pemilik ? ` · 👤 ${d.pemilik}` : ''}</div>
+          <div class="div-meta">${d.description || '—'} · ${d.produksiUnit || '—'}${d.pemilik ? ` · 👤 ${d.pemilik}` : ''} · ${_noWa[d.key] ? `📲 ${_noWa[d.key]}` : '<span style="color:#b45309">📲 No. WA belum diisi</span>'}</div>
         </div>
         <div class="div-actions">
           <button class="order-btn" onclick="moveUp(${i})" ${i===0?'disabled':''}>▲</button>
@@ -230,6 +238,7 @@
       document.getElementById('fDesc').value = d.description || ''
       document.getElementById('fUnit').value = d.produksiUnit || ''
       document.getElementById('fPemilik').value = d.pemilik || ''
+      document.getElementById('fNoWa').value = _noWa[key] || ''
       document.getElementById('fKey').value = key
     } else {
       document.getElementById('fIcon').value = ''
@@ -238,6 +247,7 @@
       document.getElementById('fDesc').value = ''
       document.getElementById('fUnit').value = ''
       document.getElementById('fPemilik').value = ''
+      document.getElementById('fNoWa').value = ''
       document.getElementById('fKey').value = ''
     }
 
@@ -293,6 +303,7 @@
         data.createdAt = Timestamp.now()
       }
       await setDoc(doc(db, 'divisions', key), data, { merge: true })
+      _noWa[key] = await simpanNoWaDivisi(key, document.getElementById('fNoWa').value)
       invalidateDivisionsCache()
       closeModal()
       await load()

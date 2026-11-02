@@ -85,6 +85,7 @@
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
+  import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -174,7 +175,17 @@
         el.innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px;color:rgba(3,69,67,.5)">Koneksi lambat atau perlu refresh.<br><a href="" onclick="location.reload();return false" style="color:var(--green);font-weight:600">↻ Refresh halaman</a></p></div>`
       }
     }, 10000)
-    loadOrder(profile, loadTimeout)
+    loadOrder(profile, loadTimeout).then(() => {
+      // Baru dibuat dari Order Baru → tawarkan pemberitahuan WA ke divisi
+      const params = new URLSearchParams(location.search)
+      if (params.get('baru') === '1' && order) {
+        params.delete('baru')
+        history.replaceState(null, '', `${location.pathname}?${params}`)
+        const metaDiv = DIVISION_META[order.division] || {}
+        tawarkanWaDivisi(order.division, metaDiv.label || order.division,
+          `🆕 Order baru — Harmoni Custom Order\nOrder: ${order.orderNumber || ''}\nPelanggan: ${order.customerName || ''}\nTarget: ${order.dueDate || '-'}\nDibuat oleh: ${profile.name}\n\nBuka: ${linkOrder(order.id || orderId)}`)
+      }
+    }).catch(() => {})
   })
 
   async function loadOrder(profile, loadTimeout) {
@@ -2476,6 +2487,11 @@
       [`lastReadInternalChat.${profile.id}`]: Timestamp.now(),
       [`lastReadInternalChatCount.${profile.id}`]: increment(1),
     }).catch(() => {})
+
+    // Tawarkan pemberitahuan WA ke nomor divisi order ini
+    const metaDiv = DIVISION_META[order.division] || {}
+    tawarkanWaDivisi(order.division, metaDiv.label || order.division,
+      `🔔 Chat baru — Harmoni Custom Order\nOrder: ${order.orderNumber || ''} (${order.customerName || ''})\nDari: ${profile.name}\n\n${content || '📷 Foto'}\n\nBuka: ${linkOrder(orderId)}`)
 
     if (mentioned.length) {
       writeMentionNotifs(mentioned, profile.id, profile.name, content, orderId, order.orderNumber).catch(() => {})
