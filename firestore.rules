@@ -12,6 +12,13 @@ service cloud.firestore {
     function isDivisiOwner() { return isStaffAuth() && role() == 'divisi'; }
     function userDivisi() { return request.auth.token.get('divisi', ''); }
     function isDivisiOwnerOf(div) { return isDivisiOwner() && userDivisi() == div; }
+    // Pemilik Divisi (role 'divisi') hanya boleh menyentuh order divisinya sendiri;
+    // role lain tidak terpengaruh. Query order Pemilik Divisi wajib where('division', '==', divisinya).
+    function bolehOrderData(d) { return !isDivisiOwner() || d.get('division', '') == userDivisi(); }
+    function bolehOrderId(orderId) {
+      return !isDivisiOwner()
+        || get(/databases/$(database)/documents/orders/$(orderId)).data.get('division', '') == userDivisi();
+    }
     // Kolom yang hanya boleh diatur owner (users.html)
     function kolomOwner() { return ['lokasiId', 'lokasiNama', 'lokasiTipe', 'pin', 'divisions']; }
 
@@ -29,42 +36,37 @@ service cloud.firestore {
     match /orders/{orderId} {
       // Customer (chat.html) & supplier (supplier-view.html) memakai sesi anonim dan
       // hanya membuka satu order lewat ID; daftar semua order khusus staff.
-      allow get: if isAuth();
-      allow list: if isStaffAuth();
-      allow create: if isStaffAuth();
+      allow get: if isAuth() && bolehOrderData(resource.data);
+      allow list: if isStaffAuth() && bolehOrderData(resource.data);
+      allow create: if isStaffAuth() && bolehOrderData(request.resource.data);
       // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
       // Tanda "sudah dicek di mutasi rekening" hanya boleh diubah Owner
-      allow update: if (isStaffAuth()
+      allow update: if bolehOrderData(resource.data) && bolehOrderData(request.resource.data) && ((isStaffAuth()
           && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['paymentVerifiedAt', 'paymentVerifiedBy', 'paymentVerifiedAmount'])))
         || (isAuth()
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['unreadCustomerChat', 'lastCustomerMsgAt', 'unreadSupplierChat', 'progressPercentage', 'updatedAt']));
+             .hasOnly(['unreadCustomerChat', 'lastCustomerMsgAt', 'unreadSupplierChat', 'progressPercentage', 'updatedAt'])));
       allow delete: if isOwner();
     }
     match /orders/{orderId}/progress_updates/{id} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isStaffAuth(); // edit progress (note/percentage)
-      allow delete: if isOwner() || isStaffAuth(); // manager/cs/divisi bisa hapus
+      allow read: if isAuth() && bolehOrderId(orderId);
+      allow create: if isAuth() && bolehOrderId(orderId);
+      allow update: if isStaffAuth() && bolehOrderId(orderId); // edit progress (note/percentage)
+      allow delete: if isStaffAuth() && bolehOrderId(orderId); // owner/manager/cs/divisi bisa hapus
     }
     match /orders/{orderId}/internal_chat/{msgId} {
-      allow read: if isStaffAuth();
-      allow create: if isStaffAuth();
+      allow read: if isStaffAuth() && bolehOrderId(orderId);
+      allow create: if isStaffAuth() && bolehOrderId(orderId);
       allow delete: if isOwner();
     }
     match /orders/{orderId}/supplier_chat/{msgId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
+      allow read, create, update, delete: if isAuth() && bolehOrderId(orderId);
     }
     // Per-supplier chat (order baru dengan 1+ supplier terpisah)
     match /orders/{orderId}/supplier_chats/{supplierId}/messages/{msgId} {
-      allow read: if isAuth();   // supplier akses via anonymous auth + token
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
+      // supplier akses via anonymous auth + token
+      allow read, create, update, delete: if isAuth() && bolehOrderId(orderId);
     }
     match /product_knowledge/{id} {
       allow read: if true; // Public — customer can read
@@ -123,12 +125,12 @@ service cloud.firestore {
 
     // Chat inbox threads — readable by all staff, writable by owner/cs
     match /chat_threads/{threadId} {
-      allow read: if isStaffAuth();
+      allow read: if isStaffAuth() && !isDivisiOwner();
       allow write: if isOwnerOrCS();
     }
     match /chat_threads/{threadId}/messages/{msgId} {
-      allow read: if isStaffAuth();
-      allow create: if isStaffAuth();
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow create: if isStaffAuth() && !isDivisiOwner();
       allow delete: if isOwner();
     }
 
@@ -145,7 +147,10 @@ service cloud.firestore {
 
     // In-app notifications per order internal chat
     match /notifications/{notifId} {
-      allow read: if isStaffAuth();
+      // Pemilik Divisi: hanya notifikasi divisinya + mention untuk dirinya
+      allow read: if isStaffAuth() && (!isDivisiOwner()
+        || resource.data.get('division', '') == userDivisi()
+        || resource.data.get('targetUid', '') == request.auth.uid);
       allow create: if isStaffAuth();
       allow delete: if isOwner();
     }
@@ -171,7 +176,7 @@ service cloud.firestore {
 
     // Customer feedback — public write (token = password), staff read only
     match /feedback/{token} {
-      allow read: if isStaffAuth();
+      allow read: if isStaffAuth() && !isDivisiOwner();
       allow create: if true; // Anyone with token can submit feedback
       allow update: if false; // No editing after submit
       allow delete: if isOwner();

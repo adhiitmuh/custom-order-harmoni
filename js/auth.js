@@ -132,6 +132,13 @@ export function canAccessDivisi(profile, division) {
 // - CS pusat tanpa divisi: semua order
 // - CS cabang/titik: hanya order dari lokasinya
 // - Manager: hanya order dari lokasinya (jika di-assign)
+// Query koleksi orders sesuai role. Pemilik Divisi wajib memfilter divisinya sendiri —
+// Firestore Rules menolak query order tanpa filter itu (lihat firestore.rules).
+export function ordersQuery(profile, ...constraints) {
+  const filterDivisi = profile?.role === 'divisi' ? [where('division', '==', profile.divisi || '-')] : []
+  return query(collection(db, 'orders'), ...filterDivisi, ...constraints)
+}
+
 export function canSeeOrder(o, profile) {
   if (!profile || !o) return false
   if (profile.role === 'owner' || profile.role === 'data') return true
@@ -655,7 +662,7 @@ function initNotifications(profile) {
     }
 
     // Vendor chat unread listener — pakai canSeeOrder untuk konsistensi
-    onSnapshot(query(collection(db, 'orders'), where('unreadSupplierChat', '>', 0)), snap => {
+    onSnapshot(ordersQuery(profile, where('unreadSupplierChat', '>', 0)), snap => {
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
       _vendorOrders = orders
       _vendorUnreadCount = orders.length
@@ -664,7 +671,7 @@ function initNotifications(profile) {
     }, () => {})
 
     // Customer chat unread listener — pesan customer belum dibalas tampil di 🔔 semua halaman
-    onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), snap => {
+    onSnapshot(ordersQuery(profile, where('unreadCustomerChat', '>', 0)), snap => {
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
       _customerOrders = orders
       _customerUnreadCount = orders.length
@@ -673,8 +680,23 @@ function initNotifications(profile) {
     }, () => {})
 
     // Internal notifications listener
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))
-    onSnapshot(q, snap => {
+    // Pemilik Divisi hanya boleh membaca notifikasi divisinya + mention untuk dirinya
+    // (dikunci di Firestore Rules), jadi pakai dua query lalu digabung.
+    const isDivisiRole = profile.role === 'divisi'
+    const qList = isDivisiRole
+      ? [query(collection(db, 'notifications'), where('division', '==', profile.divisi || '-'), orderBy('createdAt', 'desc'), limit(30)),
+         query(collection(db, 'notifications'), where('targetUid', '==', profile.id), limit(30))]
+      : [query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))]
+    const hasilNotif = qList.map(() => [])
+    const onNotif = (idx, snap) => {
+      hasilNotif[idx] = snap.docs
+      const unik = new Map()
+      hasilNotif.flat().forEach(d => unik.set(d.id, d))
+      const docs = [...unik.values()].sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0)).slice(0, 30)
+      prosesNotif({ docs })
+    }
+    qList.forEach((q, idx) => onSnapshot(q, snap => onNotif(idx, snap), () => {}))
+    function prosesNotif(snap) {
       let notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       notifs = notifs.filter(n => {
@@ -714,6 +736,6 @@ function initNotifications(profile) {
       _lastNotifItems = [...mentions, ...grouped]
       updateBadge()
       renderPanel()
-    }, () => {})
+    }
   }) // dataAuthReady.then
 }

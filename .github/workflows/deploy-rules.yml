@@ -8,6 +8,7 @@ on:
       - 'firestore.rules'
       - 'storage.rules'
       - 'firebase.json'
+      - 'firestore.indexes.json'
   workflow_dispatch:
 
 jobs:
@@ -21,4 +22,4 @@ jobs:
           node-version: '20'
 
       - name: Deploy Firestore & Storage rules
-        run: npx firebase-tools deploy --only firestore:rules,storage --project harmoni-custom-order --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+        run: npx firebase-tools deploy --only firestore:rules,firestore:indexes,storage --project harmoni-custom-order --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive

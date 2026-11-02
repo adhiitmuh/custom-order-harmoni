@@ -1,0 +1,15 @@
+{
+  "indexes": [
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "division", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "division", "order": "ASCENDING" }, { "fieldPath": "unreadCustomerChat", "order": "ASCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "division", "order": "ASCENDING" }, { "fieldPath": "unreadSupplierChat", "order": "ASCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "division", "order": "ASCENDING" }, { "fieldPath": "internalChatLastAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "notifications", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "division", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

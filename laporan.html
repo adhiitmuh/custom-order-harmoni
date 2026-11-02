@@ -135,7 +135,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady, getProfile } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getProfile, ordersQuery } from './js/auth.js'
   import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
@@ -162,7 +162,7 @@
     }
 
     dataAuthReady.then(() => Promise.all([
-      getDocs(query(collection(db,'orders'), orderBy('createdAt','desc'))),
+      getDocs(ordersQuery(profile, orderBy('createdAt','desc'))),
       (isOwner || isDivisiOwner)
         ? getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))
         : Promise.resolve({ docs: [] }),

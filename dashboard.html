@@ -49,7 +49,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, canSeeOrder } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, canSeeOrder, ordersQuery } from './js/auth.js'
   import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc, where, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, paymentStatus, daysDiff } from './js/utils.js'
 
@@ -78,7 +78,7 @@
 
     // Unread customer chat — real-time
     if (profile.role !== 'production') {
-      onSnapshot(query(collection(db, 'orders'), where('unreadCustomerChat', '>', 0)), (snap) => {
+      onSnapshot(ordersQuery(profile, where('unreadCustomerChat', '>', 0)), (snap) => {
         const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
         const el2 = document.getElementById('chatUnreadAlert')
         if (el2) el2.innerHTML = orders.length > 0 ? `
@@ -92,7 +92,7 @@
       })
 
       // Unread internal chat — real-time, per-user
-      onSnapshot(query(collection(db, 'orders'), where('internalChatLastAt', '>', Timestamp.fromMillis(Date.now() - 90 * 24 * 60 * 60 * 1000))), (snap) => {
+      onSnapshot(ordersQuery(profile, where('internalChatLastAt', '>', Timestamp.fromMillis(Date.now() - 90 * 24 * 60 * 60 * 1000))), (snap) => {
         const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => {
           if (!canSeeOrder(o, profile)) return false
           const lastAt = o.internalChatLastAt?.seconds || 0
@@ -112,7 +112,7 @@
     }
 
       // Vendor chat unread — real-time
-      onSnapshot(query(collection(db, 'orders'), where('unreadSupplierChat', '>', 0)), (snap) => {
+      onSnapshot(ordersQuery(profile, where('unreadSupplierChat', '>', 0)), (snap) => {
         const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
         const el2 = document.getElementById('vendorUnreadAlert')
         if (el2) el2.innerHTML = orders.length > 0 ? `
@@ -180,7 +180,7 @@
   async function loadStats(profile) {
     await dataAuthReady
     const [ordersSnap, targetSnap] = await Promise.all([
-      getDocs(collection(db, 'orders')),
+      getDocs(ordersQuery(profile)),
       getDoc(doc(db, 'settings', 'monthly_target'))
     ])
     const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile))
@@ -299,7 +299,7 @@
     const el = document.getElementById('recentOrders')
     let snap
     // Fetch lebih banyak lalu filter client-side, karena filter per-role beda-beda
-    try { snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50))) }
+    try { snap = await getDocs(ordersQuery(profile, orderBy('createdAt', 'desc'), limit(50))) }
     catch(err) { el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Gagal memuat: ${err.message}</p></div>`; return }
 
     const filtered = snap.docs

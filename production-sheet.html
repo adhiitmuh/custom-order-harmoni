@@ -167,8 +167,10 @@
 
     try {
       if (activeComposite) {
+        // Pemilik Divisi hanya boleh membaca order divisinya sendiri (dikunci di Firestore Rules)
+        const bolehDiv = d => _profile?.role !== 'divisi' || d === _profile.divisi
         const snaps = await Promise.all(activeComposite.map(({ queryDiv }) =>
-          getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv)))
+          bolehDiv(queryDiv) ? getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv))) : Promise.resolve({ docs: [] })
         ))
         const seen = new Set()
         allOrders = []
@@ -187,10 +189,9 @@
           })
         })
       } else {
-        const snap = await getDocs(query(
-          collection(db, 'orders'),
-          where('division', '==', divKey)
-        ))
+        const snap = (_profile?.role !== 'divisi' || divKey === _profile.divisi)
+          ? await getDocs(query(collection(db, 'orders'), where('division', '==', divKey)))
+          : { docs: [] }
         allOrders = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(o => !DONE_STATUSES.includes(o.status))
