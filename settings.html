@@ -257,7 +257,7 @@
     }
     // QRIS: single select tetap
     const qrisSel = document.getElementById('qrisDivision')
-    if (qrisSel && !qrisSel.options.length > 1) {
+    if (qrisSel && qrisSel.options.length <= 1) {
       DIVISIONS.forEach(d => {
         const opt = document.createElement('option')
         opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
