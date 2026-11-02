@@ -33,6 +33,15 @@
     .filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
     .filter-bar input, .filter-bar select { font-size:13px; padding:6px 10px; border:1.5px solid rgba(3,69,67,.15); border-radius:8px; background:var(--white); outline:none; font-family:inherit; }
     .filter-bar input:focus, .filter-bar select:focus { border-color:var(--green); }
+    .dl-badge { display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+    .dl-belum { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    .dl-sudah { background:#ecfdf5; color:#047857; }
+    .dl-berubah { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+    .dl-oleh { font-size:10px; color:rgba(3,69,67,.45); margin-top:2px; white-space:nowrap; }
+    tr.row-belum td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+    .dl-btn { font-size:12px; font-weight:700; padding:7px 12px; border-radius:8px; border:none; cursor:pointer; font-family:inherit; }
+    .dl-btn-primary { background:var(--green); color:#fff; }
+    .dl-btn-ghost { background:var(--white); color:var(--green); border:1.5px solid rgba(3,69,67,.2); }
     .saving-dot { display:none; width:8px; height:8px; border-radius:50%; background:#059669; animation:pulse .8s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
     @media(max-width:700px){
@@ -70,6 +79,17 @@
       <select id="lokasiFilter" onchange="applyFilter()">
         <option value="">Semua Lokasi</option>
       </select>
+      <select id="dlFilter" onchange="applyFilter()">
+        <option value="">Semua Download</option>
+        <option value="belum">⬇ Belum didownload</option>
+        <option value="berubah">⚠ Berubah sejak download</option>
+        <option value="sudah">✓ Sudah didownload</option>
+      </select>
+    </div>
+    <div id="dlBar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="dl-btn dl-btn-primary" id="btnDlBaru" onclick="downloadSheet('baru')">⬇ Download yang belum (0)</button>
+      <button class="dl-btn dl-btn-ghost" onclick="downloadSheet('tampil')">Download semua yang tampil</button>
+      <span style="font-size:11px;color:rgba(3,69,67,.45)">Setiap download dicatat nama pengunduhnya.</span>
     </div>
 
     <div style="overflow-x:auto;border-radius:12px;border:1.5px solid rgba(3,69,67,.07)">
@@ -85,9 +105,10 @@
             <th style="width:100px;text-align:center">SISA</th>
             <th style="width:70px;text-align:center">PROG</th>
             <th style="width:160px">STATUS</th>
+            <th style="width:130px">DOWNLOAD</th>
           </tr>
         </thead>
-        <tbody id="sheetBody"><tr><td colspan="9" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">Pilih divisi di atas</td></tr></tbody>
+        <tbody id="sheetBody"><tr><td colspan="10" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">Pilih divisi di atas</td></tr></tbody>
       </table>
     </div>
     <div id="sheetCount" style="font-size:12px;color:rgba(3,69,67,.4);margin-top:8px;text-align:right"></div>
@@ -97,7 +118,7 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder } from './js/auth.js'
-  import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
@@ -116,6 +137,26 @@
   let activeDiv = null
   let activeComposite = null  // array of { queryDiv, keyword } if composite tab
   let _profile = null
+
+  // ── Download Excel: siapa yang mengunduh & apakah order berubah sesudahnya ──
+  // Yang boleh mengunduh (dan tercatat): tim produksi, pemilik divisi, owner
+  const bolehDownload = () => ['production', 'divisi', 'owner'].includes(_profile?.role)
+
+  // Sidik isi order yang relevan untuk produksi — beda sidik = order diubah setelah didownload
+  function sidikOrder(o) {
+    const isi = JSON.stringify([o.orderItems || [], o.sizeBreakdown || {}, o.qty || 0, o.notes || '', o.dueDate || '', o.designFiles || [], o.varian || ''])
+    let h = 0
+    for (let i = 0; i < isi.length; i++) h = (h * 31 + isi.charCodeAt(i)) | 0
+    return String(h)
+  }
+  function statusDownload(o) {
+    if (!o.sheetDownloadedAt) return 'belum'
+    return o.sheetDownloadSig && o.sheetDownloadSig !== sidikOrder(o) ? 'berubah' : 'sudah'
+  }
+  const fmtWaktu = ts => {
+    const d = ts?.toDate ? ts.toDate() : null
+    return d ? d.toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+  }
 
   const STATUS_OPTIONS = [
     { value: 'pending',        label: '⏳ Menunggu Konfirmasi' },
@@ -163,7 +204,7 @@
     activeComposite = COMPOSITE_TABS[divKey] || null
     document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'))
     btnEl?.classList.add('active')
-    document.getElementById('sheetBody').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:rgba(3,69,67,.35)">Memuat…</td></tr>'
+    document.getElementById('sheetBody').innerHTML = '<tr><td colspan="10" style="text-align:center;padding:28px;color:rgba(3,69,67,.35)">Memuat…</td></tr>'
 
     try {
       if (activeComposite) {
@@ -201,7 +242,7 @@
       // Sort by dueDate ascending in JS (avoids composite Firestore index requirement)
       allOrders.sort((a, b) => (a.dueDate || '') < (b.dueDate || '') ? -1 : 1)
     } catch(e) {
-      document.getElementById('sheetBody').innerHTML = `<tr><td colspan="9" style="text-align:center;padding:28px;color:#dc2626">Gagal memuat: ${e.message}</td></tr>`
+      document.getElementById('sheetBody').innerHTML = `<tr><td colspan="10" style="text-align:center;padding:28px;color:#dc2626">Gagal memuat: ${e.message}</td></tr>`
       return
     }
 
@@ -231,6 +272,7 @@
         status: document.getElementById('statusFilter').value,
         urgent: document.getElementById('urgentFilter').value,
         lokasi: document.getElementById('lokasiFilter').value,
+        dl: document.getElementById('dlFilter').value,
       }))
     } catch {}
   }
@@ -241,6 +283,7 @@
       if (s.status) document.getElementById('statusFilter').value = s.status
       if (s.urgent) document.getElementById('urgentFilter').value = s.urgent
       if (s.lokasi) document.getElementById('lokasiFilter').value = s.lokasi
+      if (s.dl) document.getElementById('dlFilter').value = s.dl
       return s
     } catch { return {} }
   }
@@ -250,12 +293,14 @@
     const statusF = document.getElementById('statusFilter').value
     const urgentF = document.getElementById('urgentFilter').value
     const lokasiF = document.getElementById('lokasiFilter').value
+    const dlF = document.getElementById('dlFilter').value
     saveFilters()
 
     filteredOrders = allOrders.filter(o => {
       if (search && !((o.customerName||'').toLowerCase().includes(search) || (o.orderNumber||'').toLowerCase().includes(search))) return false
       if (statusF && o.status !== statusF) return false
       if (lokasiF && (o.lokasiNama || 'Pusat') !== lokasiF) return false
+      if (dlF && statusDownload(o) !== dlF) return false
       if (urgentF) {
         const sisa = sisaHari(o.dueDate)
         if (urgentF === 'urgent' && (sisa === null || sisa > 2)) return false
@@ -273,12 +318,17 @@
 
   function renderTable() {
     const tbody = document.getElementById('sheetBody')
+    const perluDl = allOrders.filter(o => statusDownload(o) !== 'sudah').length
+    const bar = document.getElementById('dlBar')
+    bar.style.display = bolehDownload() ? 'flex' : 'none'
+    document.getElementById('btnDlBaru').textContent = `⬇ Download yang belum / berubah (${perluDl})`
+    document.getElementById('btnDlBaru').disabled = !perluDl
     document.getElementById('sheetCount').textContent = filteredOrders.length
       ? `${filteredOrders.length} order ditampilkan${allOrders.length !== filteredOrders.length ? ' (dari ' + allOrders.length + ' total)' : ''}`
       : ''
 
     if (!filteredOrders.length) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:32px;color:rgba(3,69,67,.35)">
         ${allOrders.length ? 'Tidak ada order sesuai filter' : 'Tidak ada order aktif untuk divisi ini 🎉'}
       </td></tr>`
       return
@@ -323,7 +373,13 @@
 
       const pct = o.progressPercentage || 0
 
-      return `<tr id="row-${o.id}">
+      const dl = statusDownload(o)
+      const dlCell = dl === 'belum'
+        ? '<span class="dl-badge dl-belum">⬇ Belum</span>'
+        : `<span class="dl-badge ${dl === 'berubah' ? 'dl-berubah' : 'dl-sudah'}">${dl === 'berubah' ? '⚠ Berubah' : '✓ Sudah'}</span>
+           <div class="dl-oleh">${(o.sheetDownloadedBy || '').replace(/</g, '&lt;')} · ${fmtWaktu(o.sheetDownloadedAt)}${(o.sheetDownloadCount || 0) > 1 ? ` · ${o.sheetDownloadCount}x` : ''}</div>`
+
+      return `<tr id="row-${o.id}" class="${dl !== 'sudah' ? 'row-belum' : ''}">
         <td>
           <div class="order-num">${o.orderNumber || '—'}</div>
           <div style="font-size:10px;color:rgba(3,69,67,.3);margin-top:2px">${o.lokasiNama || 'Pusat'}</div>
@@ -362,8 +418,82 @@
             ${statusOpts}
           </select>
         </td>
+        <td>${dlCell}</td>
       </tr>`
     }).join('')
+  }
+
+  function muatXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX)
+    return new Promise((res, rej) => {
+      const sc = document.createElement('script')
+      sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+      sc.onload = () => res(window.XLSX)
+      sc.onerror = () => rej(new Error('Library Excel gagal dimuat'))
+      document.head.appendChild(sc)
+    })
+  }
+
+  // mode 'baru' = yang belum/berubah, 'tampil' = semua baris yang sedang tampil (sesuai filter)
+  window.downloadSheet = async function(mode) {
+    if (!bolehDownload()) return
+    const rows = mode === 'baru' ? allOrders.filter(o => statusDownload(o) !== 'sudah') : filteredOrders
+    if (!rows.length) { alert('Tidak ada order untuk didownload.'); return }
+    const dot = document.getElementById('savingDot')
+    dot.style.display = 'inline-block'
+    try {
+      const XLSX = await muatXlsx()
+      const papanKeyword = activeComposite ? activeComposite.find(c => c.keyword)?.keyword : null
+      const data = rows.map(o => {
+        const items = (papanKeyword && o.division !== activeDiv)
+          ? (o.orderItems || []).filter(it => (it.name || '').toLowerCase().includes(papanKeyword))
+          : (o.orderItems || [])
+        const ukuran = o.sizeBreakdown ? Object.entries(o.sizeBreakdown).filter(([, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(', ') : ''
+        return {
+          'No Order': o.orderNumber || '',
+          'Pelanggan': o.customerName || '',
+          'Item': items.map(it => `${it.name || ''}${it.varian ? ' · ' + it.varian : ''}${it.qty ? ' (' + it.qty + ')' : ''}`).join('\n') || o.varian || '',
+          'Nama Custom': items.map(it => it.namaCustom).filter(Boolean).join('\n'),
+          'Qty': items.reduce((s, it) => s + (it.qty || 0), 0) || o.qty || '',
+          'Ukuran': ukuran,
+          'Target': o.dueDate || '',
+          'Lokasi': o.lokasiNama || 'Pusat',
+          'Status': STATUS_LABEL[o.status] || o.status || '',
+          'Catatan': o.notes || '',
+          'File Desain': (o.designFiles || []).join('\n'),
+          'Status Download': statusDownload(o) === 'berubah' ? 'DIUBAH sejak download sebelumnya' : statusDownload(o) === 'belum' ? 'Baru' : 'Pernah didownload',
+        }
+      })
+      const ws = XLSX.utils.json_to_sheet(data)
+      ws['!cols'] = [14, 22, 34, 22, 6, 18, 11, 12, 16, 30, 40, 22].map(w => ({ wch: w }))
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Papan Nama')
+      const tgl = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '')
+      XLSX.writeFile(wb, `PapanNama_${activeDiv}_${tgl}.xlsx`)
+
+      // Catat siapa yang mengunduh (per order) — dipakai untuk tanggung jawab produksi
+      const now = Timestamp.now()
+      for (let i = 0; i < rows.length; i += 400) {
+        const batch = writeBatch(db)
+        rows.slice(i, i + 400).forEach(o => batch.update(doc(db, 'orders', o.id), {
+          sheetDownloadedAt: now,
+          sheetDownloadedBy: _profile?.name || '',
+          sheetDownloadedByUid: _profile?.id || '',
+          sheetDownloadSig: sidikOrder(o),
+          sheetDownloadCount: increment(1),
+        }))
+        await batch.commit()
+      }
+      rows.forEach(o => Object.assign(o, {
+        sheetDownloadedAt: now, sheetDownloadedBy: _profile?.name || '', sheetDownloadSig: sidikOrder(o),
+        sheetDownloadCount: (o.sheetDownloadCount || 0) + 1,
+      }))
+      applyFilter()
+    } catch (e) {
+      alert('Gagal download: ' + e.message)
+    } finally {
+      dot.style.display = 'none'
+    }
   }
 
   window.toggleNotes = function(orderId) {

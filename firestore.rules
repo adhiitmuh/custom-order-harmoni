@@ -75,8 +75,14 @@ service cloud.firestore {
     match /order_counters/{div} {
       allow read, write: if isStaffAuth();
     }
+    // Daftar harga lengkap (harga modal/promo/admin) — hanya staf
     match /price_list/{div} {
-      allow read: if isAuth(); // Customers can see priceNormal — chat.html strips priceModal/pricePromo/priceAdmin
+      allow read: if isStaffAuth();
+      allow write: if isOwnerOrCS() || isData() || isDivisiOwnerOf(div);
+    }
+    // Salinan untuk customer (chat.html): hanya harga jual, disinkron dari knowledge.html
+    match /price_list_public/{div} {
+      allow read: if isAuth();
       allow write: if isOwnerOrCS() || isData() || isDivisiOwnerOf(div);
     }
     match /settings/{id} {

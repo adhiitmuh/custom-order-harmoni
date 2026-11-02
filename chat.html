@@ -171,10 +171,11 @@
     const knowledgeSnap = await gd(collection(db,'product_knowledge'))
     const allKnowledge = knowledgeSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.orderIndex||0)-(b.orderIndex||0))
 
-    // price_list — readable by isAuth (anonymous ok). Strip all tiers except priceNormal.
+    // price_list_public — salinan berisi harga jual saja (price_list lengkap khusus staf).
+    // Tetap buang harga lain sebagai pengaman tambahan.
     const allPrices = {}
     try {
-      const priceSnaps = await Promise.all(DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list',d))))
+      const priceSnaps = await Promise.all(DIVISIONS_ALL.map(d => getDoc(doc(db,'price_list_public',d))))
       DIVISIONS_ALL.forEach((d,i) => {
         if (priceSnaps[i].exists()) {
           const { items, ...rest } = priceSnaps[i].data()

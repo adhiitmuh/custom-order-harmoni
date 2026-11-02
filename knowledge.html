@@ -98,6 +98,15 @@
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
 
+  // Salinan publik daftar harga untuk chat customer: hanya harga jual (priceNormal).
+  // price_list lengkap (modal/promo/admin) hanya bisa dibaca staf — lihat firestore.rules.
+  const hargaPublik = items => (items || []).map(({ priceModal, pricePromo, priceAdmin, ...item }) => item)
+  async function sinkronHargaPublik(division, items) {
+    try {
+      await setDoc(doc(db, 'price_list_public', division), { division, items: hargaPublik(items), updatedAt: Timestamp.now() })
+    } catch (err) { console.warn('Gagal sinkron harga publik', division, err.message) }
+  }
+
   const params = new URLSearchParams(location.search)
   let activeDiv = params.get('div') || ''
   let editingDocId = null
@@ -162,6 +171,15 @@
         const pSnap = await getDoc(doc(db,'price_list',d))
         if (pSnap.exists()) priceData[d] = pSnap.data()
       }))
+      // Owner: pastikan salinan publik ada & terbaru (sekali jalan untuk data lama)
+      if (getProfile()?.role === 'owner') {
+        Promise.all(Object.entries(priceData).map(async ([d, data]) => {
+          const pub = await getDoc(doc(db, 'price_list_public', d)).catch(() => null)
+          const tPub = pub?.exists() ? (pub.data().updatedAt?.toMillis?.() || 0) : -1
+          const tSrc = data.updatedAt?.toMillis?.() || (data.updatedAt instanceof Date ? data.updatedAt.getTime() : 0)
+          if (tPub < tSrc || tPub === -1) await sinkronHargaPublik(d, data.items)
+        })).catch(() => {})
+      }
       divsToShow.forEach(d => {
         if (!_inlineSaveTimers[d]) {
           priceDataStore[d] = { items: [...(priceData[d]?.items || [])] }
@@ -497,6 +515,7 @@
     btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
       await setDoc(doc(db,'price_list',editingPriceDiv), { division: editingPriceDiv, items, updatedAt: Timestamp.now() })
+      await sinkronHargaPublik(editingPriceDiv, items)
       priceDataStore[editingPriceDiv].items = items
       closePriceModal()
       delete contentCache[editingPriceDiv]
@@ -535,6 +554,7 @@
       await setDoc(doc(db,'price_list',editingPriceDiv), {
         division: editingPriceDiv, items, updatedAt: Timestamp.now()
       })
+      await sinkronHargaPublik(editingPriceDiv, items)
       closePriceModal()
       delete contentCache[editingPriceDiv || '__all__']
       delete contentCache['__all__']
@@ -708,6 +728,7 @@
         rerenderPriceWrap(division)
         try {
           await setDoc(doc(db, 'price_list', division), { items, updatedAt: new Date() }, { merge: true })
+          await sinkronHargaPublik(division, items)
         } catch(err) { console.error(err) }
       })
     })
@@ -779,6 +800,7 @@
     }
     try {
       await setDoc(doc(db,'price_list',division), { division, items, updatedAt: Timestamp.now() })
+      await sinkronHargaPublik(division, items)
       delete contentCache[division]
       delete contentCache['__all__']
       showSavedToast()
