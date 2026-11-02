@@ -595,7 +595,7 @@
               <textarea id="progressNote" placeholder="Keterangan update progress…" rows="2" style="margin-bottom:8px"></textarea>
               <div style="margin-bottom:10px">
                 <label style="font-size:11px;font-weight:600;color:rgba(3,69,67,.5);display:block;margin-bottom:4px">📸 Foto Progress (opsional)</label>
-                <input type="file" id="progressFiles" multiple accept="image/*" onchange="previewProgressFiles(this)"
+                <input type="file" id="progressFiles" data-tf-tambah="1" multiple accept="image/*" onchange="previewProgressFiles(this)"
                   style="font-size:12px;width:100%;border:1.5px dashed rgba(3,69,67,.2);padding:8px;border-radius:8px;background:white;cursor:pointer">
                 <div id="progressFilePreview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
               </div>
@@ -2894,5 +2894,6 @@
     window.open(url,'_blank')
   }
 </script>
+<script type="module" src="js/tempel-file.js"></script>
 </body>
 </html>
