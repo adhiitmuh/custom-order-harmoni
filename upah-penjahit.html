@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Upah Penjahit — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .up-row { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border-radius:10px; background:var(--beige-soft); margin-bottom:6px; }
+    .up-row.nonaktif { opacity:.55; }
+    .up-row input[type=checkbox] { width:18px; height:18px; margin-top:2px; accent-color:var(--green); flex-shrink:0; }
+    .pg-card { background:var(--white); border-radius:14px; border:1px solid rgba(3,69,67,.08); padding:16px 18px; margin-bottom:10px; }
+    .pg-card.sorot { box-shadow:0 0 0 3px rgba(5,150,105,.35); }
+    .st { font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+    .st-diajukan { background:#fffbeb; color:#b45309; border:1px solid #fde68a; }
+    .st-dibayar { background:#ecfdf5; color:#047857; }
+    .st-batal { background:rgba(3,69,67,.06); color:rgba(3,69,67,.45); }
+    .rek { font-size:12px; color:#075985; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:7px 10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .tab-st { padding:6px 14px; border-radius:999px; font-size:12px; font-weight:700; border:1.5px solid rgba(3,69,67,.15); background:transparent; color:var(--green); cursor:pointer; font-family:inherit; }
+    .tab-st.aktif { background:var(--green); color:var(--beige); border-color:var(--green); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:20px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PRODUKSI</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Upah Penjahit</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Kumpulkan kerjaan penjahit dari beberapa order, ajukan ke Owner lewat WhatsApp, lalu Owner menandai sudah ditransfer.</p>
+    </div>
+
+    <!-- Buat pengajuan -->
+    <div class="card" style="margin-bottom:18px" id="buatWrap">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:10px">1. Pilih penjahit</h2>
+      <select id="pilihPenjahit" style="max-width:360px"><option value="">— Pilih penjahit —</option></select>
+      <div id="rekPenjahit" style="margin-top:10px"></div>
+      <div id="daftarKerjaan" style="margin-top:12px"></div>
+      <div id="aksiBuat" style="display:none;margin-top:12px;display:none;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:13px">Dipilih: <b id="jmlDipilih">0</b> order · Total <b id="totalDipilih">Rp0</b></div>
+        <input type="text" id="catatanPengajuan" placeholder="Catatan untuk Owner (opsional)" style="flex:1;min-width:180px;font-size:13px">
+        <button class="btn btn-primary" id="btnBuat" onclick="buatPengajuan()">Buat Pengajuan</button>
+      </div>
+    </div>
+
+    <!-- Daftar pengajuan -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="font-size:15px;font-weight:800">3. Daftar Pengajuan</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="tab-st aktif" data-st="diajukan" onclick="pilihTab('diajukan')">⏳ Menunggu transfer</button>
+        <button class="tab-st" data-st="dibayar" onclick="pilihTab('dibayar')">✓ Sudah ditransfer</button>
+        <button class="tab-st" data-st="batal" onclick="pilihTab('batal')">Dibatalkan</button>
+      </div>
+    </div>
+    <div id="daftarPengajuan"><div class="loading">Memuat…</div></div>
+
+    <!-- Pengaturan owner -->
+    <div class="card" id="setelanOwner" style="display:none;margin-top:18px">
+      <h2 style="font-size:13px;font-weight:700;margin-bottom:8px">⚙️ No. WA Owner untuk pengajuan</h2>
+      <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:8px">Pesan "Kirim ke Owner" dari CS akan dikirim ke nomor ini. Kosongkan bila ingin CS memilih kontak sendiri di WhatsApp.</p>
+      <div style="display:flex;gap:8px;max-width:380px">
+        <input type="tel" id="waOwner" placeholder="08xxxxxxxxxx" style="font-size:13px">
+        <button class="btn btn-ghost btn-sm" onclick="simpanWaOwner()">Simpan</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, getProfile, dataAuthReady, ordersQuery, canSeeOrder } from './js/auth.js'
+  import { collection, getDocs, getDoc, doc, setDoc, updateDoc, writeBatch, where, Timestamp, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { daftarPenjahit, pembayaranPenjahit, DIVISI_PENJAHIT } from './js/penjahit.js'
+  import { normalNoWa } from './js/notifwa.js'
+
+  const APP_URL = 'https://adhiitmuh.github.io/custom-order-harmoni/'
+  const rp = n => 'Rp' + Math.round(Number(n) || 0).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const tgl = ts => ts?.toDate ? ts.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+
+  let profile, orders = [], master = [], pengajuan = [], tab = 'diajukan', waOwner = ''
+  const sorotId = new URLSearchParams(location.search).get('id')
+
+  requireAuth(async (p) => {
+    profile = p
+    if (!['owner', 'cs', 'production'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    if (p.role === 'owner') document.getElementById('setelanOwner').style.display = ''
+    await muat()
+    if (sorotId) {
+      const pg = pengajuan.find(x => x.id === sorotId)
+      if (pg) pilihTab(pg.status || 'diajukan')
+      setTimeout(() => document.getElementById('pg-' + sorotId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+    }
+  })
+
+  async function muat() {
+    const [oSnap, mSnap, pSnap, sSnap] = await Promise.all([
+      getDocs(ordersQuery(profile, where('division', 'in', DIVISI_PENJAHIT))),
+      getDocs(collection(db, 'penjahit')).catch(() => ({ docs: [] })),
+      getDocs(collection(db, 'pengajuan_upah')).catch(() => ({ docs: [] })),
+      getDoc(doc(db, 'settings', 'pengajuan_upah')).catch(() => null),
+    ])
+    orders = oSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status !== 'cancelled' && canSeeOrder(o, profile))
+    master = mSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.nama)
+    pengajuan = pSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+    waOwner = sSnap?.exists?.() ? (sSnap.data().waOwner || '') : ''
+    document.getElementById('waOwner').value = waOwner
+    isiPilihanPenjahit()
+    renderKerjaan()
+    renderPengajuan()
+  }
+
+  // Kunci identitas penjahit: id master bila ada, kalau tidak nama (data lama)
+  const kunciPenjahit = t => t.penjahitId || ('nama:' + String(t.nama || '').trim().toLowerCase())
+  const masterDari = kunci => master.find(m => m.id === kunci) || master.find(m => 'nama:' + m.nama.trim().toLowerCase() === kunci)
+  // Kerjaan yang sedang ada di pengajuan aktif (tidak boleh diajukan dobel)
+  const sedangDiajukan = () => new Map(pengajuan.filter(p => p.status === 'diajukan')
+    .flatMap(p => (p.items || []).map(it => [it.orderId + ':' + it.entryId, p])))
+
+  function semuaKerjaan() {
+    const aktif = sedangDiajukan()
+    const hasil = []
+    orders.forEach(o => daftarPenjahit(o).forEach(t => {
+      if (pembayaranPenjahit(o, t)) return          // sudah ditransfer
+      hasil.push({ o, t, kunci: kunciPenjahit(t), pengajuanAktif: aktif.get(o.id + ':' + t.id) || null })
+    }))
+    return hasil
+  }
+
+  function isiPilihanPenjahit() {
+    const sel = document.getElementById('pilihPenjahit'), lama = sel.value
+    const kelompok = new Map()
+    semuaKerjaan().forEach(k => {
+      const g = kelompok.get(k.kunci) || { nama: masterDari(k.kunci)?.nama || k.t.nama, n: 0, total: 0 }
+      if (!k.pengajuanAktif) { g.n++; g.total += Number(k.t.upah) || 0 }
+      kelompok.set(k.kunci, g)
+    })
+    sel.innerHTML = '<option value="">— Pilih penjahit —</option>' + [...kelompok.entries()]
+      .sort((a, b) => a[1].nama.localeCompare(b[1].nama))
+      .map(([k, g]) => `<option value="${esc(k)}">${esc(g.nama)} — ${g.n} kerjaan belum dibayar${g.total ? ' · ' + rp(g.total) : ''}</option>`).join('')
+    sel.value = lama
+    sel.onchange = renderKerjaan
+  }
+
+  function renderKerjaan() {
+    const kunci = document.getElementById('pilihPenjahit').value
+    const wrap = document.getElementById('daftarKerjaan'), rekEl = document.getElementById('rekPenjahit')
+    document.getElementById('aksiBuat').style.display = 'none'
+    if (!kunci) { wrap.innerHTML = ''; rekEl.innerHTML = ''; return }
+    const m = masterDari(kunci)
+    rekEl.innerHTML = m?.noRek
+      ? `<div class="rek">🏦 ${esc(m.bank)} <b style="font-family:monospace">${esc(m.noRek)}</b> a.n. ${esc(m.atasNama)}</div>`
+      : `<div class="rek" style="color:#b45309;background:#fffbeb;border-color:#fde68a">🏦 Rekening penjahit ini belum ada — isi lewat tombol Edit di salah satu order-nya.</div>`
+    const list = semuaKerjaan().filter(k => k.kunci === kunci)
+      .sort((a, b) => String(a.o.dueDate || '').localeCompare(String(b.o.dueDate || '')))
+    if (!list.length) { wrap.innerHTML = '<p style="font-size:13px;color:rgba(3,69,67,.45)">Semua kerjaan penjahit ini sudah dibayar 🎉</p>'; return }
+    wrap.innerHTML = '<h2 style="font-size:14px;font-weight:700;margin-bottom:8px">2. Centang kerjaan yang mau diajukan</h2>' + list.map(k => {
+      const bisa = !k.pengajuanAktif && Number(k.t.upah) > 0
+      const alasan = k.pengajuanAktif ? `sudah diajukan oleh ${esc(k.pengajuanAktif.dibuatOleh || '-')} · ${tgl(k.pengajuanAktif.createdAt)}` : !(Number(k.t.upah) > 0) ? 'upah belum diisi di order' : ''
+      return `<label class="up-row ${bisa ? '' : 'nonaktif'}">
+        <input type="checkbox" class="cekKerjaan" data-order="${k.o.id}" data-entry="${esc(k.t.id)}" ${bisa ? 'checked' : 'disabled'} onchange="hitungDipilih()">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:700"><a href="order.html?id=${k.o.id}" target="_blank" style="color:var(--green)">${esc(k.o.orderNumber || '')}</a> · ${esc(k.o.customerName || '')}</div>
+            <div style="font-size:13px;font-weight:800">${Number(k.t.upah) > 0 ? rp(k.t.upah) : '—'}</div>
+          </div>
+          <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${k.t.qty ? esc(k.t.qty) + ' pcs' : ''}${k.t.catatan ? ' · ' + esc(k.t.catatan) : ''}${k.o.dueDate ? ' · target ' + esc(k.o.dueDate) : ''}</div>
+          ${alasan ? `<div style="font-size:11px;color:#b45309;margin-top:2px">⚠ ${alasan}</div>` : ''}
+        </div>
+      </label>`
+    }).join('')
+    document.getElementById('aksiBuat').style.display = 'flex'
+    hitungDipilih()
+  }
+
+  window.hitungDipilih = function() {
+    const dipilih = [...document.querySelectorAll('.cekKerjaan:checked')]
+    const total = dipilih.reduce((t, c) => {
+      const o = orders.find(x => x.id === c.dataset.order)
+      const e = daftarPenjahit(o).find(x => x.id === c.dataset.entry)
+      return t + (Number(e?.upah) || 0)
+    }, 0)
+    document.getElementById('jmlDipilih').textContent = dipilih.length
+    document.getElementById('totalDipilih').textContent = rp(total)
+    document.getElementById('btnBuat').disabled = !dipilih.length
+  }
+
+  window.buatPengajuan = async function() {
+    const kunci = document.getElementById('pilihPenjahit').value
+    const m = masterDari(kunci)
+    const items = [...document.querySelectorAll('.cekKerjaan:checked')].map(c => {
+      const o = orders.find(x => x.id === c.dataset.order)
+      const e = daftarPenjahit(o).find(x => x.id === c.dataset.entry)
+      return { orderId: o.id, orderNumber: o.orderNumber || '', customerName: o.customerName || '', division: o.division,
+               entryId: e.id, qty: e.qty || null, upah: Number(e.upah) || 0, catatan: e.catatan || '' }
+    })
+    if (!items.length) return
+    const aktif = sedangDiajukan()
+    if (items.some(it => aktif.has(it.orderId + ':' + it.entryId))) { alert('Ada kerjaan yang sudah diajukan. Muat ulang halaman.'); return }
+    const btn = document.getElementById('btnBuat'); btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      const ref = doc(collection(db, 'pengajuan_upah'))
+      const data = {
+        status: 'diajukan', penjahitId: m?.id || null, penjahitNama: m?.nama || items.length && daftarPenjahit(orders.find(o => o.id === items[0].orderId)).find(e => e.id === items[0].entryId)?.nama || '',
+        bank: m?.bank || '', noRek: m?.noRek || '', atasNama: m?.atasNama || '',
+        items, total: items.reduce((t, it) => t + it.upah, 0),
+        catatan: document.getElementById('catatanPengajuan').value.trim(),
+        dibuatOleh: profile.name || '', dibuatOlehUid: profile.id || '', createdAt: Timestamp.now(),
+      }
+      await setDoc(ref, data)
+      pengajuan.unshift({ id: ref.id, ...data })
+      document.getElementById('catatanPengajuan').value = ''
+      isiPilihanPenjahit(); renderKerjaan(); pilihTab('diajukan')
+      kirimWa(ref.id)   // langsung tawarkan kirim ke Owner
+    } catch (err) { alert('Gagal membuat pengajuan: ' + err.message) }
+    finally { btn.disabled = false; btn.textContent = 'Buat Pengajuan' }
+  }
+
+  function pesanWa(p) {
+    const baris = (p.items || []).map((it, i) => `${i + 1}. ${it.orderNumber} · ${it.customerName}${it.qty ? ' · ' + it.qty + ' pcs' : ''} · ${rp(it.upah)}`).join('\n')
+    return `🧵 *Pengajuan Upah Penjahit*\n\nPenjahit: *${p.penjahitNama}*\nRekening: ${p.noRek ? `${p.bank} ${p.noRek} a.n. ${p.atasNama}` : '(belum ada)'}\n\n${baris}\n\n*Total: ${rp(p.total)}* (${(p.items || []).length} order)${p.catatan ? '\nCatatan: ' + p.catatan : ''}\nDiajukan oleh: ${p.dibuatOleh}\n\nCek & tandai sudah transfer:\n${APP_URL}upah-penjahit.html?id=${p.id}`
+  }
+  window.kirimWa = function(id) {
+    const p = pengajuan.find(x => x.id === id); if (!p) return
+    const no = normalNoWa(waOwner)
+    window.open(`https://wa.me/${no}?text=${encodeURIComponent(pesanWa(p))}`, '_blank')
+  }
+
+  window.pilihTab = function(st) {
+    tab = st
+    document.querySelectorAll('.tab-st').forEach(b => b.classList.toggle('aktif', b.dataset.st === st))
+    renderPengajuan()
+  }
+
+  function renderPengajuan() {
+    const el = document.getElementById('daftarPengajuan')
+    const list = pengajuan.filter(p => (p.status || 'diajukan') === tab)
+    if (!list.length) { el.innerHTML = `<div class="empty"><p>${tab === 'diajukan' ? 'Tidak ada pengajuan yang menunggu transfer' : 'Belum ada data'}</p></div>`; return }
+    const isOwner = profile.role === 'owner'
+    el.innerHTML = list.map(p => {
+      const st = p.status || 'diajukan'
+      const bolehBatal = st === 'diajukan' && (isOwner || p.dibuatOlehUid === profile.id)
+      // Rekening dari pengajuan; bila kosong ambil dari daftar penjahit terbaru
+      if (!p.noRek) { const m = p.penjahitId && master.find(x => x.id === p.penjahitId); if (m?.noRek) Object.assign(p, { bank: m.bank, noRek: m.noRek, atasNama: m.atasNama }) }
+      return `<div class="pg-card ${p.id === sorotId ? 'sorot' : ''}" id="pg-${p.id}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px">
+          <div>
+            <div style="font-size:15px;font-weight:800">🧵 ${esc(p.penjahitNama)}</div>
+            <div style="font-size:11px;color:rgba(3,69,67,.5)">Diajukan ${esc(p.dibuatOleh)} · ${tgl(p.createdAt)}${p.catatan ? ' · “' + esc(p.catatan) + '”' : ''}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:17px;font-weight:800">${rp(p.total)}</div>
+            <span class="st st-${st}">${st === 'diajukan' ? '⏳ MENUNGGU TRANSFER' : st === 'dibayar' ? '✓ SUDAH DITRANSFER' : 'DIBATALKAN'}</span>
+          </div>
+        </div>
+        ${p.noRek ? `<div class="rek" style="margin-bottom:8px">🏦 ${esc(p.bank)} <b style="font-family:monospace">${esc(p.noRek)}</b> a.n. ${esc(p.atasNama)}
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="salin('${esc(p.noRek)}')">Salin</button></div>` : '<div class="rek" style="margin-bottom:8px;color:#b45309">🏦 Rekening belum ada</div>'}
+        <div style="font-size:12px;margin-bottom:8px">${(p.items || []).map((it, i) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(3,69,67,.06)">
+          <span>${i + 1}. <a href="order.html?id=${it.orderId}" target="_blank" style="color:var(--green)">${esc(it.orderNumber)}</a> · ${esc(it.customerName)}${it.qty ? ' · ' + esc(it.qty) + ' pcs' : ''}</span><b>${rp(it.upah)}</b></div>`).join('')}</div>
+        ${st === 'dibayar' ? `<div style="font-size:12px;color:#047857;font-weight:700">✓ Ditransfer ${rp(p.jumlahDibayar ?? p.total)} oleh ${esc(p.dibayarOleh || '')} · ${tgl(p.dibayarAt)}</div>` : ''}
+        ${st === 'batal' ? `<div style="font-size:12px;color:rgba(3,69,67,.5)">Dibatalkan ${esc(p.batalOleh || '')} · ${tgl(p.batalAt)}</div>` : ''}
+        ${st === 'diajukan' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button class="btn btn-sm" style="background:#25d366;color:#fff" onclick="kirimWa('${p.id}')">📲 Kirim ke Owner via WA</button>
+          ${isOwner ? `<button class="btn btn-green btn-sm" onclick="tandaiDibayar('${p.id}')">✓ Sudah saya transfer</button>` : ''}
+          ${bolehBatal ? `<button class="btn btn-ghost btn-sm" style="color:#b91c1c" onclick="batalkan('${p.id}')">Batalkan</button>` : ''}
+        </div>` : ''}
+      </div>`
+    }).join('')
+  }
+
+  window.salin = function(no) {
+    navigator.clipboard?.writeText(no).then(() => alert('No. rekening disalin: ' + no)).catch(() => prompt('Salin nomor rekening:', no))
+  }
+
+  // Owner: tandai seluruh pengajuan sudah ditransfer → setiap kerjaan di order ikut bertanda lunas
+  window.tandaiDibayar = async function(id) {
+    const p = pengajuan.find(x => x.id === id); if (!p) return
+    const isian = prompt(`Total yang ditransfer ke ${p.penjahitNama} (Rp):`, Math.round(p.total).toLocaleString('id-ID'))
+    if (isian === null) return
+    const jumlah = parseInt(String(isian).replace(/\D/g, '')) || 0
+    if (!jumlah) { alert('Isi nominal yang ditransfer'); return }
+    if (jumlah !== p.total && !confirm(`Nominal ${rp(jumlah)} berbeda dari total pengajuan ${rp(p.total)}. Tetap simpan?`)) return
+    try {
+      const now = Timestamp.now(), oleh = profile.name || ''
+      const batch = writeBatch(db)
+      // Bagi nominal ke tiap kerjaan sesuai upahnya (sisa pembulatan ke kerjaan terakhir)
+      let sisa = jumlah
+      ;(p.items || []).forEach((it, i, arr) => {
+        const bagian = i === arr.length - 1 ? sisa : Math.round(jumlah * (it.upah / (p.total || 1)))
+        sisa -= bagian
+        batch.update(doc(db, 'orders', it.orderId), { [`tailorPayments.${it.entryId}`]: { jumlah: bagian, at: now, by: oleh, pengajuanId: id }, updatedAt: now })
+      })
+      batch.update(doc(db, 'pengajuan_upah', id), { status: 'dibayar', jumlahDibayar: jumlah, dibayarOleh: oleh, dibayarAt: now })
+      await batch.commit()
+      await muat(); pilihTab('dibayar')
+    } catch (err) { alert('Gagal menyimpan: ' + err.message) }
+  }
+
+  window.batalkan = async function(id) {
+    const p = pengajuan.find(x => x.id === id); if (!p || !confirm(`Batalkan pengajuan ${p.penjahitNama} (${rp(p.total)})?`)) return
+    try {
+      await updateDoc(doc(db, 'pengajuan_upah', id), { status: 'batal', batalOleh: profile.name || '', batalAt: Timestamp.now() })
+      await muat()
+    } catch (err) { alert('Gagal: ' + err.message) }
+  }
+
+  window.simpanWaOwner = async function() {
+    const no = normalNoWa(document.getElementById('waOwner').value)
+    try { await setDoc(doc(db, 'settings', 'pengajuan_upah'), { waOwner: no }, { merge: true }); waOwner = no; alert(no ? 'Tersimpan: ' + no : 'Nomor dikosongkan') }
+    catch (err) { alert('Gagal: ' + err.message) }
+  }
+</script>
+</body>
+</html>

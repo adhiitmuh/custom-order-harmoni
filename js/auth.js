@@ -364,6 +364,10 @@ export function renderSidebar(profile) {
       <a href="production-sheet.html" class="sidebar-link ${page==='production-sheet.html'?'active':''}">
         <span class="icon">🗂️</span>Papan Nama Sheet
       </a>` : ''}
+      ${['owner', 'cs', 'production'].includes(profile.role) ? `
+      <a href="upah-penjahit.html" class="sidebar-link ${page==='upah-penjahit.html'?'active':''}">
+        <span class="icon">🧵</span>Upah Penjahit
+      </a>` : ''}
     </div>
 
     ${!isDivisi && (profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs') ? `

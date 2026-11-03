@@ -100,6 +100,18 @@ service cloud.firestore {
                  .hasOnly(['bank', 'noRek', 'atasNama', 'updatedAt', 'updatedBy']));
       allow delete: if isOwner();
     }
+    // Pengajuan upah penjahit (kumpulan beberapa order) — CS/produksi mengajukan, Owner menandai dibayar
+    match /pengajuan_upah/{id} {
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow create: if isStaffAuth() && role() in ['owner', 'cs', 'production']
+        && request.resource.data.status == 'diajukan'
+        && request.resource.data.dibuatOlehUid == request.auth.uid;
+      allow update: if isOwner()
+        || (isStaffAuth() && resource.data.dibuatOlehUid == request.auth.uid
+            && resource.data.status == 'diajukan' && request.resource.data.status == 'batal'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'batalOleh', 'batalAt']));
+      allow delete: if isOwner();
+    }
     match /settings/{id} {
       allow read: if isStaffAuth();
       allow write: if isOwner();   // rekening bank, QRIS, target omzet — hanya owner
