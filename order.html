@@ -543,7 +543,7 @@
           <!-- Info Penjahit (jersey/tailor): beberapa penjahit per order + status transfer upah (Owner) -->
           ${['jersey','tailor'].includes(order.division) && (profile.role === 'owner' || hasProductionAccess(profile, order.division) || profile.role === 'cs') ? (() => {
             const isOwnerP = profile.role === 'owner'
-            const bolehUbah = isOwnerP || hasProductionAccess(profile, order.division)
+            const bolehUbah = isOwnerP || profile.role === 'cs' || hasProductionAccess(profile, order.division)
             const list = daftarPenjahit(order)
             const st = statusUpahPenjahit(order)
             const esc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
@@ -554,6 +554,10 @@
                 <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">
                   <div style="min-width:0">
                     <div style="font-size:13px;font-weight:700">🧵 ${esc(t.nama)}</div>
+                    ${(() => { const m = masterPenjahit(t); return m?.noRek
+                      ? `<div style="font-size:11px;color:#075985;margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">🏦 ${esc(m.bank || '')} <b style="font-family:monospace">${esc(m.noRek)}</b> a.n. ${esc(m.atasNama || '-')}
+                          <button onclick="salinRek('${esc(m.noRek)}')" style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid rgba(7,89,133,.3);background:white;color:#075985;cursor:pointer;font-family:inherit">Salin</button></div>`
+                      : `<div style="font-size:11px;color:#b45309;margin-top:2px">🏦 Rekening belum ada${bolehUbah ? ' — tekan Edit untuk mengisi' : ''}</div>` })()}
                     <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${t.qty ? esc(t.qty) + ' pcs' : ''}${t.qty && t.catatan ? ' · ' : ''}${esc(t.catatan || '')}${!t.qty && !t.catatan ? 'Bagian belum diisi' : ''}</div>
                   </div>
                   <div style="text-align:right;font-size:13px;font-weight:700">${t.upah ? fmtCurrency(t.upah) : '<span style="font-size:11px;color:#b45309">upah belum diisi</span>'}</div>
@@ -585,14 +589,24 @@
             <div id="formPenjahit" style="display:none;background:white;border:1.5px dashed rgba(3,69,67,.2);border-radius:10px;padding:12px;margin-bottom:10px">
               <input type="hidden" id="pjId">
               <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
-                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Nama penjahit *</label><input type="text" id="pjNama" list="pjDaftar" placeholder="Nama penjahit…" style="font-size:13px"></div>
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Nama penjahit * <span style="opacity:.7">(pilih dari daftar atau ketik baru)</span></label><input type="text" id="pjNama" list="pjDaftar" placeholder="Nama penjahit…" oninput="pilihPenjahitDariNama()" autocomplete="off" style="font-size:13px"></div>
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah (pcs)</label><input type="number" id="pjQty" min="0" placeholder="0" style="font-size:13px"></div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:8px">
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Upah (Rp)</label><input type="text" inputmode="numeric" id="pjUpah" placeholder="0" oninput="this.value=fmtInputPrice(this.value)" style="font-size:13px"></div>
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Bagian / catatan</label><input type="text" id="pjCatatan" placeholder="cth: badan + lengan ukuran S–L" style="font-size:13px"></div>
               </div>
-              <datalist id="pjDaftar">${[...new Set(list.map(t => t.nama).concat(_namaPenjahitTersimpan))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+              <div id="pjRekWrap" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+                <div style="font-size:11px;font-weight:700;color:#075985;margin-bottom:6px" id="pjRekJudul">🏦 Rekening penjahit (wajib untuk penjahit baru)</div>
+                <div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr;gap:8px">
+                  <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Bank / e-wallet *</label><input type="text" id="pjBank" list="pjBankList" placeholder="BCA, BRI, DANA…" style="font-size:13px"></div>
+                  <div><label style="font-size:11px;color:rgba(3,69,67,.5)">No. rekening *</label><input type="text" inputmode="numeric" id="pjNoRek" placeholder="1234567890" style="font-size:13px;font-family:monospace"></div>
+                  <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Atas nama *</label><input type="text" id="pjAtasNama" placeholder="Nama di rekening" style="font-size:13px"></div>
+                </div>
+                <div id="pjRekInfo" style="font-size:10px;color:rgba(3,69,67,.5);margin-top:6px"></div>
+              </div>
+              <datalist id="pjBankList">${['BCA','BRI','BNI','Mandiri','BSI','CIMB Niaga','Danamon','BTN','SeaBank','Jago','DANA','OVO','GoPay','ShopeePay'].map(b => `<option value="${b}">`).join('')}</datalist>
+              <datalist id="pjDaftar">${[...new Map([..._daftarPenjahit.map(m => [m.nama.toLowerCase(), m.nama]), ...list.map(t => [t.nama.toLowerCase(), t.nama])]).values()].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist>
               <div style="display:flex;gap:8px">
                 <button onclick="tutupFormPenjahit()" class="btn btn-ghost btn-sm" style="flex:1">Batal</button>
                 <button onclick="simpanPenjahit()" class="btn btn-primary btn-sm" style="flex:1" id="pjSimpanBtn">Simpan</button>
@@ -1693,10 +1707,52 @@
   }
 
   // ── Penjahit per order ──
-  let _namaPenjahitTersimpan = []
-  getDoc(doc(db, 'settings', 'penjahit')).then(sn => { _namaPenjahitTersimpan = sn.exists() ? (sn.data().nama || []) : [] }).catch(() => {})
+  // Daftar penjahit (master) di koleksi `penjahit`: nama + rekening. Tersimpan otomatis saat
+  // CS/produksi/Owner menambah penjahit baru. Rekening yang sudah tersimpan hanya bisa diubah Owner.
+  let _daftarPenjahit = []
+  async function muatDaftarPenjahit() {
+    try {
+      const sn = await getDocs(collection(db, 'penjahit'))
+      _daftarPenjahit = sn.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.nama)
+    } catch { _daftarPenjahit = [] }
+  }
+  // Setelah daftar penjahit siap, gambar ulang supaya rekening tampil di kartu penjahit
+  muatDaftarPenjahit().then(() => { if (order && daftarPenjahit(order).length) loadOrder(getProfile()).catch(() => {}) })
+  const cariMaster = nama => _daftarPenjahit.find(m => m.nama.trim().toLowerCase() === String(nama || '').trim().toLowerCase())
+  function masterPenjahit(t) {
+    return (t.penjahitId && _daftarPenjahit.find(m => m.id === t.penjahitId)) || cariMaster(t.nama) || null
+  }
+  window.salinRek = function(no) {
+    navigator.clipboard?.writeText(no).then(() => alert('No. rekening disalin: ' + no)).catch(() => prompt('Salin nomor rekening:', no))
+  }
+  // Saat nama dipilih/diketik: isi rekening dari daftar; rekening tersimpan dikunci untuk selain Owner
+  let _rekDariDaftar = false   // isian rekening berasal dari penjahit tersimpan (bukan ketikan)
+  window.pilihPenjahitDariNama = function() {
+    const m = cariMaster(document.getElementById('pjNama').value)
+    const isOwnerP = getProfile().role === 'owner'
+    const kunci = !!m?.noRek && !isOwnerP
+    const kosongkan = !m && _rekDariDaftar   // nama diganti ke penjahit lain → jangan bawa rekening sebelumnya
+    _rekDariDaftar = !!m
+    ;[['pjBank', 'bank'], ['pjNoRek', 'noRek'], ['pjAtasNama', 'atasNama']].forEach(([id, k]) => {
+      const el = document.getElementById(id)
+      if (m) el.value = m[k] || ''
+      else if (kosongkan) el.value = ''
+      el.readOnly = kunci
+      el.style.background = kunci ? '#f1f5f9' : ''
+    })
+    document.getElementById('pjRekJudul').textContent = m
+      ? (m.noRek ? '🏦 Rekening tersimpan' : '🏦 Rekening penjahit (belum ada — wajib diisi)')
+      : '🏦 Rekening penjahit (wajib untuk penjahit baru)'
+    document.getElementById('pjRekInfo').textContent = kunci
+      ? 'Rekening yang sudah tersimpan hanya bisa diubah Owner.'
+      : m?.noRek ? 'Owner: ubah bila rekening penjahit berganti.' : 'Akan tersimpan otomatis untuk order berikutnya.'
+  }
 
-  window.bukaFormPenjahit = function(t) {
+  window.bukaFormPenjahit = async function(t) {
+    if (!_daftarPenjahit.length) await muatDaftarPenjahit()
+    // perbarui pilihan nama
+    const dl = document.getElementById('pjDaftar')
+    if (dl) dl.innerHTML = [...new Set(_daftarPenjahit.map(m => m.nama).concat(daftarPenjahit(order).map(x => x.nama)))].sort().map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('')
     document.getElementById('formPenjahit').style.display = ''
     document.getElementById('pjTambahBtn').style.display = 'none'
     document.getElementById('pjId').value = t?.id || ''
@@ -1704,6 +1760,9 @@
     document.getElementById('pjQty').value = t?.qty || ''
     document.getElementById('pjUpah').value = t?.upah ? fmtPrice(t.upah) : ''
     document.getElementById('pjCatatan').value = t?.catatan || ''
+    ;['pjBank', 'pjNoRek', 'pjAtasNama'].forEach(id => { const el = document.getElementById(id); el.value = ''; el.readOnly = false; el.style.background = '' })
+    _rekDariDaftar = false
+    pilihPenjahitDariNama()
     document.getElementById('pjNama').focus()
   }
   window.tutupFormPenjahit = function() {
@@ -1717,28 +1776,47 @@
   window.simpanPenjahit = async function() {
     const nama = document.getElementById('pjNama').value.trim()
     if (!nama) { alert('Nama penjahit wajib diisi'); return }
-    const id = document.getElementById('pjId').value || ('pj' + Date.now().toString(36))
-    const data = {
-      id, nama,
-      qty: Number(document.getElementById('pjQty').value) || null,
-      upah: parsePrice(document.getElementById('pjUpah').value) || null,
-      catatan: document.getElementById('pjCatatan').value.trim(),
-    }
-    const list = daftarPenjahit(order).filter(t => t.id !== id)
-    const idx = daftarPenjahit(order).findIndex(t => t.id === id)
-    if (idx >= 0) list.splice(idx, 0, data); else list.push(data)
+    const bank = document.getElementById('pjBank').value.trim()
+    const noRek = document.getElementById('pjNoRek').value.replace(/[^0-9]/g, '')
+    const atasNama = document.getElementById('pjAtasNama').value.trim()
+    const isOwnerP = getProfile().role === 'owner'
+    let m = cariMaster(nama)
+    // Penjahit baru / belum punya rekening → rekening wajib
+    if ((!m || !m.noRek) && (!bank || !noRek || !atasNama)) { alert('Isi bank, no. rekening, dan atas nama penjahit.'); return }
+    if (noRek && noRek.length < 6) { alert('No. rekening terlalu pendek, periksa lagi.'); return }
+
     const btn = document.getElementById('pjSimpanBtn'); btn.disabled = true; btn.textContent = '…'
     try {
+      const now = Timestamp.now()
+      const oleh = { by: getProfile().name || '', byUid: getProfile().id || '' }
+      if (!m) {
+        // Simpan otomatis ke daftar penjahit
+        const ref = doc(collection(db, 'penjahit'))
+        const baru = { nama, bank, noRek, atasNama, createdAt: now, createdBy: oleh.by, createdByUid: oleh.byUid, divisi: order.division }
+        await setDoc(ref, baru)
+        m = { id: ref.id, ...baru }; _daftarPenjahit.push(m)
+      } else if (!m.noRek || (isOwnerP && (m.bank !== bank || m.noRek !== noRek || m.atasNama !== atasNama))) {
+        // Lengkapi rekening yang belum ada, atau Owner memperbarui rekening
+        const upd = { bank, noRek, atasNama, updatedAt: now, updatedBy: oleh.by }
+        await updateDoc(doc(db, 'penjahit', m.id), upd)
+        Object.assign(m, upd)
+      }
+      const id = document.getElementById('pjId').value || ('pj' + Date.now().toString(36))
+      const data = {
+        id, penjahitId: m.id, nama: m.nama,
+        qty: Number(document.getElementById('pjQty').value) || null,
+        upah: parsePrice(document.getElementById('pjUpah').value) || null,
+        catatan: document.getElementById('pjCatatan').value.trim(),
+      }
+      const lama = daftarPenjahit(order)
+      const idx = lama.findIndex(t => t.id === id)
+      const list = lama.filter(t => t.id !== id)
+      if (idx >= 0) list.splice(idx, 0, data); else list.push(data)
       await updateDoc(doc(db, 'orders', orderId), {
         tailors: list,
         tailorName: list.map(t => t.nama).join(', '),   // tetap diisi untuk tampilan/fitur lama
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
       })
-      // Owner: simpan nama ke daftar pilihan penjahit
-      if (getProfile().role === 'owner' && !_namaPenjahitTersimpan.includes(nama)) {
-        _namaPenjahitTersimpan = [..._namaPenjahitTersimpan, nama].sort()
-        setDoc(doc(db, 'settings', 'penjahit'), { nama: _namaPenjahitTersimpan }, { merge: true }).catch(() => {})
-      }
       await loadOrder(getProfile())
     } catch (err) { alert('Gagal simpan: ' + err.message); btn.disabled = false; btn.textContent = 'Simpan' }
   }

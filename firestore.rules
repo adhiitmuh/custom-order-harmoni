@@ -86,6 +86,20 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if isOwnerOrCS() || isData() || isDivisiOwnerOf(div);
     }
+    // Daftar penjahit + rekening (dipilih di order Jersey/Tailor). Penjahit baru boleh ditambah
+    // Owner/CS/Produksi beserta rekeningnya; rekening yang sudah tersimpan hanya boleh diubah Owner
+    // (mencegah rekening penjahit diganti ke rekening lain).
+    match /penjahit/{id} {
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow create: if isStaffAuth() && role() in ['owner', 'cs', 'production']
+        && request.resource.data.nama is string && request.resource.data.nama.size() > 0;
+      allow update: if isOwner()
+        || (isStaffAuth() && role() in ['cs', 'production']
+            && resource.data.get('noRek', '') == ''
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['bank', 'noRek', 'atasNama', 'updatedAt', 'updatedBy']));
+      allow delete: if isOwner();
+    }
     match /settings/{id} {
       allow read: if isStaffAuth();
       allow write: if isOwner();   // rekening bank, QRIS, target omzet — hanya owner
