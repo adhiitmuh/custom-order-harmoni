@@ -17,6 +17,9 @@
     .bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:13px; }
     .bar-track { flex:1; height:10px; background:rgba(3,69,67,.08); border-radius:5px; overflow:hidden; }
     .bar-fill { height:100%; border-radius:5px; transition:width .5s; }
+    .periode-bar .period-btn, .periode-bar .btn { align-self:center; white-space:nowrap; flex-shrink:0; }
+    .periode-tgl input[type=date] { width:150px; max-width:100%; }
+    @media (max-width: 860px) { .periode-tgl { flex-wrap:wrap; margin-left:0; } }
     .period-btn { padding:7px 14px; border-radius:999px; font-size:12px; font-weight:600; cursor:pointer; border:1.5px solid rgba(3,69,67,.15); background:transparent; color:var(--green); transition:all .12s; font-family:inherit; }
     .period-btn.active { background:var(--green); color:var(--beige); border-color:var(--green); }
     @media print { #sidebar, .no-print { display:none!important; } .main { margin-left:0!important; } }
@@ -35,13 +38,13 @@
     </div>
 
     <!-- Period filter -->
-    <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+    <div class="no-print periode-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
       <button class="period-btn active" data-period="month">Bulan Ini</button>
       <button class="period-btn" data-period="lastmonth">Bulan Lalu</button>
       <button class="period-btn" data-period="quarter">3 Bulan</button>
       <button class="period-btn" data-period="year">Tahun Ini</button>
       <button class="period-btn" data-period="all">Semua</button>
-      <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap">
+      <div class="periode-tgl" style="display:flex;align-items:center;gap:6px;margin-left:auto">
         <input type="date" id="dateFrom" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit">
         <span style="font-size:12px;color:rgba(3,69,67,.4)">–</span>
         <input type="date" id="dateTo" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit">
