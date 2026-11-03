@@ -84,7 +84,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
@@ -567,14 +567,15 @@
                   <div style="text-align:right;font-size:13px;font-weight:700">${t.upah ? fmtCurrency(t.upah) : '<span style="font-size:11px;color:#b45309">upah belum diisi</span>'}</div>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
-                  ${bayar
+                  ${(() => { const pg = !bayar && _pengajuanAktif[t.id]; return bayar
                     ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}</span>`
-                    : `<span style="font-size:11px;font-weight:700;color:#b91c1c">⏳ Belum ditransfer</span>`}
+                    : pg ? `<a href="upah-penjahit.html?id=${pg.id}" style="font-size:11px;font-weight:700;color:#b45309;text-decoration:none">🔒 Sedang diajukan ${fmtCurrency(pg.upah)} · ${esc(pg.oleh)} — upah terkunci sampai dibayar/dibatalkan →</a>`
+                    : `<span style="font-size:11px;font-weight:700;color:#b91c1c">⏳ Belum ditransfer</span>` })()}
                   <div style="display:flex;gap:6px">
-                    ${isOwnerP ? (bayar
+                    ${_pengajuanAktif[t.id] && !bayar ? '' : isOwnerP ? (bayar
                       ? `<button onclick="batalTransferPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Batalkan</button>`
                       : `<button onclick="tandaiTransferPenjahit('${t.id}')" class="btn btn-green btn-sm" style="font-size:11px">✓ Tandai sudah transfer</button>`) : ''}
-                    ${bolehUbah && (!bayar || isOwnerP) && t.id !== 'lama-x' ? `<button onclick="editPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Edit</button>
+                    ${bolehUbah && (!bayar || isOwnerP) && !_pengajuanAktif[t.id] ? `<button onclick="editPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Edit</button>
                       <button onclick="hapusPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px;color:#b91c1c">Hapus</button>` : ''}
                   </div>
                 </div>
@@ -1720,7 +1721,20 @@
     } catch { _daftarPenjahit = [] }
   }
   // Setelah daftar penjahit siap, gambar ulang supaya rekening tampil di kartu penjahit
-  muatDaftarPenjahit().then(() => { if (order && daftarPenjahit(order).length) loadOrder(getProfile()).catch(() => {}) })
+  // Kerjaan penjahit yang sedang ada di pengajuan upah aktif → dikunci (tidak bisa edit/hapus/bayar satuan)
+  let _pengajuanAktif = {}
+  async function muatPengajuanAktif() {
+    try {
+      const sn = await getDocs(query(collection(db, 'pengajuan_upah'), where('status', '==', 'diajukan')))
+      const peta = {}
+      sn.docs.forEach(d => (d.data().items || []).forEach(it => {
+        if (it.orderId === orderId) peta[it.entryId] = { id: d.id, upah: it.upah, oleh: d.data().dibuatOleh || '' }
+      }))
+      _pengajuanAktif = peta
+    } catch { _pengajuanAktif = {} }
+  }
+  Promise.all([muatDaftarPenjahit(), muatPengajuanAktif()])
+    .then(() => { if (order && daftarPenjahit(order).length) loadOrder(getProfile()).catch(() => {}) })
   const cariMaster = nama => _daftarPenjahit.find(m => m.nama.trim().toLowerCase() === String(nama || '').trim().toLowerCase())
   function masterPenjahit(t) {
     return (t.penjahitId && _daftarPenjahit.find(m => m.id === t.penjahitId)) || cariMaster(t.nama) || null
@@ -1772,11 +1786,19 @@
     document.getElementById('formPenjahit').style.display = 'none'
     document.getElementById('pjTambahBtn').style.display = ''
   }
+  const terkunci = id => {
+    if (!_pengajuanAktif[id]) return false
+    alert('Upah penjahit ini sedang diajukan dan terkunci. Batalkan pengajuannya dulu di menu Upah Penjahit bila perlu diubah.')
+    return true
+  }
   window.editPenjahit = function(id) {
+    if (terkunci(id)) return
     const t = daftarPenjahit(order).find(x => x.id === id)
     if (t) bukaFormPenjahit(t)
   }
   window.simpanPenjahit = async function() {
+    await muatPengajuanAktif()
+    if (terkunci(document.getElementById('pjId').value)) return
     const nama = document.getElementById('pjNama').value.trim()
     if (!nama) { alert('Nama penjahit wajib diisi'); return }
     const bank = document.getElementById('pjBank').value.trim()
@@ -1824,6 +1846,7 @@
     } catch (err) { alert('Gagal simpan: ' + err.message); btn.disabled = false; btn.textContent = 'Simpan' }
   }
   window.hapusPenjahit = async function(id) {
+    if (terkunci(id)) return
     const t = daftarPenjahit(order).find(x => x.id === id)
     if (!t || !confirm(`Hapus penjahit ${t.nama} dari order ini?`)) return
     const list = daftarPenjahit(order).filter(x => x.id !== id)
@@ -1834,6 +1857,7 @@
   }
   // Owner menandai upah penjahit sudah ditransfer (nominal bisa berbeda dari upah tercatat)
   window.tandaiTransferPenjahit = async function(id) {
+    if (terkunci(id)) return
     const t = daftarPenjahit(order).find(x => x.id === id); if (!t) return
     const isian = prompt(`Upah yang ditransfer ke ${t.nama} (Rp):`, t.upah ? fmtPrice(t.upah) : '')
     if (isian === null) return
