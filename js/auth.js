@@ -2,7 +2,7 @@ import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
-import { pasangNavHp } from './mobile-nav.js'
+import { pasangNavHp } from './mobile-nav.js?v=20261103b'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
