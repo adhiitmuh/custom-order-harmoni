@@ -63,6 +63,17 @@
 
     /* Chat panel */
     .chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--white); }
+    .inbox-back { display: none; }
+    /* HP: daftar chat dan isi chat bergantian (seperti WhatsApp) */
+    @media (max-width: 860px) {
+      .main { padding: calc(52px + env(safe-area-inset-top)) 0 0 !important; }
+      .thread-panel { width: 100%; border-right: none; }
+      .chat-panel { display: none; }
+      body.inbox-chat-open .thread-panel { display: none; }
+      body.inbox-chat-open .chat-panel { display: flex; }
+      body.inbox-chat-open .inbox-back { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: none; border-bottom: 1px solid rgba(3,69,67,.08); background: var(--white); color: var(--green); font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+      .inbox-body { flex-direction: column; }
+    }
 
     /* Empty state */
     .chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: rgba(3,69,67,.3); background: #f7faf7; }
@@ -147,6 +158,7 @@
     </div>
 
     <div class="inbox-body">
+      <button type="button" class="inbox-back" onclick="document.body.classList.remove('inbox-chat-open')">← Daftar chat</button>
 
       <!-- Thread list panel -->
       <div class="thread-panel">
@@ -352,6 +364,7 @@ function renderList() {
 // ─── Open thread ──────────────────────────────────────────────────────────────
 window.openThread = function(threadId) {
   activeThreadId = threadId
+  document.body.classList.add('inbox-chat-open')   // HP: pindah ke tampilan isi chat
   renderList()
 
   const thread = allThreads.find(t => t.id === threadId)

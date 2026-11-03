@@ -11,7 +11,13 @@
   <title>Kalender Produksi — Harmoni</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+    .cal-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+    @media (max-width: 860px) {
+      .cal-grid { gap:2px; }
+      .cal-cell { min-height:62px !important; padding:3px !important; border-radius:6px !important; overflow:hidden; }
+      .cal-cell * { font-size:9px !important; }
+      .cal-day-header { font-size:10px !important; }
+    }
     .cal-day-header { text-align:center; font-size:11px; font-weight:700; color:rgba(3,69,67,.4); padding:6px 0; letter-spacing:.04em; }
     .cal-cell { min-height:90px; border-radius:10px; padding:6px; border:1px solid rgba(3,69,67,.07); background:var(--white); position:relative; }
     .cal-cell.today { border-color:var(--green); border-width:2px; }

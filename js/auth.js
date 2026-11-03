@@ -2,6 +2,7 @@ import { auth, authDb, db, dataAuth } from './config.js'
 import { onAuthStateChanged, signOut, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
 import { doc, getDoc, setDoc, collection, query, orderBy, onSnapshot, limit, getDocs, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { DIVISION_META, DIVISIONS, timeAgo } from './utils.js'
+import { pasangNavHp } from './mobile-nav.js'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/custom-order-harmoni/sw.js').catch(() => {})
@@ -283,6 +284,7 @@ export function requireAuth(callback) {
 }
 
 export function renderSidebar(profile) {
+  pasangNavHp()   // bar atas + menu laci untuk layar HP
   const el = document.getElementById('sidebar')
   if (!el) return
   const page = location.pathname.split('/').pop()
@@ -457,7 +459,7 @@ function injectNotifPanel() {
     </div>`
   document.body.appendChild(panel)
   document.addEventListener('click', e => {
-    if (!panel.contains(e.target) && !e.target.closest('#notifBell')) {
+    if (!panel.contains(e.target) && !e.target.closest('#notifBell, .mobile-bell')) {
       panel.style.display = 'none'
     }
   }, true)
