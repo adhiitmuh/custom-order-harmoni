@@ -40,10 +40,11 @@ service cloud.firestore {
       allow list: if isStaffAuth() && bolehOrderData(resource.data);
       allow create: if isStaffAuth() && bolehOrderData(request.resource.data);
       // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
-      // Tanda "sudah dicek di mutasi rekening" hanya boleh diubah Owner
+      // Tanda "sudah dicek di mutasi rekening" & "upah penjahit sudah ditransfer" hanya boleh diubah Owner
       allow update: if bolehOrderData(resource.data) && bolehOrderData(request.resource.data) && ((isStaffAuth()
           && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['paymentVerifiedAt', 'paymentVerifiedBy', 'paymentVerifiedAmount'])))
+                .hasAny(['paymentVerifiedAt', 'paymentVerifiedBy', 'paymentVerifiedAmount',
+                       'tailorPayments', 'tailorPaid', 'tailorPaidBy', 'tailorPaidAt'])))
         || (isAuth()
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['unreadCustomerChat', 'lastCustomerMsgAt', 'unreadSupplierChat', 'progressPercentage', 'updatedAt'])));

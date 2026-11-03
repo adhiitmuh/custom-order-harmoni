@@ -129,8 +129,15 @@
           <option value="belum_dicek">🔍 Bukti belum dicek</option>
           <option value="terverifikasi">✓ Sudah dicek di mutasi</option>
         </select>
+        <select id="tblJahit" onchange="onTableFilter()" style="padding:7px 10px;border-radius:8px;border:1.5px solid rgba(3,69,67,.15);font-size:12px;font-family:inherit;background:white;color:var(--green)">
+          <option value="">Semua Upah Jahit</option>
+          <option value="belum">🧵 Upah penjahit belum ditransfer</option>
+          <option value="kosong">🧵 Penjahit belum diisi</option>
+          <option value="lunas">🧵 Upah sudah ditransfer</option>
+        </select>
         <button id="tblResetBtn" onclick="resetTableFilter()" style="display:none;padding:7px 10px;border-radius:8px;border:1.5px solid rgba(239,68,68,.3);font-size:12px;font-family:inherit;background:none;color:#dc2626;cursor:pointer">✕ Reset</button>
       </div>
+      <div id="jahitRingkas" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;font-size:12px;color:#991b1b"></div>
       <div id="orderTable" style="overflow-x:auto"></div>
     </div>
   </main>
@@ -139,6 +146,7 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getProfile, ordersQuery } from './js/auth.js'
+  import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
   import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
@@ -203,13 +211,14 @@
       }
       // Restore table filter setelah render selesai (setPeriod me-reset filter)
       const tbl = saved.tbl || {}
-      if (tbl.search || tbl.divisi || tbl.status || tbl.lokasi || tbl.bukti) {
+      if (tbl.search || tbl.divisi || tbl.status || tbl.lokasi || tbl.bukti || tbl.jahit) {
         setTimeout(() => {
           if (tbl.search)  document.getElementById('tblSearch').value  = tbl.search
           if (tbl.divisi)  document.getElementById('tblDivisi').value  = tbl.divisi
           if (tbl.status)  document.getElementById('tblStatus').value  = tbl.status
           if (tbl.lokasi)  document.getElementById('tblLokasi').value  = tbl.lokasi
           if (tbl.bukti)   document.getElementById('tblBukti').value   = tbl.bukti
+          if (tbl.jahit)   document.getElementById('tblJahit').value   = tbl.jahit
           window.onTableFilter()
         }, 0)
       }
@@ -361,7 +370,7 @@
 
     // Store for table filter use, reset filters, populate dropdowns, render table
     currentPeriodOrders = orders
-    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti','tblJahit'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
     const resetBtn = document.getElementById('tblResetBtn')
     if (resetBtn) resetBtn.style.display = 'none'
     populateTableDropdowns()
@@ -392,7 +401,8 @@
     const status = document.getElementById('tblStatus')?.value || ''
     const lokasi = document.getElementById('tblLokasi')?.value || ''
     const bukti  = document.getElementById('tblBukti')?.value || ''
-    saveLaporanFilters({ tbl: { search, divisi, status, lokasi, bukti } })
+    const jahit  = document.getElementById('tblJahit')?.value || ''
+    saveLaporanFilters({ tbl: { search, divisi, status, lokasi, bukti, jahit } })
     const filtered = currentPeriodOrders.filter(o => {
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
       if (divisi && o.division !== divisi) return false
@@ -403,16 +413,22 @@
       if (bukti === 'tanpa_bukti' && !(paid > 0 && !o.paymentProofs?.length)) return false
       if (bukti === 'belum_dicek' && !(paid > 0 && !bayarTerverifikasi(o))) return false
       if (bukti === 'terverifikasi' && !bayarTerverifikasi(o)) return false
+      if (jahit) {
+        if (!DIVISI_PENJAHIT.includes(o.division) || o.status === 'cancelled') return false
+        const sj = statusUpahPenjahit(o).status
+        if (jahit === 'belum' && !(sj === 'belum' || sj === 'sebagian')) return false
+        if (jahit !== 'belum' && sj !== jahit) return false
+      }
       return true
     })
-    const hasFilter = search || divisi || status || lokasi || bukti
+    const hasFilter = search || divisi || status || lokasi || bukti || jahit
     const resetBtn = document.getElementById('tblResetBtn')
     if (resetBtn) resetBtn.style.display = hasFilter ? '' : 'none'
     renderOrderTable(filtered)
   }
 
   window.resetTableFilter = function() {
-    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
+    ;['tblSearch','tblDivisi','tblStatus','tblLokasi','tblBukti','tblJahit'].forEach(id => { const el = document.getElementById(id); if (el) el.value = '' })
     document.getElementById('tblResetBtn').style.display = 'none'
     saveLaporanFilters({ tbl: {} })
     renderOrderTable(currentPeriodOrders)
@@ -429,7 +445,20 @@
       : `<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:999px;background:#fffbeb;color:#b45309">📎${n} belum dicek</span>`
   }
 
+  // Ringkasan upah penjahit yang belum ditransfer (periode terpilih)
+  function renderJahitRingkas() {
+    const el = document.getElementById('jahitRingkas'); if (!el) return
+    const belum = (currentPeriodOrders || []).filter(o => DIVISI_PENJAHIT.includes(o.division) && o.status !== 'cancelled')
+      .map(o => ({ o, s: statusUpahPenjahit(o) })).filter(x => x.s.status === 'belum' || x.s.status === 'sebagian')
+    if (!belum.length) { el.style.display = 'none'; return }
+    const sisa = belum.reduce((t, x) => t + x.s.sisa, 0)
+    const tanpaUpah = belum.filter(x => !x.s.total).length
+    el.style.display = ''
+    el.innerHTML = `🧵 <b>${belum.length} order</b> Jersey/Tailor upah penjahitnya belum ditransfer penuh${sisa ? ` · total sisa <b>${fmtCurrency(sisa)}</b>` : ''}${tanpaUpah ? ` · ${tanpaUpah} order upahnya belum diisi` : ''}. <a href="#" onclick="document.getElementById('tblJahit').value='belum';onTableFilter();return false" style="color:#991b1b;font-weight:700">Lihat daftarnya →</a>`
+  }
+
   function renderOrderTable(orders) {
+    renderJahitRingkas()
     const isOwner = getProfile()?.role === 'owner'
     const withModal = isOwner ? orders.filter(o => o.hargaModal > 0) : []
     const footerModal  = withModal.reduce((s,o)=>s+(o.hargaModal||0),0)
@@ -450,6 +479,7 @@
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">TERBAYAR</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">SISA</th>
             <th style="text-align:center;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">BUKTI</th>
+            <th style="text-align:center;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">JAHIT</th>
             ${isOwner ? `<th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">MODAL</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">PROFIT</th>
             <th style="text-align:right;padding:8px 6px;color:rgba(3,69,67,.45);font-weight:700;font-size:10px;letter-spacing:.05em">MARGIN</th>` : ''}
@@ -469,6 +499,7 @@
               <td style="padding:8px 6px;text-align:right;color:#059669;font-weight:600">${fmtCurrency(o.depositPaid)}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:700;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</td>
               <td style="padding:8px 6px;text-align:center;white-space:nowrap">${labelBukti(o)}</td>
+              <td style="padding:8px 6px;text-align:center;white-space:nowrap">${o.status !== 'cancelled' ? (badgeUpahPenjahit(o, { ringkas: true }) || '<span style="color:rgba(3,69,67,.2)">—</span>') : ''}</td>
               ${isOwner ? `<td style="padding:8px 6px;text-align:right;color:rgba(3,69,67,.5)">${o.hargaModal ? fmtCurrency(o.hargaModal) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:700;color:${profit!==null?(profit>=0?'#059669':'#b91c1c'):'rgba(3,69,67,.3)'}">${profit !== null ? fmtCurrency(profit) : '<span style="color:rgba(3,69,67,.2)">—</span>'}</td>
               <td style="padding:8px 6px;text-align:right;font-weight:600;color:${margin!==null?(margin>=30?'#059669':margin>=15?'#d97706':'#b91c1c'):'rgba(3,69,67,.2)'}">${margin !== null ? margin + '%' : '—'}</td>` : ''}
@@ -481,7 +512,7 @@
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px">${fmtCurrency(orders.reduce((s,o)=>s+(o.totalPrice||0),0))}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#059669">${fmtCurrency(orders.reduce((s,o)=>s+(o.depositPaid||0),0))}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:#b91c1c">${fmtCurrency(orders.reduce((s,o)=>s+((o.totalPrice||0)-(o.depositPaid||0)),0))}</td>
-            <td></td>
+            <td></td><td></td>
             ${isOwner ? `<td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:rgba(3,69,67,.5)">${fmtCurrency(footerModal)}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:${footerProfit>=0?'#059669':'#b91c1c'}">${fmtCurrency(footerProfit)}</td>
             <td style="padding:10px 6px;text-align:right;font-weight:800;font-size:13px;color:${footerMargin>=30?'#059669':footerMargin>=15?'#d97706':'#b91c1c'}">${footerMargin}%</td>` : ''}

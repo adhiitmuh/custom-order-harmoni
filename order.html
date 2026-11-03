@@ -86,6 +86,7 @@
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
+  import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -539,39 +540,75 @@
               <button onclick="submitPendingModal()" class="btn btn-primary" style="width:100%;justify-content:center">Ajukan untuk Approval Owner</button>`}
           </div>` : ''}
 
-          <!-- Info Penjahit (jersey/tailor, production+owner+merangkap only) -->
-          ${['jersey','tailor'].includes(order.division) && (profile.role === 'owner' || hasProductionAccess(profile, order.division)) ? `
+          <!-- Info Penjahit (jersey/tailor): beberapa penjahit per order + status transfer upah (Owner) -->
+          ${['jersey','tailor'].includes(order.division) && (profile.role === 'owner' || hasProductionAccess(profile, order.division) || profile.role === 'cs') ? (() => {
+            const isOwnerP = profile.role === 'owner'
+            const bolehUbah = isOwnerP || hasProductionAccess(profile, order.division)
+            const list = daftarPenjahit(order)
+            const st = statusUpahPenjahit(order)
+            const esc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+            const rows = list.map(t => {
+              const bayar = pembayaranPenjahit(order, t)
+              const tgl = bayar?.at?.toDate ? bayar.at.toDate().toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}) : ''
+              return `<div style="padding:10px 12px;background:var(--beige-soft);border-radius:10px;border-left:3px solid ${bayar ? '#059669' : '#ef4444'}">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">
+                  <div style="min-width:0">
+                    <div style="font-size:13px;font-weight:700">🧵 ${esc(t.nama)}</div>
+                    <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${t.qty ? esc(t.qty) + ' pcs' : ''}${t.qty && t.catatan ? ' · ' : ''}${esc(t.catatan || '')}${!t.qty && !t.catatan ? 'Bagian belum diisi' : ''}</div>
+                  </div>
+                  <div style="text-align:right;font-size:13px;font-weight:700">${t.upah ? fmtCurrency(t.upah) : '<span style="font-size:11px;color:#b45309">upah belum diisi</span>'}</div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+                  ${bayar
+                    ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}</span>`
+                    : `<span style="font-size:11px;font-weight:700;color:#b91c1c">⏳ Belum ditransfer</span>`}
+                  <div style="display:flex;gap:6px">
+                    ${isOwnerP ? (bayar
+                      ? `<button onclick="batalTransferPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Batalkan</button>`
+                      : `<button onclick="tandaiTransferPenjahit('${t.id}')" class="btn btn-green btn-sm" style="font-size:11px">✓ Tandai sudah transfer</button>`) : ''}
+                    ${bolehUbah && (!bayar || isOwnerP) && t.id !== 'lama-x' ? `<button onclick="editPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Edit</button>
+                      <button onclick="hapusPenjahit('${t.id}')" class="btn btn-ghost btn-sm" style="font-size:11px;color:#b91c1c">Hapus</button>` : ''}
+                  </div>
+                </div>
+              </div>`
+            }).join('')
+            return `
           <div class="card" style="margin-bottom:16px">
-            <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">🧵 Info Penjahit</h2>
-            <div style="margin-bottom:14px">
-              <label style="font-size:11px;color:rgba(3,69,67,.45);display:block;margin-bottom:4px">Nama Penjahit</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+              <h2 style="font-size:14px;font-weight:700">🧵 Penjahit & Upah Jahit</h2>
+              ${list.length ? `<span style="font-size:11px;font-weight:700;color:${st.status === 'lunas' ? '#047857' : '#b91c1c'}">${st.lunasCount}/${st.jumlah} sudah ditransfer${st.total ? ' · total ' + fmtCurrency(st.total) : ''}${st.sisa ? ' · sisa ' + fmtCurrency(st.sisa) : ''}</span>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+              ${rows || '<p style="font-size:12px;color:rgba(3,69,67,.4)">Belum ada penjahit. Tambahkan siapa yang mengerjakan — bisa lebih dari satu kalau order dibagi.</p>'}
+            </div>
+            ${bolehUbah ? `
+            <div id="formPenjahit" style="display:none;background:white;border:1.5px dashed rgba(3,69,67,.2);border-radius:10px;padding:12px;margin-bottom:10px">
+              <input type="hidden" id="pjId">
+              <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Nama penjahit *</label><input type="text" id="pjNama" list="pjDaftar" placeholder="Nama penjahit…" style="font-size:13px"></div>
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah (pcs)</label><input type="number" id="pjQty" min="0" placeholder="0" style="font-size:13px"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:8px">
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Upah (Rp)</label><input type="text" inputmode="numeric" id="pjUpah" placeholder="0" oninput="this.value=fmtInputPrice(this.value)" style="font-size:13px"></div>
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Bagian / catatan</label><input type="text" id="pjCatatan" placeholder="cth: badan + lengan ukuran S–L" style="font-size:13px"></div>
+              </div>
+              <datalist id="pjDaftar">${[...new Set(list.map(t => t.nama).concat(_namaPenjahitTersimpan))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
               <div style="display:flex;gap:8px">
-                <input type="text" id="tailorNameInput" value="${order.tailorName||''}" placeholder="Nama penjahit…"
-                  style="flex:1;font-size:13px" onkeydown="if(event.key==='Enter') saveTailorName()">
-                <button onclick="saveTailorName()" class="btn btn-ghost btn-sm" id="saveTailorNameBtn">Simpan</button>
+                <button onclick="tutupFormPenjahit()" class="btn btn-ghost btn-sm" style="flex:1">Batal</button>
+                <button onclick="simpanPenjahit()" class="btn btn-primary btn-sm" style="flex:1" id="pjSimpanBtn">Simpan</button>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
-                <div>
-                  <div style="font-size:13px;font-weight:600">Sudah Dicek</div>
-                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorChecked ? `${order.tailorCheckedBy||'—'} · ${timeAgo(order.tailorCheckedAt)}` : 'Belum dicek'}</div>
-                </div>
-                <button onclick="toggleTailorCheck()" class="btn ${order.tailorChecked ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorCheckBtn">
-                  ${order.tailorChecked ? '✓ Sudah' : 'Tandai'}
-                </button>
+            <button onclick="bukaFormPenjahit()" class="btn btn-ghost btn-sm" id="pjTambahBtn" style="width:100%;justify-content:center;margin-bottom:12px">+ Tambah penjahit</button>` : ''}
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
+              <div>
+                <div style="font-size:13px;font-weight:600">Hasil Jahit Sudah Dicek</div>
+                <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorChecked ? `${order.tailorCheckedBy||'—'} · ${timeAgo(order.tailorCheckedAt)}` : 'Belum dicek'}</div>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--beige-soft);border-radius:10px">
-                <div>
-                  <div style="font-size:13px;font-weight:600">Upah Sudah Ditransfer</div>
-                  <div style="font-size:11px;color:rgba(3,69,67,.45)">${order.tailorPaid ? `${order.tailorPaidBy||'—'} · ${timeAgo(order.tailorPaidAt)}` : 'Belum ditransfer'}</div>
-                </div>
-                <button onclick="toggleTailorPaid()" class="btn ${order.tailorPaid ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorPaidBtn">
-                  ${order.tailorPaid ? '✓ Sudah' : 'Tandai'}
-                </button>
-              </div>
+              ${bolehUbah ? `<button onclick="toggleTailorCheck()" class="btn ${order.tailorChecked ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorCheckBtn">${order.tailorChecked ? '✓ Sudah' : 'Tandai'}</button>` : ''}
             </div>
-          </div>` : ''}
+            ${!isOwnerP && list.length ? '<p style="font-size:11px;color:rgba(3,69,67,.4);margin-top:8px">Tanda "sudah ditransfer" hanya bisa diisi Owner.</p>' : ''}
+          </div>`
+          })() : ''}
 
           <!-- Progress -->
           <div class="card" style="margin-bottom:16px">
@@ -1655,15 +1692,92 @@
     }
   }
 
-  window.saveTailorName = async function() {
-    const val = document.getElementById('tailorNameInput')?.value.trim() ?? ''
-    const btn = document.getElementById('saveTailorNameBtn')
-    btn.disabled = true; btn.textContent = '…'
+  // ── Penjahit per order ──
+  let _namaPenjahitTersimpan = []
+  getDoc(doc(db, 'settings', 'penjahit')).then(sn => { _namaPenjahitTersimpan = sn.exists() ? (sn.data().nama || []) : [] }).catch(() => {})
+
+  window.bukaFormPenjahit = function(t) {
+    document.getElementById('formPenjahit').style.display = ''
+    document.getElementById('pjTambahBtn').style.display = 'none'
+    document.getElementById('pjId').value = t?.id || ''
+    document.getElementById('pjNama').value = t?.nama || ''
+    document.getElementById('pjQty').value = t?.qty || ''
+    document.getElementById('pjUpah').value = t?.upah ? fmtPrice(t.upah) : ''
+    document.getElementById('pjCatatan').value = t?.catatan || ''
+    document.getElementById('pjNama').focus()
+  }
+  window.tutupFormPenjahit = function() {
+    document.getElementById('formPenjahit').style.display = 'none'
+    document.getElementById('pjTambahBtn').style.display = ''
+  }
+  window.editPenjahit = function(id) {
+    const t = daftarPenjahit(order).find(x => x.id === id)
+    if (t) bukaFormPenjahit(t)
+  }
+  window.simpanPenjahit = async function() {
+    const nama = document.getElementById('pjNama').value.trim()
+    if (!nama) { alert('Nama penjahit wajib diisi'); return }
+    const id = document.getElementById('pjId').value || ('pj' + Date.now().toString(36))
+    const data = {
+      id, nama,
+      qty: Number(document.getElementById('pjQty').value) || null,
+      upah: parsePrice(document.getElementById('pjUpah').value) || null,
+      catatan: document.getElementById('pjCatatan').value.trim(),
+    }
+    const list = daftarPenjahit(order).filter(t => t.id !== id)
+    const idx = daftarPenjahit(order).findIndex(t => t.id === id)
+    if (idx >= 0) list.splice(idx, 0, data); else list.push(data)
+    const btn = document.getElementById('pjSimpanBtn'); btn.disabled = true; btn.textContent = '…'
     try {
-      await updateDoc(doc(db,'orders',orderId), { tailorName: val, updatedAt: Timestamp.now() })
+      await updateDoc(doc(db, 'orders', orderId), {
+        tailors: list,
+        tailorName: list.map(t => t.nama).join(', '),   // tetap diisi untuk tampilan/fitur lama
+        updatedAt: Timestamp.now(),
+      })
+      // Owner: simpan nama ke daftar pilihan penjahit
+      if (getProfile().role === 'owner' && !_namaPenjahitTersimpan.includes(nama)) {
+        _namaPenjahitTersimpan = [..._namaPenjahitTersimpan, nama].sort()
+        setDoc(doc(db, 'settings', 'penjahit'), { nama: _namaPenjahitTersimpan }, { merge: true }).catch(() => {})
+      }
       await loadOrder(getProfile())
-    } catch(err) { alert('Gagal simpan: ' + err.message) }
-    finally { btn.disabled = false; btn.textContent = 'Simpan' }
+    } catch (err) { alert('Gagal simpan: ' + err.message); btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+  window.hapusPenjahit = async function(id) {
+    const t = daftarPenjahit(order).find(x => x.id === id)
+    if (!t || !confirm(`Hapus penjahit ${t.nama} dari order ini?`)) return
+    const list = daftarPenjahit(order).filter(x => x.id !== id)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { tailors: list, tailorName: list.map(x => x.nama).join(', '), updatedAt: Timestamp.now() })
+      await loadOrder(getProfile())
+    } catch (err) { alert('Gagal: ' + err.message) }
+  }
+  // Owner menandai upah penjahit sudah ditransfer (nominal bisa berbeda dari upah tercatat)
+  window.tandaiTransferPenjahit = async function(id) {
+    const t = daftarPenjahit(order).find(x => x.id === id); if (!t) return
+    const isian = prompt(`Upah yang ditransfer ke ${t.nama} (Rp):`, t.upah ? fmtPrice(t.upah) : '')
+    if (isian === null) return
+    const jumlah = parsePrice(isian)
+    if (!jumlah) { alert('Isi nominal yang ditransfer'); return }
+    try {
+      const now = Timestamp.now()
+      const upd = { [`tailorPayments.${id}`]: { jumlah, at: now, by: getProfile().name }, updatedAt: now }
+      // Data lama (1 penjahit) ikut ditandai supaya konsisten
+      if (id === 'lama') Object.assign(upd, { tailorPaid: true, tailorPaidBy: getProfile().name, tailorPaidAt: now })
+      // Simpan daftar penjahit ke format baru bila masih format lama
+      if (!Array.isArray(order.tailors) || !order.tailors.length) upd.tailors = daftarPenjahit(order)
+      await updateDoc(doc(db, 'orders', orderId), upd)
+      await loadOrder(getProfile())
+    } catch (err) { alert('Gagal: ' + err.message) }
+  }
+  window.batalTransferPenjahit = async function(id) {
+    const t = daftarPenjahit(order).find(x => x.id === id); if (!t) return
+    if (!confirm(`Batalkan tanda sudah transfer untuk ${t.nama}?`)) return
+    try {
+      const upd = { [`tailorPayments.${id}`]: deleteField(), updatedAt: Timestamp.now() }
+      if (id === 'lama') Object.assign(upd, { tailorPaid: false, tailorPaidBy: null, tailorPaidAt: null })
+      await updateDoc(doc(db, 'orders', orderId), upd)
+      await loadOrder(getProfile())
+    } catch (err) { alert('Gagal: ' + err.message) }
   }
 
   window.toggleTailorCheck = async function() {
@@ -1683,22 +1797,6 @@
     } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
   }
 
-  window.toggleTailorPaid = async function() {
-    const btn = document.getElementById('tailorPaidBtn')
-    btn.disabled = true
-    try {
-      const profile = getProfile()
-      const now = Timestamp.now()
-      const newVal = !order.tailorPaid
-      await updateDoc(doc(db,'orders',orderId), {
-        tailorPaid: newVal,
-        tailorPaidBy: newVal ? profile.name : null,
-        tailorPaidAt: newVal ? now : null,
-        updatedAt: now,
-      })
-      await loadOrder(profile)
-    } catch(err) { alert('Gagal: ' + err.message); btn.disabled = false }
-  }
 
   // === MODAL PER ITEM (inline edit for owner) ===
   window.editItemPrice = function(i) {

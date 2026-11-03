@@ -57,6 +57,12 @@
           <option value="belum_dicek">🔍 Bukti belum dicek</option>
           <option value="terverifikasi">✓ Sudah dicek di mutasi</option>
         </select>
+        <select id="jahitFilter" style="flex:0 0 auto;border-radius:999px;padding:8px 12px;font-size:13px">
+          <option value="">Semua Upah Jahit</option>
+          <option value="belum">🧵 Upah penjahit belum ditransfer</option>
+          <option value="kosong">🧵 Penjahit belum diisi</option>
+          <option value="lunas">🧵 Upah sudah ditransfer</option>
+        </select>
         <button id="resetBtn" class="btn btn-ghost btn-sm" style="display:none">Reset</button>
       </div>
     </div>
@@ -73,6 +79,7 @@
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, ordersQuery } from './js/auth.js'
   import { collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
+  import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
 
   let allOrders = []
   let _activeDivsMeta = null
@@ -161,7 +168,7 @@
     if (profile.role === 'owner') document.getElementById('branchFilter').style.display = ''
 
     // Wire up filters immediately (allOrders starts empty, fills when fetch returns)
-    ;['searchInput','branchFilter','lokasiFilter','statusFilter','payFilter'].forEach(id =>
+    ;['searchInput','branchFilter','lokasiFilter','statusFilter','payFilter','jahitFilter'].forEach(id =>
       document.getElementById(id).addEventListener('input', render)
     )
     document.getElementById('divFilter').addEventListener('input', () => {
@@ -171,6 +178,7 @@
     })
     document.getElementById('resetBtn').addEventListener('click', () => {
       document.getElementById('searchInput').value = ''
+      document.getElementById('jahitFilter').value = ''
       if (!lockedDivision && !lockedDivisions) { document.getElementById('divFilter').value = ''; activeDivTab = ''; buildDivTabs() }
       if (!lockedBranch) document.getElementById('branchFilter').value = ''
       document.getElementById('lokasiFilter').value = ''
@@ -265,6 +273,7 @@
         lokasi: document.getElementById('lokasiFilter').value,
         status: document.getElementById('statusFilter').value,
         pay: document.getElementById('payFilter').value,
+        jahit: document.getElementById('jahitFilter').value,
         tab: activeDivTab,
       }))
     } catch {}
@@ -279,6 +288,7 @@
       if (s.lokasi) document.getElementById('lokasiFilter').value = s.lokasi
       if (s.status) document.getElementById('statusFilter').value = s.status
       if (s.pay) document.getElementById('payFilter').value = s.pay
+      if (s.jahit) document.getElementById('jahitFilter').value = s.jahit
       if (s.tab) activeDivTab = s.tab
     } catch {}
   }
@@ -289,8 +299,9 @@
     const lokasiF = document.getElementById('lokasiFilter').value
     const status = document.getElementById('statusFilter').value
     const pay = document.getElementById('payFilter').value
+    const jahit = document.getElementById('jahitFilter').value
     const branch = document.getElementById('branchFilter')?.value || ''
-    const isFiltered = search || div || branch || lokasiF || status || pay
+    const isFiltered = search || div || branch || lokasiF || status || pay || jahit
     document.getElementById('resetBtn').style.display = isFiltered ? '' : 'none'
     saveFilters()
 
@@ -316,6 +327,13 @@
         if (pay==='tanpa_bukti' && !(paid>0 && !o.paymentProofs?.length)) return false
         if (pay==='belum_dicek' && !(paid>0 && !bayarTerverifikasi(o))) return false
         if (pay==='terverifikasi' && !bayarTerverifikasi(o)) return false
+      }
+      if (jahit) {
+        // Upah jahit hanya relevan untuk Jersey/Tailor yang tidak dibatalkan
+        if (!DIVISI_PENJAHIT.includes(o.division) || o.status === 'cancelled') return false
+        const sj = statusUpahPenjahit(o).status
+        if (jahit === 'belum' && !(sj === 'belum' || sj === 'sebagian')) return false
+        if (jahit !== 'belum' && sj !== jahit) return false
       }
       return true
     })
@@ -369,6 +387,7 @@
               <span class="mono" style="font-size:11px;font-weight:600;color:var(--green);opacity:.7">${o.progressPercentage||0}%</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;text-align:right;font-size:12px">
+              ${o.status !== 'cancelled' ? badgeUpahPenjahit(o, { ringkas: true }) : ''}
               ${pStatus ? `<span class="badge badge-pill ${pStatus.cls}">${pStatus.label}</span>` : ''}
               ${(o.depositPaid||0) > 0 && !o.paymentProofs?.length ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca">⚠ tanpa bukti</span>`
                 : showContact && bayarTerverifikasi(o) ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#ecfdf5;color:#047857">✓ dicek</span>` : ''}
