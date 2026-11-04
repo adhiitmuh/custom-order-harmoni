@@ -593,12 +593,20 @@
             ${bolehUbah ? `
             <div id="formPenjahit" style="display:none;background:white;border:1.5px dashed rgba(3,69,67,.2);border-radius:10px;padding:12px;margin-bottom:10px">
               <input type="hidden" id="pjId">
+              ${(order.orderItems || []).length ? `<div style="margin-bottom:8px">
+                <label style="font-size:11px;color:rgba(3,69,67,.5)">Item yang dikerjakan <span style="opacity:.7">(upah dihitung otomatis dari daftar upah jahit)</span></label>
+                <select id="pjItem" onchange="pilihItemPenjahit()" style="font-size:13px">
+                  <option value="">— Pilih item dari order —</option>
+                  ${order.orderItems.map((it, i) => `<option value="${i}">${esc(it.name || 'Item')}${it.varian ? ' · ' + esc(it.varian) : ''} · ${it.qty || 0} pcs</option>`).join('')}
+                </select>
+                <div id="pjUpahInfo" style="font-size:11px;margin-top:4px;color:rgba(3,69,67,.5)"></div>
+              </div>` : ''}
               <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Nama penjahit * <span style="opacity:.7">(pilih dari daftar atau ketik baru)</span></label><input type="text" id="pjNama" list="pjDaftar" placeholder="Nama penjahit…" oninput="pilihPenjahitDariNama()" autocomplete="off" style="font-size:13px"></div>
-                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah (pcs)</label><input type="number" id="pjQty" min="0" placeholder="0" style="font-size:13px"></div>
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah (pcs)</label><input type="number" id="pjQty" min="0" placeholder="0" oninput="hitungUpahPenjahit()" style="font-size:13px"></div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:8px">
-                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Upah (Rp)</label><input type="text" inputmode="numeric" id="pjUpah" placeholder="0" oninput="this.value=fmtInputPrice(this.value)" style="font-size:13px"></div>
+                <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Upah (Rp)</label><input type="text" inputmode="numeric" id="pjUpah" placeholder="0" oninput="this.value=fmtInputPrice(this.value);_upahDiubahManual=true" style="font-size:13px"></div>
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Bagian / catatan</label><input type="text" id="pjCatatan" placeholder="cth: badan + lengan ukuran S–L" style="font-size:13px"></div>
               </div>
               <div id="pjRekWrap" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 10px;margin-bottom:8px">
@@ -1777,11 +1785,53 @@
     document.getElementById('pjQty').value = t?.qty || ''
     document.getElementById('pjUpah').value = t?.upah ? fmtPrice(t.upah) : ''
     document.getElementById('pjCatatan').value = t?.catatan || ''
+    _upahPerPcs = t?.upahPerPcs || 0; _upahDiubahManual = !!t
+    const selItem = document.getElementById('pjItem')
+    if (selItem) {
+      const idx = (order.orderItems || []).findIndex(it => kunciItem(it) === t?.itemKey)
+      selItem.value = idx >= 0 ? String(idx) : ''
+      document.getElementById('pjUpahInfo').textContent = t?.upahPerPcs ? `Upah ${fmtCurrency(t.upahPerPcs)}/pcs` : ''
+    }
     ;['pjBank', 'pjNoRek', 'pjAtasNama'].forEach(id => { const el = document.getElementById(id); el.value = ''; el.readOnly = false; el.style.background = '' })
     _rekDariDaftar = false
     pilihPenjahitDariNama()
     document.getElementById('pjNama').focus()
   }
+  // ── Upah otomatis dari daftar upah jahit (Product Knowledge → upah_jahit/{divisi}) ──
+  let _upahJahit = null, _upahPerPcs = 0, _upahDiubahManual = false
+  async function muatUpahJahit() {
+    if (_upahJahit) return _upahJahit
+    try { const sn = await getDoc(doc(db, 'upah_jahit', order.division)); _upahJahit = sn.exists() ? (sn.data().items || {}) : {} }
+    catch { _upahJahit = {} }
+    return _upahJahit
+  }
+  const kunciItem = it => [it?.name, it?.varian].filter(Boolean).join(' · ')
+  window.pilihItemPenjahit = async function() {
+    const sel = document.getElementById('pjItem'); if (!sel) return
+    const it = (order.orderItems || [])[sel.value]
+    const info = document.getElementById('pjUpahInfo')
+    if (!it) { _upahPerPcs = 0; info.textContent = ''; return }
+    const daftar = await muatUpahJahit()
+    _upahPerPcs = Number(daftar[kunciItem(it)] ?? daftar[it.name]) || 0
+    // Sisa pcs item ini yang belum dibagi ke penjahit lain
+    const idSedangEdit = document.getElementById('pjId').value
+    const sudahDibagi = daftarPenjahit(order).filter(t => t.id !== idSedangEdit && t.itemKey === kunciItem(it)).reduce((n, t) => n + (Number(t.qty) || 0), 0)
+    const sisa = Math.max(0, (Number(it.qty) || 0) - sudahDibagi)
+    if (!document.getElementById('pjQty').value || !idSedangEdit) document.getElementById('pjQty').value = sisa || ''
+    if (!document.getElementById('pjCatatan').value) document.getElementById('pjCatatan').value = kunciItem(it)
+    _upahDiubahManual = false
+    info.innerHTML = (_upahPerPcs
+      ? `<span style="color:#7c3aed;font-weight:700">Upah ${fmtCurrency(_upahPerPcs)}/pcs dari daftar upah jahit</span>`
+      : `<span style="color:#b45309">Upah per pcs untuk "${kunciItem(it)}" belum diatur di Product Knowledge — isi upah manual</span>`)
+      + ` · ${it.qty || 0} pcs di order${sudahDibagi ? `, ${sudahDibagi} pcs sudah dibagi ke penjahit lain` : ''}`
+    hitungUpahPenjahit(true)
+  }
+  window.hitungUpahPenjahit = function(paksa) {
+    if (!_upahPerPcs || (_upahDiubahManual && !paksa)) return
+    const qty = Number(document.getElementById('pjQty').value) || 0
+    document.getElementById('pjUpah').value = qty ? fmtPrice(qty * _upahPerPcs) : ''
+  }
+
   window.tutupFormPenjahit = function() {
     document.getElementById('formPenjahit').style.display = 'none'
     document.getElementById('pjTambahBtn').style.display = ''
@@ -1833,6 +1883,9 @@
         upah: parsePrice(document.getElementById('pjUpah').value) || null,
         catatan: document.getElementById('pjCatatan').value.trim(),
       }
+      const selItem = document.getElementById('pjItem')
+      const itemDipilih = selItem && (order.orderItems || [])[selItem.value]
+      if (itemDipilih) { data.itemKey = kunciItem(itemDipilih); if (_upahPerPcs) data.upahPerPcs = _upahPerPcs }
       const lama = daftarPenjahit(order)
       const idx = lama.findIndex(t => t.id === id)
       const list = lama.filter(t => t.id !== id)

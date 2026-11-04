@@ -112,6 +112,11 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'batalOleh', 'batalAt']));
       allow delete: if isOwner();
     }
+    // Upah jahit per pcs (internal, Jersey/Tailor) — dibaca staf untuk hitung upah otomatis, diatur Owner/Data
+    match /upah_jahit/{div} {
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow write: if isOwner() || isData();
+    }
     match /settings/{id} {
       allow read: if isStaffAuth();
       allow write: if isOwner();   // rekening bank, QRIS, target omzet — hanya owner

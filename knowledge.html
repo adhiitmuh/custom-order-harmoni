@@ -233,6 +233,7 @@
                 ${canEditModal ? `<span class="tier-badge tb-modal">● Modal — Internal</span>` : ''}
               </div>
               <div id="price-wrap-${d}"></div>
+              ${['jersey','tailor'].includes(d) && ['owner','data','cs','production'].includes(profile.role) ? `<div id="upah-wrap-${d}" style="margin-top:14px"></div>` : ''}
             </div>
 
             <!-- Knowledge sections -->
@@ -688,7 +689,47 @@
     ${canEdit ? `<button onclick="addInlinePriceRow('${d}')" class="btn btn-ghost btn-sm" style="margin-top:8px">＋ Tambah Baris</button>` : ''}`
   }
 
+  // ── Upah jahit per pcs (Jersey/Tailor) — data internal terpisah: upah_jahit/{divisi} ──
+  // Dipakai form penjahit di detail order: pilih item → upah = pcs × upah per pcs.
+  const _upahCache = {}
+  const kunciUpah = (nama, varian) => [nama, varian].filter(Boolean).join(' · ')
+  async function rerenderUpahWrap(division) {
+    const el = document.getElementById(`upah-wrap-${division}`); if (!el) return
+    if (!_upahCache[division]) {
+      try { const sn = await getDoc(doc(db, 'upah_jahit', division)); _upahCache[division] = sn.exists() ? (sn.data().items || {}) : {} }
+      catch { _upahCache[division] = {} }
+    }
+    const upah = _upahCache[division]
+    const bolehUbah = ['owner', 'data'].includes(getProfile()?.role)
+    const kunci = (priceDataStore[division]?.items || []).flatMap(it =>
+      it.variants?.length ? it.variants.filter(v => v.name).map(v => kunciUpah(it.name, v.name)) : [kunciUpah(it.name)]).filter(Boolean)
+    const escA = t => String(t ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+    el.innerHTML = `<div style="border-top:1px dashed rgba(3,69,67,.15);padding-top:12px">
+      <h3 style="font-size:13px;font-weight:700;color:#7c3aed;margin-bottom:4px">🧵 Upah Jahit per pcs — Internal</h3>
+      <p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:8px">Dipakai otomatis saat CS memilih item di bagian Penjahit pada order: upah = jumlah pcs × upah per pcs. Tidak terlihat customer.</p>
+      ${kunci.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px">${kunci.map(k => `
+        <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:6px 10px;font-size:12px">
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escA(k)}">${escA(k)}</span>
+          ${bolehUbah
+            ? `<input type="text" inputmode="numeric" value="${upah[k] ? Number(upah[k]).toLocaleString('id-ID') : ''}" placeholder="Rp/pcs" data-kunci="${escA(k)}" oninput="this.value=fmtInputPrice(this.value)" onchange="simpanUpahJahit('${division}', this)" style="width:96px;font-size:12px;padding:4px 6px;text-align:right">`
+            : `<b>${upah[k] ? 'Rp' + Number(upah[k]).toLocaleString('id-ID') : '—'}</b>`}
+        </label>`).join('')}</div>` : '<p style="font-size:12px;color:rgba(3,69,67,.35)">Tambahkan item di daftar harga dulu.</p>'}
+    </div>`
+  }
+  window.simpanUpahJahit = async function(division, input) {
+    const k = input.dataset.kunci
+    const nilai = parseInt(String(input.value).replace(/\D/g, '')) || 0
+    const items = { ...(_upahCache[division] || {}) }
+    if (nilai) items[k] = nilai; else delete items[k]
+    try {
+      await setDoc(doc(db, 'upah_jahit', division), { division, items, updatedAt: Timestamp.now(), updatedBy: getProfile()?.name || '' })
+      _upahCache[division] = items
+      showSavedToast(`✓ Upah ${k} tersimpan`)
+    } catch (err) { alert('Gagal simpan upah: ' + err.message) }
+  }
+
   function rerenderPriceWrap(division) {
+    rerenderUpahWrap(division)
     const el = document.getElementById(`price-wrap-${division}`)
     if (!el) return
     el.innerHTML = renderInlinePriceTable(division)
