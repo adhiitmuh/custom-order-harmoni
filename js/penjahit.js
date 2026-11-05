@@ -46,3 +46,14 @@ export function badgeUpahPenjahit(o, { ringkas = false } = {}) {
   const ket = s.status === 'sebagian' ? `${s.lunasCount}/${s.jumlah} ditransfer` : 'belum ditransfer'
   return `<span style="${gaya}background:#fef2f2;color:#b91c1c;border:1px solid #fecaca">🧵 upah ${ket}${s.sisa && !ringkas ? ' · sisa ' + rp(s.sisa) : ''}</span>`
 }
+
+// Divisi Jersey/Tailor yang boleh diajukan upahnya oleh user ini (sama dengan firestore.rules bolehAjukanUpah):
+// Owner semua; production sesuai divisinya (kosong = semua); CS hanya bila merangkap production divisi itu.
+export function divisiBolehAjukanUpah(profile) {
+  if (!profile) return []
+  if (profile.role === 'owner') return [...DIVISI_PENJAHIT]
+  const divs = profile.apps?.custom_order?.divisions || []
+  if (profile.role === 'production') return divs.length ? DIVISI_PENJAHIT.filter(d => divs.includes(d)) : [...DIVISI_PENJAHIT]
+  if (profile.role === 'cs' && (profile.merangkapProduction || profile.apps?.custom_order?.merangkapProduction === true)) return DIVISI_PENJAHIT.filter(d => divs.includes(d))
+  return []
+}

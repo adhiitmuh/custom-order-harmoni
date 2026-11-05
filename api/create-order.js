@@ -1135,6 +1135,7 @@ async function getPortalStaff(idToken, firebaseUser) {
     role: app.role || 'cs',
     divisi: app.divisi || p.divisi || '',
     divisions: Array.isArray(app.divisions) ? app.divisions : [],
+    merangkapProduction: app.merangkapProduction === true,
     nama: p.nama || '',
     email: p.email || firebaseUser.email || '',
   }
@@ -1155,7 +1156,9 @@ async function createDataCustomToken(env, staff) {
     iat: now,
     exp: now + 3600,
     uid: staff.uid,
-    claims: { staff: true, role: staff.role, divisi: staff.divisi },
+    // divs = divisi produksi (role production / CS merangkap production), rangkap = CS merangkap production
+    claims: { staff: true, role: staff.role, divisi: staff.divisi,
+              divs: (staff.divisions || []).filter(d => typeof d === 'string').slice(0, 30), rangkap: !!staff.merangkapProduction },
   }))
   const privateKey = await crypto.subtle.importKey(
     'pkcs8', pemToBuffer(sa.private_key),

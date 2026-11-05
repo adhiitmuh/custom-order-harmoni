@@ -232,7 +232,8 @@ export function requireAuth(callback) {
         appDivisi = appAccess.divisi || data.divisi || ''
       }
 
-      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, divisi: appDivisi }
+      const fresh = { id: snap.id, ...data, name: data.nama || user.email, role: appRole, divisions: appDivisions, divisi: appDivisi,
+                      merangkapProduction: appRole !== 'owner' && data.apps?.custom_order?.merangkapProduction === true }
 
       const dataUser = await dataAuthReady
 

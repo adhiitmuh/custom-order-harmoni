@@ -563,12 +563,13 @@
                           <button onclick="salinRek('${esc(m.noRek)}')" style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid rgba(7,89,133,.3);background:white;color:#075985;cursor:pointer;font-family:inherit">Salin</button></div>`
                       : `<div style="font-size:11px;color:#b45309;margin-top:2px">🏦 Rekening belum ada${bolehUbah ? ' — tekan Edit untuk mengisi' : ''}</div>` })()}
                     <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${t.qty ? esc(t.qty) + ' pcs' : ''}${t.qty && t.catatan ? ' · ' : ''}${esc(t.catatan || '')}${!t.qty && !t.catatan ? 'Bagian belum diisi' : ''}</div>
+                    ${t.ketHarga ? `<div style="font-size:11px;color:#7c3aed;margin-top:2px">💬 ${esc(t.ketHarga)}</div>` : (t.upah ? '<div style="font-size:11px;color:#b45309;margin-top:2px">Keterangan harga belum diisi</div>' : '')}
                   </div>
                   <div style="text-align:right;font-size:13px;font-weight:700">${t.upah ? fmtCurrency(t.upah) : '<span style="font-size:11px;color:#b45309">upah belum diisi</span>'}</div>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
                   ${(() => { const pg = !bayar && _pengajuanAktif[t.id]; return bayar
-                    ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}</span>`
+                    ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}${bayar.bukti && /^https:\/\//.test(bayar.bukti) ? ` · <a href="${esc(bayar.bukti)}" target="_blank" rel="noopener" style="color:#047857">📷 bukti</a>` : ''}</span>`
                     : pg ? `<a href="upah-penjahit.html?id=${pg.id}" style="font-size:11px;font-weight:700;color:#b45309;text-decoration:none">🔒 Sedang diajukan ${fmtCurrency(pg.upah)} · ${esc(pg.oleh)} — upah terkunci sampai dibayar/dibatalkan →</a>`
                     : `<span style="font-size:11px;font-weight:700;color:#b91c1c">⏳ Belum ditransfer</span>` })()}
                   <div style="display:flex;gap:6px">
@@ -609,6 +610,7 @@
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Upah (Rp)</label><input type="text" inputmode="numeric" id="pjUpah" placeholder="0" oninput="this.value=fmtInputPrice(this.value);_upahDiubahManual=true" style="font-size:13px"></div>
                 <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Bagian / catatan</label><input type="text" id="pjCatatan" placeholder="cth: badan + lengan ukuran S–L" style="font-size:13px"></div>
               </div>
+              <div style="margin-bottom:8px"><label style="font-size:11px;color:rgba(3,69,67,.5)">Keterangan harga <span style="opacity:.7">(wajib sebelum diajukan — cth: 25 pcs × Rp19.000 jahit jersey)</span></label><input type="text" id="pjKetHarga" placeholder="cth: 25 pcs × Rp19.000 jahit jersey" oninput="_ketDiubahManual=true" style="font-size:13px"></div>
               <div id="pjRekWrap" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 10px;margin-bottom:8px">
                 <div style="font-size:11px;font-weight:700;color:#075985;margin-bottom:6px" id="pjRekJudul">🏦 Rekening penjahit (wajib untuk penjahit baru)</div>
                 <div style="display:grid;grid-template-columns:1fr 1.4fr 1.4fr;gap:8px">
@@ -633,7 +635,7 @@
               </div>
               ${bolehUbah ? `<button onclick="toggleTailorCheck()" class="btn ${order.tailorChecked ? 'btn-green' : 'btn-ghost'} btn-sm" id="tailorCheckBtn">${order.tailorChecked ? '✓ Sudah' : 'Tandai'}</button>` : ''}
             </div>
-            ${!isOwnerP && list.length ? '<p style="font-size:11px;color:rgba(3,69,67,.4);margin-top:8px">Tanda "sudah ditransfer" hanya bisa diisi Owner.</p>' : ''}
+            ${!isOwnerP && list.length ? '<p style="font-size:11px;color:rgba(3,69,67,.4);margin-top:8px">Tanda "sudah ditransfer" hanya bisa diisi Adi. Ajukan upah lewat menu Upah Penjahit.</p>' : ''}
           </div>`
           })() : ''}
 
@@ -1785,7 +1787,8 @@
     document.getElementById('pjQty').value = t?.qty || ''
     document.getElementById('pjUpah').value = t?.upah ? fmtPrice(t.upah) : ''
     document.getElementById('pjCatatan').value = t?.catatan || ''
-    _upahPerPcs = t?.upahPerPcs || 0; _upahDiubahManual = !!t
+    document.getElementById('pjKetHarga').value = t?.ketHarga || ''
+    _upahPerPcs = t?.upahPerPcs || 0; _upahDiubahManual = !!t; _ketDiubahManual = !!t?.ketHarga
     const selItem = document.getElementById('pjItem')
     if (selItem) {
       const idx = (order.orderItems || []).findIndex(it => kunciItem(it) === t?.itemKey)
@@ -1798,7 +1801,7 @@
     document.getElementById('pjNama').focus()
   }
   // ── Upah otomatis dari daftar upah jahit (Product Knowledge → upah_jahit/{divisi}) ──
-  let _upahJahit = null, _upahPerPcs = 0, _upahDiubahManual = false
+  let _upahJahit = null, _upahPerPcs = 0, _upahDiubahManual = false, _ketDiubahManual = false
   async function muatUpahJahit() {
     if (_upahJahit) return _upahJahit
     try { const sn = await getDoc(doc(db, 'upah_jahit', order.division)); _upahJahit = sn.exists() ? (sn.data().items || {}) : {} }
@@ -1830,6 +1833,12 @@
     if (!_upahPerPcs || (_upahDiubahManual && !paksa)) return
     const qty = Number(document.getElementById('pjQty').value) || 0
     document.getElementById('pjUpah').value = qty ? fmtPrice(qty * _upahPerPcs) : ''
+    // Keterangan harga otomatis: "25 pcs × Rp12.000 · Jersey Printing"
+    if (!_ketDiubahManual || paksa) {
+      const it = (order.orderItems || [])[document.getElementById('pjItem')?.value]
+      document.getElementById('pjKetHarga').value = qty ? `${qty} pcs × ${fmtCurrency(_upahPerPcs)}${it ? ' · ' + kunciItem(it) : ''}` : ''
+      _ketDiubahManual = false
+    }
   }
 
   window.tutupFormPenjahit = function() {
@@ -1882,6 +1891,7 @@
         qty: Number(document.getElementById('pjQty').value) || null,
         upah: parsePrice(document.getElementById('pjUpah').value) || null,
         catatan: document.getElementById('pjCatatan').value.trim(),
+        ketHarga: document.getElementById('pjKetHarga').value.trim(),
       }
       const selItem = document.getElementById('pjItem')
       const itemDipilih = selItem && (order.orderItems || [])[selItem.value]

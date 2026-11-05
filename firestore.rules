@@ -101,15 +101,29 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
     // Pengajuan upah penjahit (kumpulan beberapa order) — CS/produksi mengajukan, Owner menandai dibayar
+    // Yang boleh mengajukan upah: Owner, tim produksi divisi itu, atau CS yang merangkap produksi divisi itu
+    // (klaim divs/rangkap dari Worker). Divisi pengajuan = divisi order-order di dalamnya.
+    function bolehAjukanUpah(divs) {
+      let punya = request.auth.token.get('divs', []);
+      return role() == 'owner'
+        || (role() == 'production' && (punya.size() == 0 || punya.hasAll(divs)))
+        || (role() == 'cs' && request.auth.token.get('rangkap', false) == true && punya.size() > 0 && punya.hasAll(divs));
+    }
     match /pengajuan_upah/{id} {
       allow read: if isStaffAuth() && !isDivisiOwner();
       allow create: if isStaffAuth() && role() in ['owner', 'cs', 'production']
         && request.resource.data.status == 'diajukan'
-        && request.resource.data.dibuatOlehUid == request.auth.uid;
+        && request.resource.data.dibuatOlehUid == request.auth.uid
+        && request.resource.data.divisions is list && request.resource.data.divisions.size() > 0
+        && bolehAjukanUpah(request.resource.data.divisions);
       allow update: if isOwner()
         || (isStaffAuth() && resource.data.dibuatOlehUid == request.auth.uid
             && resource.data.status == 'diajukan' && request.resource.data.status == 'batal'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'batalOleh', 'batalAt']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'batalOleh', 'batalAt']))
+        // Staf yang mengajukan mencatat bahwa pengajuan sudah dikirim ke Adi lewat WhatsApp
+        || (isStaffAuth() && resource.data.dibuatOlehUid == request.auth.uid
+            && resource.data.status == 'diajukan' && request.resource.data.status == 'diajukan'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['waDikirimAt', 'waDikirimOleh', 'waDikirimKali']));
       allow delete: if isOwner();
     }
     // Upah jahit per pcs (internal, Jersey/Tailor) — dibaca staf untuk hitung upah otomatis, diatur Owner/Data
