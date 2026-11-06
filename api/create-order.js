@@ -185,12 +185,6 @@ export default {
         await runDeadlineCheck(env, token)
         return json({ success: true, message: 'Deadline check selesai' }, 200)
       }
-      // Manual trigger pengingat tagihan (body {kirim:false} = hanya hitung, tanpa kirim WA)
-      if (request.method === 'POST' && url.pathname === '/trigger-tagihan') {
-        const b = await request.json().catch(() => ({}))
-        const hasil = await runTagihanReminder(env, token, { kirim: b.kirim !== false })
-        return json({ success: true, ...hasil }, 200)
-      }
       // Backup endpoints — pakai API_SECRET_KEY yang sama
       if (url.pathname === '/backups' || url.pathname === '/backup' || url.pathname === '/trigger-backup') {
         return handleBackupRequest(request, url, env, token)
@@ -207,7 +201,6 @@ export default {
     ctx.waitUntil((async () => {
       const token = await getFirebaseToken(env)
       await runDeadlineCheck(env, token).catch(err => console.error('Deadline check error:', err))
-      await runTagihanReminder(env, token).catch(err => console.error('Tagihan reminder error:', err))
       // Backup otomatis setiap Minggu (hari 0 = Sunday UTC)
       if (new Date().getUTCDay() === 0) {
         await runBackup(env, token).catch(err => console.error('Backup error:', err))
@@ -1567,101 +1560,6 @@ async function runDeadlineCheck(env, token) {
   }
 
   await Promise.allSettled(sends)
-}
-
-// ── Pengingat Tagihan ─────────────────────────────────────────────────────────
-// Setiap pagi: nota belum lunas yang perlu di-follow up (logika sama dengan js/tagihan.js) dikirim
-// lewat WA ke nomor CS tiap lokasi (lokasi.waCs) + ringkasan ke Owner.
-function fsNilai(v) {
-  if (!v) return null
-  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, fsNilai(x)]))
-  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fsNilai)
-  if ('nullValue' in v) return null
-  return val(v)
-}
-const tglWita = (d = new Date()) => new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10)
-const hariAntara = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000)
-
-function statusTagihanWorker(o, hariIni) {
-  if (!o || o.status === 'cancelled') return null
-  const total = Number(o.totalPrice) || 0, bayar = Number(o.depositPaid) || 0, sisa = total - bayar
-  if (!total || sisa <= 0) return null
-  const tglOrder = o.orderDate || (typeof o.createdAt === 'string' ? tglWita(new Date(o.createdAt)) : '') || hariIni
-  const umur = Math.max(0, hariAntara(tglOrder, hariIni))
-  const lewat = o.dueDate && o.dueDate < hariIni ? hariAntara(o.dueDate, hariIni) : 0
-  const sisaHari = o.dueDate ? hariAntara(hariIni, o.dueDate) : null
-  let level, alasan
-  if (['done', 'delivered'].includes(o.status)) { level = 1; alasan = 'selesai, belum lunas' }
-  else if (lewat > 0) { level = 2; alasan = `lewat target ${lewat} hari` }
-  else if (bayar <= 0 && umur >= 1) { level = 3; alasan = `belum DP (${umur} hari)` }
-  else if (sisaHari !== null && sisaHari <= 2) { level = 4; alasan = sisaHari === 0 ? 'target hari ini' : `target ${sisaHari} hari lagi` }
-  else level = 5
-  const t = o.tagih || null
-  let perlu = level <= 4
-  if (t) {
-    const terakhir = t.at ? tglWita(new Date(t.at)) : ''
-    if (t.hasil === 'janji' && t.janjiTgl) perlu = t.janjiTgl <= hariIni
-    else if (t.hasil === 'sudahbayar') { perlu = true; alasan = 'customer bilang sudah bayar — cek mutasi' }
-    else if (perlu) perlu = (terakhir ? hariAntara(terakhir, hariIni) : 3) >= 3
-  }
-  if (perlu && level === 5) alasan = t?.hasil === 'janji' ? 'jatuh tempo janji bayar' : (alasan || 'belum lunas')
-  return perlu ? { level, alasan, sisa, total, bayar, lewat } : null
-}
-
-async function runTagihanReminder(env, token, { kirim = true } = {}) {
-  const projectId = env.FIREBASE_PROJECT_ID
-  const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`
-  const hariIni = tglWita()
-  const res = await fetch(`${base}:runQuery`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'orders' }] } }),
-  })
-  const rows = await res.json()
-  const lokRes = await fetch(`${base}/lokasi?pageSize=200`, { headers: { Authorization: `Bearer ${token}` } })
-  const lokasi = {}
-  if (lokRes.ok) for (const d of (await lokRes.json()).documents || []) {
-    const f = Object.fromEntries(Object.entries(d.fields || {}).map(([k, x]) => [k, fsNilai(x)]))
-    lokasi[d.name.split('/').pop()] = f
-  }
-  const perLokasi = {}
-  for (const item of Array.isArray(rows) ? rows : []) {
-    if (!item.document) continue
-    const o = Object.fromEntries(Object.entries(item.document.fields || {}).map(([k, x]) => [k, fsNilai(x)]))
-    const st = statusTagihanWorker(o, hariIni)
-    if (!st) continue
-    const k = o.lokasiId || ''
-    ;(perLokasi[k] = perLokasi[k] || []).push({ ...st, orderNumber: o.orderNumber || '-', customerName: o.customerName || '-', division: o.division || '' })
-  }
-  const rp = n => 'Rp' + Math.round(Number(n) || 0).toLocaleString('id-ID')
-  const link = 'https://adhiitmuh.github.io/custom-order-harmoni/tagihan.html'
-  const sends = [], ringkas = []
-  for (const [k, list] of Object.entries(perLokasi)) {
-    list.sort((a, b) => a.level - b.level || b.lewat - a.lewat)
-    const nama = lokasi[k]?.nama || (k ? k : 'Tanpa lokasi')
-    const totalSisa = list.reduce((t, x) => t + x.sisa, 0)
-    ringkas.push({ lokasi: nama, jumlah: list.length, sisa: totalSisa, wa: lokasi[k]?.waCs || '' })
-    const pesan = [
-      `💳 *Pengingat Tagihan — ${nama}*`,
-      `${list.length} nota belum lunas perlu di-follow up hari ini (sisa ${rp(totalSisa)}):`,
-      ``,
-      ...list.slice(0, 15).map((x, i) => `${i + 1}. *${x.orderNumber}* · ${x.customerName}\n   Sisa ${rp(x.sisa)} — ${x.alasan}`),
-      list.length > 15 ? `…dan ${list.length - 15} nota lainnya` : '',
-      ``,
-      `Hubungi pemesan atau cek ulang apakah sudah bayar, lalu catat hasilnya di Tagihan:`,
-      link,
-    ].filter(x => x !== '').join('\n')
-    const nomor = String(lokasi[k]?.waCs || '').split(',').map(x => x.trim()).filter(Boolean)
-    if (kirim && env.FONNTE_API_KEY) nomor.forEach(no => sends.push(fonnteSend(env.FONNTE_API_KEY, no, pesan)))
-  }
-  if (ringkas.length && kirim && env.FONNTE_API_KEY && env.OWNER_WA_NUMBER) {
-    const total = ringkas.reduce((t, r) => t + r.jumlah, 0), sisa = ringkas.reduce((t, r) => t + r.sisa, 0)
-    const pesan = [`📊 *Ringkasan Tagihan Hari Ini*`, `${total} nota perlu di-follow up · sisa ${rp(sisa)}`, ``,
-      ...ringkas.sort((a, b) => b.jumlah - a.jumlah).map(r => `• ${r.lokasi}: ${r.jumlah} nota (${rp(r.sisa)})${r.wa ? '' : ' — ⚠️ WA CS belum diisi'}`), ``, link].join('\n')
-    sends.push(fonnteSend(env.FONNTE_API_KEY, env.OWNER_WA_NUMBER, pesan))
-  }
-  await Promise.allSettled(sends)
-  return { tanggal: hariIni, lokasi: ringkas, terkirim: sends.length }
 }
 
 async function fonnteSend(apiKey, target, message) {
