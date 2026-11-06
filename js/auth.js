@@ -285,6 +285,7 @@ export function requireAuth(callback) {
 }
 
 export function renderSidebar(profile) {
+  setTimeout(() => perbaruiBadgeTagihan(profile).catch(() => {}), 50)
   pasangNavHp()   // bar atas + menu laci untuk layar HP
   const el = document.getElementById('sidebar')
   if (!el) return
@@ -336,6 +337,10 @@ export function renderSidebar(profile) {
       <a href="orders.html" class="sidebar-link ${page==='orders.html'?'active':''}">
         <span class="icon">📋</span>Semua Order
       </a>`}
+      ${['owner', 'manager', 'cs'].includes(profile.role) ? `
+      <a href="tagihan.html" class="sidebar-link ${page==='tagihan.html'?'active':''}">
+        <span class="icon">💳</span>Tagihan<span id="tagihanBadge" class="mention-badge" style="display:none;background:#ef4444"></span>
+      </a>` : ''}
       ${!isDivisi && profile.role !== 'production' && profile.role !== 'data' ? `
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
         <span class="icon">＋</span>Order Baru
@@ -750,4 +755,31 @@ function initNotifications(profile) {
       renderPanel()
     }
   }) // dataAuthReady.then
+}
+
+
+// ── Pengingat tagihan: jumlah nota belum lunas yang perlu di-follow up (badge menu + banner dashboard) ──
+// Dihitung paling sering 10 menit sekali per user (disimpan di sessionStorage) supaya tidak membaca semua order tiap halaman.
+export async function perbaruiBadgeTagihan(profile, paksa = false) {
+  if (!profile || !['owner', 'manager', 'cs'].includes(profile.role)) return
+  const kunci = 'tagihan_badge_' + profile.id
+  let n = null
+  try { const c = JSON.parse(sessionStorage.getItem(kunci) || 'null'); if (!paksa && c && Date.now() - c.t < 10 * 60 * 1000) n = c.n } catch {}
+  if (n === null) {
+    try {
+      await dataAuthReady
+      const { statusTagihan } = await import('./tagihan.js?v=20261106')
+      const sn = await getDocs(ordersQuery(profile))
+      n = sn.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile)).filter(o => statusTagihan(o)?.perlu).length
+      sessionStorage.setItem(kunci, JSON.stringify({ n, t: Date.now() }))
+    } catch { return }
+  }
+  const b = document.getElementById('tagihanBadge')
+  if (b) { b.textContent = n > 99 ? '99+' : n; b.style.display = n ? '' : 'none' }
+  const page = location.pathname.split('/').pop() || 'dashboard.html'
+  if (n && page === 'dashboard.html' && !document.getElementById('bannerTagihan')) {
+    const main = document.querySelector('.main')
+    if (main) main.insertAdjacentHTML('afterbegin', `<a id="bannerTagihan" href="tagihan.html" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-decoration:none;font-size:13px;font-weight:700">
+      <span>💳 ${n} nota belum lunas perlu di-follow up — hubungi pemesan atau cek ulang pembayarannya</span><span>Buka Tagihan →</span></a>`)
+  }
 }

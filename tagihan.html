@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Tagihan — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .tg-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    .tg-bar input, .tg-bar select { width:auto; font-size:13px; }
+    .tab-st { padding:6px 14px; border-radius:999px; font-size:12px; font-weight:700; border:1.5px solid rgba(3,69,67,.15); background:transparent; color:var(--green); cursor:pointer; font-family:inherit; }
+    .tab-st.aktif { background:var(--green); color:var(--beige); border-color:var(--green); }
+    .tg-kartu { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+    .tg-k { background:var(--white); border:1px solid rgba(3,69,67,.08); border-radius:12px; padding:12px 14px; }
+    .tg-k .l { font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.5); text-transform:uppercase; }
+    .tg-k .v { font-size:18px; font-weight:800; margin-top:4px; }
+    .tg-card { background:var(--white); border-radius:14px; border:1px solid rgba(3,69,67,.08); border-left:4px solid #94a3b8; padding:14px 16px; margin-bottom:10px; }
+    .tg-card.l1 { border-left-color:#dc2626; } .tg-card.l2 { border-left-color:#ea580c; } .tg-card.l3 { border-left-color:#d97706; } .tg-card.l4 { border-left-color:#ca8a04; }
+    .tg-card.sorot { box-shadow:0 0 0 3px rgba(5,150,105,.35); }
+    .tg-alasan { display:inline-block; font-size:11px; font-weight:800; padding:2px 9px; border-radius:999px; background:#fef2f2; color:#b91c1c; }
+    .tg-card.l3 .tg-alasan, .tg-card.l4 .tg-alasan { background:#fffbeb; color:#b45309; }
+    .tg-card.l5 .tg-alasan { background:rgba(3,69,67,.06); color:rgba(3,69,67,.6); }
+    .tg-angka { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; margin:8px 0; }
+    .tg-angka b { font-size:14px; }
+    .tg-fu { font-size:12px; background:#f8fafc; border-radius:8px; padding:7px 10px; margin-top:6px; }
+    .mdl-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
+    .mdl { background:#fff; border-radius:16px; padding:20px; max-width:420px; width:100%; max-height:92vh; overflow:auto; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PESANAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Tagihan</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Nota yang belum lunas. Follow up ke pemesan lewat WhatsApp, atau cek ulang apakah pembeli sebenarnya sudah bayar — lalu catat hasilnya.</p>
+    </div>
+    <div class="tg-kartu" id="kartu"></div>
+    <div class="tg-bar">
+      <button class="tab-st aktif" data-tab="perlu" onclick="pilihTab('perlu')">🔔 Perlu follow up</button>
+      <button class="tab-st" data-tab="tunda" onclick="pilihTab('tunda')">⏳ Menunggu / janji bayar</button>
+      <button class="tab-st" data-tab="semua" onclick="pilihTab('semua')">Semua belum lunas</button>
+    </div>
+    <div class="tg-bar">
+      <input type="search" id="cari" placeholder="🔍 Cari no. order / customer" style="min-width:200px;flex:1">
+      <select id="fLokasi"><option value="">Semua lokasi</option></select>
+      <select id="fDivisi"><option value="">Semua divisi</option></select>
+    </div>
+    <div id="daftar"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady, ordersQuery, canSeeOrder } from './js/auth.js'
+  import { getDocs, getDoc, doc, updateDoc, collection, Timestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, STATUS_LABEL } from './js/utils.js'
+  import { statusTagihan, pesanTagihan, linkWaCustomer, HASIL_TAGIH, ULANG_HARI } from './js/tagihan.js?v=20261106'
+  import { tglLokal } from './js/pembayaran.js?v=20261106b'
+
+  const APP = 'https://adhiitmuh.github.io/custom-order-harmoni/'
+  const rp = n => { const v = Math.round(Number(n) || 0); return (v < 0 ? '−Rp' : 'Rp') + Math.abs(v).toLocaleString('id-ID') }
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const tglTampil = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
+  let profile, data = [], paymentInfo = null, lokasiList = [], tab = 'perlu'
+  const sorot = new URLSearchParams(location.search).get('order')
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager', 'cs'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const [oSnap, pi, lSnap] = await Promise.all([
+      getDocs(ordersQuery(p)),
+      getDoc(doc(db, 'settings', 'payment_info')).catch(() => null),
+      getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] })),
+    ])
+    paymentInfo = pi?.exists?.() ? pi.data() : null
+    lokasiList = lSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const hari = tglLokal()
+    data = oSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, p))
+      .map(o => ({ o, s: statusTagihan(o, hari) })).filter(x => x.s)
+    const loks = [...new Set(data.map(x => x.o.lokasiId || ''))]
+    const fl = document.getElementById('fLokasi')
+    fl.innerHTML = '<option value="">Semua lokasi</option>' + loks.map(k => `<option value="${esc(k)}">${esc(lokasiList.find(l => l.id === k)?.nama || (k ? k : 'Tanpa lokasi'))}</option>`).join('')
+    if (loks.length < 2) fl.style.display = 'none'
+    const divs = [...new Set(data.map(x => x.o.division || ''))]
+    document.getElementById('fDivisi').innerHTML = '<option value="">Semua divisi</option>' + divs.map(k => `<option value="${esc(k)}">${esc(DIVISION_META[k]?.label || k)}</option>`).join('')
+    ;['cari', 'fLokasi', 'fDivisi'].forEach(id => document.getElementById(id).addEventListener('input', render))
+    if (sorot) { const x = data.find(x => x.o.id === sorot); if (x && !x.s.perlu) tab = x.s.ditunda ? 'tunda' : 'semua'; document.querySelectorAll('.tab-st').forEach(b => b.classList.toggle('aktif', b.dataset.tab === tab)) }
+    render()
+    if (sorot) setTimeout(() => document.getElementById('tg-' + sorot)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200)
+  })
+
+  window.pilihTab = t => { tab = t; document.querySelectorAll('.tab-st').forEach(b => b.classList.toggle('aktif', b.dataset.tab === t)); render() }
+
+  function tersaring() {
+    const q = document.getElementById('cari').value.toLowerCase().trim(), fl = document.getElementById('fLokasi').value, fd = document.getElementById('fDivisi').value
+    return data.filter(({ o, s }) => (!q || [o.orderNumber, o.customerName, o.customerContact].some(t => String(t || '').toLowerCase().includes(q)))
+      && (!fl || (o.lokasiId || '') === fl) && (!fd || (o.division || '') === fd))
+  }
+
+  function render() {
+    const semua = tersaring()
+    const perlu = semua.filter(x => x.s.perlu), tunda = semua.filter(x => !x.s.perlu && (x.s.ditunda || x.s.level <= 4)), lain = semua
+    const kartu = (l, v, warna = '') => `<div class="tg-k"><div class="l">${l}</div><div class="v" style="${warna}">${v}</div></div>`
+    document.getElementById('kartu').innerHTML = [
+      kartu('Perlu follow up', perlu.length, perlu.length ? 'color:#b91c1c' : 'color:#047857'),
+      kartu('Selesai tapi belum lunas', semua.filter(x => x.s.level === 1).length),
+      kartu('Lewat target', semua.filter(x => x.s.level === 2).length),
+      kartu('Belum DP', semua.filter(x => x.s.bayar <= 0).length),
+      kartu('Total sisa tagihan', rp(semua.reduce((t, x) => t + x.s.sisa, 0))),
+    ].join('')
+    const list = (tab === 'perlu' ? perlu : tab === 'tunda' ? tunda : lain)
+      .sort((a, b) => a.s.level - b.s.level || b.s.lewat - a.s.lewat || b.s.umur - a.s.umur)
+    const el = document.getElementById('daftar')
+    if (!list.length) { el.innerHTML = `<div class="empty"><p>${tab === 'perlu' ? '🎉 Tidak ada nota yang perlu di-follow up sekarang' : 'Tidak ada data'}</p></div>`; return }
+    el.innerHTML = list.map(({ o, s }) => {
+      const meta = DIVISION_META[o.division] || {}
+      const t = s.tagih, h = t ? HASIL_TAGIH[t.hasil] : null
+      return `<div class="tg-card l${s.level} ${o.id === sorot ? 'sorot' : ''}" id="tg-${o.id}">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:flex-start">
+          <div>
+            <a href="order.html?id=${o.id}" style="font-size:14px;font-weight:800;color:var(--green)">${esc(o.orderNumber || '')}</a>
+            <span style="font-size:13px;font-weight:700"> · ${esc(o.customerName || '')}</span>
+            <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${meta.icon || ''} ${esc(meta.label || o.division || '')} · ${esc(STATUS_LABEL[o.status] || o.status || '')} · target ${tglTampil(o.dueDate)}${o.lokasiNama ? ' · ' + esc(o.lokasiNama) : ''}${o.createdByName ? ' · order oleh ' + esc(o.createdByName) : ''}</div>
+          </div>
+          <span class="tg-alasan">${esc(s.alasan)}</span>
+        </div>
+        <div class="tg-angka"><span>Total <b>${rp(s.total)}</b></span><span>Dibayar <b style="color:#059669">${rp(s.bayar)}</b></span><span>Sisa <b style="color:#b91c1c">${rp(s.sisa)}</b></span>${o.customerContact ? `<span>📞 ${esc(o.customerContact)}</span>` : ''}</div>
+        ${t ? `<div class="tg-fu">${h?.ikon || '📝'} <b>${esc(h?.label || t.hasil)}</b>${t.janjiTgl ? ' — janji bayar ' + tglTampil(t.janjiTgl) : ''}${t.catatan ? ' · “' + esc(t.catatan) + '”' : ''}<div style="font-size:10px;color:rgba(3,69,67,.45)">${esc(t.oleh || '')} · ${tglTampil(s.terakhir)}${(o.tagihRiwayat || []).length > 1 ? ` · ${o.tagihRiwayat.length}× follow up` : ''}${s.ditunda ? ' · ' + esc(s.ditunda) : ''}</div></div>`
+          : '<div class="tg-fu" style="color:#b91c1c">Belum pernah di-follow up</div>'}
+        ${t?.hasil === 'sudahbayar' ? '<div style="font-size:11px;color:#b45309;margin-top:6px">⚠️ Customer bilang sudah bayar — cek mutasi rekening, lalu catat lewat <b>Catat Pembayaran</b>. Kalau belum masuk, follow up lagi.</div>' : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-sm" style="background:#25d366;color:#fff" onclick="waCustomer('${o.id}')">📲 WA customer</button>
+          <button class="btn btn-ghost btn-sm" onclick="catatFollowUp('${o.id}')">✍️ Catat follow up</button>
+          <a class="btn btn-primary btn-sm" href="order.html?id=${o.id}&bayar=1">💳 Catat pembayaran</a>
+        </div>
+      </div>`
+    }).join('')
+  }
+
+  function rekeningUntuk(o) {
+    const b = (paymentInfo?.banks || []).filter(b => b.isActive !== false && b.accountNumber).filter(b => {
+      const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : []), locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
+      return (!divs.length || divs.includes(o.division)) && (!locs.length || locs.includes(o.lokasiId))
+    })
+    return b.map(x => `${x.bankName} ${x.accountNumber}${x.accountHolder ? ' a.n. ' + x.accountHolder : ''}`).join('\n')
+  }
+  window.waCustomer = function(id) {
+    const x = data.find(x => x.o.id === id); if (!x) return
+    const o = x.o
+    window.open(linkWaCustomer(o.customerContact, pesanTagihan(o, { rekening: rekeningUntuk(o), chatUrl: o.chatToken ? `${APP}chat.html?t=${o.chatToken}` : '' })), '_blank')
+    catatFollowUp(id, 'dihubungi')
+  }
+
+  window.catatFollowUp = function(id, hasilAwal = '') {
+    const x = data.find(x => x.o.id === id); if (!x) return
+    document.getElementById('mdlFu')?.remove()
+    const bg = document.createElement('div'); bg.className = 'mdl-bg'; bg.id = 'mdlFu'
+    const besok = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return tglLokal(d) })()
+    bg.innerHTML = `<div class="mdl">
+      <div style="font-size:16px;font-weight:800;margin-bottom:2px">✍️ Hasil follow up</div>
+      <div style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:12px">${esc(x.o.orderNumber)} · ${esc(x.o.customerName)} · sisa ${rp(x.s.sisa)}</div>
+      <label style="font-size:11px;color:rgba(3,69,67,.5)">Hasil *</label>
+      <select id="fuHasil" style="font-size:13px;margin-bottom:10px">${Object.entries(HASIL_TAGIH).map(([k, v]) => `<option value="${k}" ${k === (hasilAwal || 'dihubungi') ? 'selected' : ''}>${v.ikon} ${v.label}</option>`).join('')}</select>
+      <div id="fuJanjiWrap" style="display:none"><label style="font-size:11px;color:rgba(3,69,67,.5)">Tanggal janji bayar *</label><input type="date" id="fuJanji" value="${besok}" style="font-size:13px;margin-bottom:10px"></div>
+      <label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan</label>
+      <input type="text" id="fuCatatan" placeholder="cth: transfer sore ini, minta no. rekening" style="font-size:13px">
+      <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:8px">Nota akan muncul lagi di "Perlu follow up" setelah ${ULANG_HARI} hari tanpa kabar, atau pada tanggal janji bayar.</div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost btn-sm" id="fuBatal" style="flex:1;justify-content:center">Batal</button>
+        <button class="btn btn-primary btn-sm" id="fuSimpan" style="flex:1;justify-content:center">Simpan</button>
+      </div></div>`
+    document.body.appendChild(bg)
+    const hasilEl = bg.querySelector('#fuHasil'), janjiWrap = bg.querySelector('#fuJanjiWrap')
+    const atur = () => { janjiWrap.style.display = hasilEl.value === 'janji' ? '' : 'none' }
+    hasilEl.onchange = atur; atur()
+    bg.querySelector('#fuBatal').onclick = () => bg.remove()
+    bg.querySelector('#fuSimpan').onclick = async () => {
+      const hasil = hasilEl.value, janji = hasil === 'janji' ? bg.querySelector('#fuJanji').value : ''
+      if (hasil === 'janji' && !janji) { alert('Isi tanggal janji bayar'); return }
+      const entri = { at: Timestamp.now(), oleh: profile.name || '', olehUid: profile.id || '', hasil, janjiTgl: janji || null, catatan: bg.querySelector('#fuCatatan').value.trim() }
+      const btn = bg.querySelector('#fuSimpan'); btn.disabled = true; btn.textContent = 'Menyimpan…'
+      try {
+        await updateDoc(doc(db, 'orders', id), { tagih: entri, tagihRiwayat: arrayUnion(entri), updatedAt: Timestamp.now() })
+        x.o.tagih = entri; x.o.tagihRiwayat = [...(x.o.tagihRiwayat || []), entri]; x.s = statusTagihan(x.o, tglLokal())
+        bg.remove(); render()
+        try { sessionStorage.removeItem('tagihan_badge_' + profile.id) } catch {}
+      } catch (err) { alert('Gagal menyimpan: ' + err.message); btn.disabled = false; btn.textContent = 'Simpan' }
+    }
+  }
+</script>
+</body>
+</html>

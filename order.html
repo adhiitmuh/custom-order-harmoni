@@ -220,6 +220,11 @@
     clearTimeout(loadTimeout)
     renderPage(profile)
     muatRiwayatBayar()
+    // Dari halaman Tagihan "Catat pembayaran" → langsung buka form Tambah Pembayaran
+    if (params.get('bayar') === '1' && !window._bayarDibuka && (profile.role === 'owner' || profile.role === 'cs')) {
+      window._bayarDibuka = true
+      if ((order.totalPrice || 0) > (order.depositPaid || 0)) setTimeout(() => bukaTambahBayar(), 300)
+    }
     // Attach mention autocomplete to internal chat textarea (programmatic, not via oninput attr)
     ;(function() {
       const ta = document.getElementById('internalChatInput')
@@ -2406,8 +2411,12 @@
       const list = sn.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.at?.seconds || 0) - (b.at?.seconds || 0))
       const tercatat = list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
       const tanpaRiwayat = (order.depositPaid || 0) - tercatat
-      if (!list.length && !(order.depositPaid > 0)) { el.innerHTML = ''; return }
-      el.innerHTML = `<p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:6px">Riwayat Pembayaran</p>
+      const t = order.tagih
+      const fu = t && (order.totalPrice || 0) > (order.depositPaid || 0)
+        ? `<a href="tagihan.html?order=${orderId}" style="display:block;font-size:11px;background:#f8fafc;border-radius:8px;padding:6px 9px;margin-bottom:8px;color:inherit;text-decoration:none">💳 Follow up terakhir: <b>${esc({ dihubungi: 'Sudah dihubungi', janji: 'Janji bayar' + (t.janjiTgl ? ' ' + t.janjiTgl : ''), sudahbayar: 'Customer bilang sudah bayar', tidakbisa: 'Tidak bisa dihubungi', lainnya: 'Lainnya' }[t.hasil] || t.hasil)}</b>${t.catatan ? ' · “' + esc(t.catatan) + '”' : ''} · ${esc(t.oleh || '')} →</a>`
+        : ((order.totalPrice || 0) > (order.depositPaid || 0) ? `<a href="tagihan.html?order=${orderId}" style="display:block;font-size:11px;color:var(--green);margin-bottom:8px">💳 Catat follow up tagihan →</a>` : '')
+      if (!list.length && !(order.depositPaid > 0)) { el.innerHTML = fu; return }
+      el.innerHTML = fu + `<p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:6px">Riwayat Pembayaran</p>
         ${tanpaRiwayat && list.length !== 0 || (!list.length && order.depositPaid > 0) ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">${fmtCurrency(tanpaRiwayat)} tercatat sebelum ada riwayat pembayaran</div>` : ''}
         ${list.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(3,69,67,.06)">
           <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelRekening(p))}
