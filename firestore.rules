@@ -126,6 +126,31 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['waDikirimAt', 'waDikirimOleh', 'waDikirimKali']));
       allow delete: if isOwner();
     }
+    // Riwayat pembayaran order (satu dokumen per pembayaran masuk) — dicatat CS/Owner saat DP/pelunasan,
+    // tidak bisa diubah/dihapus selain Owner supaya jejak uang masuk tetap utuh
+    match /pembayaran/{id} {
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow create: if isOwnerOrCS()
+        && request.resource.data.olehUid == request.auth.uid
+        && request.resource.data.jumlah is number
+        && request.resource.data.tgl is string
+        && request.resource.data.orderId is string
+        && !request.resource.data.keys().hasAny(['dicekAt', 'dicekOleh']);
+      allow update, delete: if isOwner();
+    }
+    // Laporan harian uang masuk custom order per lokasi ({lokasi}_{tgl}); tanda "sudah dicek" hanya Owner,
+    // setelah dicek laporan terkunci untuk selain Owner
+    match /laporan_harian/{id} {
+      allow read: if isStaffAuth() && !isDivisiOwner();
+      allow create: if isStaffAuth() && role() in ['owner', 'manager', 'cs']
+        && request.resource.data.dibuatOlehUid == request.auth.uid
+        && !request.resource.data.keys().hasAny(['dicekAt', 'dicekOleh', 'dicekUid']);
+      allow update: if isOwner()
+        || (isStaffAuth() && role() in ['manager', 'cs']
+            && resource.data.get('dicekAt', null) == null
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dicekAt', 'dicekOleh', 'dicekUid']));
+      allow delete: if isOwner();
+    }
     // Upah jahit per pcs (internal, Jersey/Tailor) — dibaca staf untuk hitung upah otomatis, diatur Owner/Data
     match /upah_jahit/{div} {
       allow read: if isStaffAuth() && !isDivisiOwner();

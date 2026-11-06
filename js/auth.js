@@ -385,12 +385,17 @@ export function renderSidebar(profile) {
       </a>` : ''}
     </div>` : ''}
 
-    ${profile.role === 'owner' || isDivisi ? `
+    ${profile.role === 'owner' || isDivisi || ['manager', 'cs'].includes(profile.role) ? `
     <div class="sidebar-section">
       <div class="sidebar-label">KEUANGAN</div>
+      ${['owner', 'manager', 'cs'].includes(profile.role) ? `
+      <a href="laporan-harian.html" class="sidebar-link ${page==='laporan-harian.html'?'active':''}">
+        <span class="icon">🧾</span>Laporan Harian
+      </a>` : ''}
+      ${profile.role === 'owner' || isDivisi ? `
       <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
         <span class="icon">📊</span>${isDivisi ? 'Laporan Kewajiban' : 'Laporan Keuangan'}
-      </a>
+      </a>` : ''}
       ${profile.role === 'owner' ? `
       <a href="crm.html" class="sidebar-link ${page==='crm.html'?'active':''}">
         <span class="icon">👥</span>CRM Pelanggan

@@ -84,13 +84,14 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
-  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
+  import { entriPembayaran, jenisDari, labelMetode, opsiMetode } from './js/pembayaran.js?v=20261106'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -154,6 +155,7 @@
     const digits = String(val).replace(/\D/g,'')
     return digits ? Number(digits).toLocaleString('id-ID') : ''
   }
+  const esc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
   function parsePrice(val) {
     return Number(String(val||'').replace(/\./g,'').replace(/[^\d]/g,''))||0
   }
@@ -217,6 +219,7 @@
 
     clearTimeout(loadTimeout)
     renderPage(profile)
+    muatRiwayatBayar()
     // Attach mention autocomplete to internal chat textarea (programmatic, not via oninput attr)
     ;(function() {
       const ta = document.getElementById('internalChatInput')
@@ -735,8 +738,11 @@
                 <hr class="sep">
                 <div style="display:flex;justify-content:space-between"><span style="color:rgba(3,69,67,.5)">Sisa</span><span id="paySisa" style="font-weight:800;font-size:15px;color:${sisa>0?'#b91c1c':'#059669'}">${fmtCurrency(sisa)}</span></div>
               </div>
-              ${sisa>0&&(order.totalPrice||0)>0&&canEdit ? `<button onclick="markPaid()" class="btn btn-green" style="width:100%;margin-top:12px;justify-content:center" id="markPaidBtn">✓ Tandai Lunas</button>` : ''}
+              ${sisa>0&&(order.totalPrice||0)>0&&canEdit ? `<div style="display:flex;gap:8px;margin-top:12px">
+                <button onclick="bukaTambahBayar()" class="btn btn-primary" style="flex:1;justify-content:center" id="tambahBayarBtn">+ Tambah Pembayaran</button>
+                <button onclick="markPaid()" class="btn btn-green" style="flex:1;justify-content:center" id="markPaidBtn">✓ Tandai Lunas</button></div>` : ''}
               ${isPaid ? `<div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;font-weight:700;font-size:13px;color:#065f46">✅ LUNAS</div>` : ''}
+              <div id="riwayatBayar" style="margin-top:12px"></div>
 
               <hr class="sep" style="margin:14px 0">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -1290,7 +1296,16 @@
         EDIT_SIZES.forEach(s => { const v = Number(document.getElementById('editSize_'+s)?.value)||0; if(v>0) bd[s]=v })
         editUpdates.sizeBreakdown = Object.keys(bd).length ? bd : null
       }
-      await updateDoc(doc(db,'orders',orderId), editUpdates)
+      const lamaDp = order.depositPaid || 0
+      const batchEdit = writeBatch(db)
+      batchEdit.update(doc(db,'orders',orderId), editUpdates)
+      if (editUpdates.depositPaid !== lamaDp) {
+        const e = entriPembayaran(order, orderId, profile, { jumlah: editUpdates.depositPaid - lamaDp, metode: order.paymentMethod || '',
+          jenis: editUpdates.depositPaid < lamaDp ? 'koreksi' : jenisDari(lamaDp, editUpdates.depositPaid, editUpdates.totalPrice),
+          catatan: `Diubah lewat Edit Order${approvedBy?.name ? ' (disetujui ' + approvedBy.name + ')' : ''}` })
+        batchEdit.set(e.ref, e.data)
+      }
+      await batchEdit.commit()
       document.getElementById('editModal').style.display = 'none'
       await loadOrder(profile)
     } catch(err) { alert('Gagal menyimpan: ' + err.message) }
@@ -2227,6 +2242,8 @@
       const now = Timestamp.now()
       const newDp = parsePrice(document.getElementById('editDp').value)
       const pm = document.getElementById('editPaymentMethod')?.value || ''
+      const lamaDp = order.depositPaid || 0
+      if (newDp > lamaDp && !pm) { alert('Pilih metode bayar untuk uang yang masuk (Tunai / QRIS / Transfer).'); return }
       const updates = {
         totalPrice: parsePrice(document.getElementById('editTotal').value),
         depositPaid: newDp,
@@ -2238,7 +2255,15 @@
       if (order.status === 'draft' && newDp > 0 && (order.depositPaid||0) === 0) {
         Object.assign(updates, calcDraftShift())
       }
-      await updateDoc(doc(db,'orders',orderId), updates)
+      const batch = writeBatch(db)
+      batch.update(doc(db,'orders',orderId), updates)
+      // Catat selisih DP sebagai pembayaran (atau koreksi bila berkurang) untuk Laporan Harian
+      if (newDp !== lamaDp) {
+        const e = entriPembayaran(order, orderId, getProfile(), { jumlah: newDp - lamaDp, metode: pm || order.paymentMethod || '',
+          jenis: jenisDari(lamaDp, newDp, updates.totalPrice), catatan: newDp < lamaDp ? 'DP dikurangi lewat Edit Pembayaran' : '' })
+        batch.set(e.ref, e.data)
+      }
+      await batch.commit()
       await loadOrder(getProfile())
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -2307,23 +2332,88 @@
     }
   }
 
-  window.markPaid = async function() {
-    const btn = document.getElementById('markPaidBtn')
-    if (btn) { btn.disabled=true; btn.textContent='Menyimpan…' }
+  // Lunas = tambah pembayaran sebesar sisa (metode wajib dipilih supaya masuk Laporan Harian)
+  window.markPaid = function() {
+    bukaTambahBayar(Math.max(0, (order.totalPrice||0) - (order.depositPaid||0)), true)
+  }
+
+  // ── Tambah Pembayaran: jumlah + metode (+ bukti) → DP bertambah & tercatat di riwayat pembayaran ──
+  window.bukaTambahBayar = function(prefill = 0, lunas = false) {
+    document.getElementById('modalTambahBayar')?.remove()
+    const sisa = Math.max(0, (order.totalPrice||0) - (order.depositPaid||0))
+    const bg = document.createElement('div')
+    bg.id = 'modalTambahBayar'
+    bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px'
+    bg.innerHTML = `<div style="background:#fff;border-radius:16px;padding:20px;max-width:400px;width:100%;max-height:92vh;overflow:auto">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">${lunas ? '✓ Pelunasan' : '+ Tambah Pembayaran'}</div>
+      <div style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:12px">${esc(order.orderNumber || '')} · sisa ${fmtCurrency(sisa)}</div>
+      <label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah diterima (Rp) *</label>
+      <input type="text" inputmode="numeric" id="tbJumlah" value="${prefill ? fmtPrice(prefill) : ''}" oninput="this.value=fmtInputPrice(this.value)" style="font-size:15px;font-weight:700;margin-bottom:10px">
+      <label style="font-size:11px;color:rgba(3,69,67,.5)">Metode *</label>
+      <select id="tbMetode" style="font-size:13px;margin-bottom:10px">${opsiMetode(paymentInfo, order.paymentMethod || '')}</select>
+      <label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label>
+      <input type="text" id="tbCatatan" placeholder="cth: pelunasan ambil barang" style="font-size:13px;margin-bottom:10px">
+      <label style="display:block;border:2px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:rgba(3,69,67,.6);cursor:pointer">
+        <input type="file" id="tbBukti" accept="image/*,.pdf" style="display:none">
+        <span id="tbBuktiTeks">📎 Bukti bayar (opsional) — tempel, seret, atau ketuk</span>
+      </label>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" id="tbBatal">Batal</button>
+        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" id="tbSimpan">Simpan</button>
+      </div></div>`
+    document.body.appendChild(bg)
+    const fileEl = bg.querySelector('#tbBukti')
+    fileEl.addEventListener('change', () => { bg.querySelector('#tbBuktiTeks').textContent = fileEl.files[0] ? '✓ ' + fileEl.files[0].name : '📎 Bukti bayar (opsional)' })
+    bg.querySelector('#tbBatal').onclick = () => bg.remove()
+    bg.querySelector('#tbSimpan').onclick = async () => {
+      const jumlah = parsePrice(bg.querySelector('#tbJumlah').value)
+      const metode = bg.querySelector('#tbMetode').value
+      if (!jumlah) { alert('Isi jumlah yang diterima'); return }
+      if (!metode) { alert('Pilih metode bayar (Tunai / QRIS / Transfer)'); return }
+      if (jumlah > sisa && sisa > 0 && !confirm(`Jumlah ${fmtCurrency(jumlah)} lebih besar dari sisa ${fmtCurrency(sisa)}. Tetap simpan?`)) return
+      const btn = bg.querySelector('#tbSimpan'); btn.disabled = true; btn.textContent = 'Menyimpan…'
+      try {
+        const now = Timestamp.now(), profile = getProfile()
+        let bukti = null
+        if (fileEl.files[0]) {
+          const f = await compressImage(fileEl.files[0])
+          const r = ref(storage, `orders/${orderId}/payment/${Date.now()}_${f.name}`)
+          await new Promise((res, rej) => { const task = uploadBytesResumable(r, f); task.on('state_changed', null, rej, res) })
+          bukti = await getDownloadURL(r)
+        }
+        const lamaDp = order.depositPaid || 0, baruDp = lamaDp + jumlah
+        const updates = { depositPaid: baruDp, paymentMethod: metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
+        if (bukti) updates.paymentProofs = arrayUnion(bukti)
+        if (order.status === 'draft' && lamaDp === 0) Object.assign(updates, calcDraftShift())
+        const e = entriPembayaran(order, orderId, profile, { jumlah, metode, jenis: jenisDari(lamaDp, baruDp, order.totalPrice||0), catatan: bg.querySelector('#tbCatatan').value.trim() })
+        if (bukti) e.data.bukti = bukti
+        const batch = writeBatch(db)
+        batch.update(doc(db,'orders',orderId), updates)
+        batch.set(e.ref, e.data)
+        await batch.commit()
+        bg.remove()
+        await loadOrder(profile)
+      } catch (err) { alert('Gagal menyimpan: ' + err.message); btn.disabled = false; btn.textContent = 'Simpan' }
+    }
+  }
+
+  // Riwayat pembayaran order ini (dari koleksi pembayaran)
+  const JENIS_BAYAR = { dp: 'DP', cicilan: 'Cicilan', pelunasan: 'Pelunasan', lunas: 'Lunas', koreksi: 'Koreksi' }
+  async function muatRiwayatBayar() {
+    const el = document.getElementById('riwayatBayar'); if (!el) return
     try {
-      const now = Timestamp.now()
-      const updates = {
-        depositPaid: order.totalPrice||0,
-        updatedAt: now,
-        paymentEditBy: getProfile().name,
-        paymentEditAt: now,
-      }
-      if (order.status === 'draft' && (order.depositPaid||0) === 0) {
-        Object.assign(updates, calcDraftShift())
-      }
-      await updateDoc(doc(db,'orders',orderId), updates)
-      await loadOrder(getProfile())
-    } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Tandai Lunas' } }
+      const sn = await getDocs(query(collection(db, 'pembayaran'), where('orderId', '==', orderId)))
+      const list = sn.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.at?.seconds || 0) - (b.at?.seconds || 0))
+      const tercatat = list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+      const tanpaRiwayat = (order.depositPaid || 0) - tercatat
+      if (!list.length && !(order.depositPaid > 0)) { el.innerHTML = ''; return }
+      el.innerHTML = `<p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:6px">Riwayat Pembayaran</p>
+        ${tanpaRiwayat && list.length !== 0 || (!list.length && order.depositPaid > 0) ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">${fmtCurrency(tanpaRiwayat)} tercatat sebelum ada riwayat pembayaran</div>` : ''}
+        ${list.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(3,69,67,.06)">
+          <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelMetode(p.metode))}
+            <div style="font-size:10px;color:rgba(3,69,67,.45)">diterima ${esc(p.olehNama || '-')}${p.lokasiNama ? ' · ' + esc(p.lokasiNama) : ''}${p.catatan ? ' · ' + esc(p.catatan) : ''}${p.bukti ? ` · <a href="${esc(p.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}</div></div>
+          <b style="color:${p.jumlah < 0 ? '#b91c1c' : '#059669'};white-space:nowrap">${p.jumlah < 0 ? '−' : ''}${fmtCurrency(Math.abs(p.jumlah))}</b></div>`).join('')}`
+    } catch { el.innerHTML = '' }
   }
 
   window.approvePrice = async function() {

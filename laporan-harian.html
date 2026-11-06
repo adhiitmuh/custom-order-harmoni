@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Laporan Harian — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .lh-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .lh-bar input, .lh-bar select { width:auto; font-size:13px; }
+    .lh-kartu { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+    .lh-k { background:var(--white); border:1px solid rgba(3,69,67,.08); border-radius:12px; padding:12px 14px; }
+    .lh-k .l { font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.5); text-transform:uppercase; }
+    .lh-k .v { font-size:18px; font-weight:800; margin-top:4px; }
+    .lh-k .s { font-size:11px; color:rgba(3,69,67,.5); margin-top:2px; }
+    table.lh { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.lh th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:8px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; }
+    table.lh td { padding:8px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.lh td.r, table.lh th.r { text-align:right; white-space:nowrap; }
+    .lh-wrap { overflow-x:auto; }
+    .st { font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; display:inline-block; }
+    .st-belum { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    .st-kirim { background:#fffbeb; color:#b45309; border:1px solid #fde68a; }
+    .st-ubah { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+    .st-cek { background:#ecfdf5; color:#047857; }
+    .lh-tunai { background:#f8fafc; border-radius:12px; padding:12px 14px; font-size:13px; }
+    .lh-tunai td { padding:3px 0; } .lh-tunai td:last-child { text-align:right; white-space:nowrap; }
+    .lh-tunai tr.g td { border-top:1px solid #cbd5e1; font-weight:800; padding-top:6px; }
+    @media (max-width:600px) {
+      #tbody td:nth-child(1), #tbody td:nth-child(4), #tbody td:nth-child(8),
+      table.lh thead th:nth-child(1), table.lh thead th:nth-child(4), table.lh thead th:nth-child(8) { display:none; }
+      #tbody td:nth-child(2) a { white-space:nowrap; font-size:11px; }
+      #isianLaporan { grid-template-columns:1fr !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Laporan Harian</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Uang masuk custom order per hari per lokasi — dari setiap pembayaran yang dicatat (DP, cicilan, pelunasan). Cek, isi tunai yang diserahkan, lalu kirim ke Adi.</p>
+    </div>
+
+    <div class="lh-bar">
+      <button class="btn btn-ghost btn-sm" onclick="geserHari(-1)">◀</button>
+      <input type="date" id="tgl">
+      <button class="btn btn-ghost btn-sm" onclick="geserHari(1)">▶</button>
+      <button class="btn btn-ghost btn-sm" onclick="keHariIni()">Hari ini</button>
+      <select id="lokasi"></select>
+    </div>
+    <div id="tanpaLokasi" class="card" style="display:none;background:#fffbeb;border:1px solid #fde68a;margin-bottom:14px;font-size:12px;color:#b45309"></div>
+
+    <div id="statusLaporan" style="margin-bottom:12px"></div>
+    <div class="lh-kartu" id="kartu"></div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">Pembayaran masuk</h2>
+      <div class="lh-wrap"><table class="lh"><thead><tr><th>Jam</th><th>Order</th><th>Customer</th><th>Jenis</th><th>Metode</th><th class="r">Jumlah</th><th>Diterima</th><th>Order oleh</th></tr></thead>
+      <tbody id="tbody"></tbody></table></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px" id="kartuKirim">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">💵 Tunai di tangan CS</h2>
+      <div class="lh-tunai" id="tunai"></div>
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:10px" id="isianLaporan">
+        <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Tunai diserahkan ke Adi hari ini (Rp)</label><input type="text" inputmode="numeric" id="setor" placeholder="0" oninput="fmtAngka(this);hitungTunai()"></div>
+        <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label><input type="text" id="catatan" placeholder="cth: tunai dititip ke pengurus"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="aksi"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <h2 style="font-size:14px;font-weight:700">Rekap bulan <span id="judulBulan"></span></h2>
+        <button class="btn btn-ghost btn-sm" onclick="unduhExcel()">⬇️ Excel bulan ini</button>
+      </div>
+      <div class="lh-wrap"><table class="lh" id="rekap"></table></div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, getDoc, doc, setDoc, updateDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { labelMetode, grupMetode, tglLokal } from './js/pembayaran.js?v=20261106'
+  import { normalNoWa } from './js/notifwa.js'
+
+  const APP_URL = 'https://adhiitmuh.github.io/custom-order-harmoni/'
+  const rp = n => 'Rp' + Math.round(Number(n) || 0).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const angka = v => parseInt(String(v || '').replace(/\D/g, '')) || 0
+  window.fmtAngka = el => { const n = angka(el.value); el.value = n ? n.toLocaleString('id-ID') : '' }
+  const JENIS = { dp: 'DP', cicilan: 'Cicilan', pelunasan: 'Pelunasan', lunas: 'Lunas', koreksi: 'Koreksi' }
+  const TANPA = '_tanpa'
+  const kunciLok = p => p.lokasiId || TANPA
+
+  let profile, lokasiList = [], bulanData = [], tunaiSemua = [], laporan = [], waAdi = '', bulanDimuat = ''
+  const isOwner = () => profile.role === 'owner'
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager', 'cs'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const [lSnap, sSnap] = await Promise.all([
+      getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] })),
+      getDoc(doc(db, 'settings', 'pengajuan_upah')).catch(() => null),
+    ])
+    lokasiList = lSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.nama).localeCompare(String(b.nama)))
+    waAdi = sSnap?.exists?.() ? (sSnap.data().waOwner || '') : ''
+    const sel = document.getElementById('lokasi')
+    if (isOwner()) {
+      sel.innerHTML = '<option value="">Semua lokasi</option>' + lokasiList.map(l => `<option value="${esc(l.id)}">${esc(l.nama)}</option>`).join('') + `<option value="${TANPA}">Tanpa lokasi</option>`
+    } else {
+      const lid = p.lokasiId || TANPA
+      sel.innerHTML = `<option value="${esc(lid)}">${esc(p.lokasiNama || lokasiList.find(l => l.id === lid)?.nama || 'Tanpa lokasi')}</option>`
+      sel.disabled = true
+      if (!p.lokasiId) { const w = document.getElementById('tanpaLokasi'); w.style.display = ''; w.textContent = '⚠️ Akun Anda belum diberi lokasi/cabang — laporan dicatat sebagai "Tanpa lokasi". Minta Adi mengatur lokasi di Kelola Pengguna.' }
+    }
+    const t = document.getElementById('tgl')
+    t.value = new URLSearchParams(location.search).get('tgl') || tglLokal()
+    const lq = new URLSearchParams(location.search).get('lokasi'); if (lq && isOwner()) sel.value = lq
+    t.onchange = () => muat()
+    sel.onchange = () => render()
+    await muat()
+  })
+
+  window.geserHari = d => { const t = document.getElementById('tgl'); const x = new Date(t.value + 'T00:00:00'); x.setDate(x.getDate() + d); t.value = tglLokal(x); muat() }
+  window.keHariIni = () => { document.getElementById('tgl').value = tglLokal(); muat() }
+
+  async function muat(paksa = false) {
+    const tgl = document.getElementById('tgl').value || tglLokal()
+    const bulan = tgl.slice(0, 7)
+    if (paksa || bulan !== bulanDimuat) {
+      const [bSnap, cSnap, lpSnap] = await Promise.all([
+        getDocs(query(collection(db, 'pembayaran'), where('tgl', '>=', bulan + '-01'), where('tgl', '<=', bulan + '-31'))),
+        getDocs(query(collection(db, 'pembayaran'), where('metode', '==', 'cash'))),
+        getDocs(collection(db, 'laporan_harian')),
+      ])
+      bulanData = bSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      tunaiSemua = cSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      laporan = lpSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      bulanDimuat = bulan
+    }
+    render()
+  }
+
+  const lokasiDipilih = () => document.getElementById('lokasi').value
+  const cocokLok = (x, lok) => !lok || kunciLok(x) === lok
+  const namaLok = k => k === TANPA ? 'Tanpa lokasi' : (lokasiList.find(l => l.id === k)?.nama || k)
+  const idLaporan = (lok, tgl) => `${lok}_${tgl}`
+  const laporanDari = (lok, tgl) => laporan.find(l => l.id === idLaporan(lok, tgl))
+
+  function ringkas(list) {
+    const per = {}
+    list.forEach(p => { const k = labelMetode(p.metode); per[k] = (per[k] || 0) + (Number(p.jumlah) || 0) })
+    const g = { tunai: 0, qris: 0, transfer: 0, lain: 0 }
+    list.forEach(p => { g[grupMetode(p.metode)] += Number(p.jumlah) || 0 })
+    return { total: list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), per, g, n: list.length }
+  }
+  // Tunai dipegang CS di satu lokasi sampai akhir tanggal tsb: semua tunai masuk − semua setoran ke Adi
+  function sisaTunai(lok, tgl, setorHariIni = null) {
+    const masuk = tunaiSemua.filter(p => kunciLok(p) === lok && p.tgl <= tgl).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+    const setor = laporan.filter(l => l.lokasiKey === lok && l.tgl <= tgl && !(setorHariIni !== null && l.tgl === tgl)).reduce((t, l) => t + (Number(l.setorTunai) || 0), 0)
+    return masuk - setor - (setorHariIni || 0)
+  }
+
+  function render() {
+    const tgl = document.getElementById('tgl').value
+    const lok = lokasiDipilih()
+    const hari = bulanData.filter(p => p.tgl === tgl && cocokLok(p, lok)).sort((a, b) => (a.at?.seconds || 0) - (b.at?.seconds || 0))
+    const r = ringkas(hari)
+    const kartu = (l, v, s = '') => `<div class="lh-k"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`
+    document.getElementById('kartu').innerHTML = [
+      kartu('Total masuk', rp(r.total), `${r.n} pembayaran`),
+      kartu('Tunai', rp(r.g.tunai)), kartu('QRIS', rp(r.g.qris)),
+      kartu('Transfer', rp(r.g.transfer), Object.entries(r.per).filter(([k]) => k.startsWith('Transfer')).map(([k, v]) => `${esc(k.replace('Transfer ', ''))} ${rp(v)}`).join(' · ')),
+      ...(r.g.lain ? [kartu('Metode belum dipilih', rp(r.g.lain))] : []),
+    ].join('')
+    document.getElementById('tbody').innerHTML = hari.length ? hari.map(p => `<tr>
+      <td>${p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}</td>
+      <td><a href="order.html?id=${esc(p.orderId)}" style="color:var(--green);font-weight:700">${esc(p.orderNumber)}</a></td>
+      <td>${esc(p.customerName)}</td><td>${esc(JENIS[p.jenis] || p.jenis || '')}</td><td>${esc(labelMetode(p.metode))}</td>
+      <td class="r" style="font-weight:700;color:${p.jumlah < 0 ? '#b91c1c' : '#059669'}">${p.jumlah < 0 ? '−' : ''}${rp(Math.abs(p.jumlah))}</td>
+      <td>${esc(p.olehNama)}${!lok ? `<div style="font-size:10px;color:rgba(3,69,67,.45)">${esc(namaLok(kunciLok(p)))}</div>` : ''}</td><td>${esc(p.orderOleh || '-')}</td></tr>`).join('')
+      : '<tr><td colspan="8" style="text-align:center;color:rgba(3,69,67,.4);padding:18px">Belum ada pembayaran yang dicatat di tanggal ini</td></tr>'
+
+    // Laporan & tunai hanya per satu lokasi
+    const kirimWrap = document.getElementById('kartuKirim')
+    const stEl = document.getElementById('statusLaporan')
+    if (!lok) { kirimWrap.style.display = 'none'; stEl.innerHTML = ''; renderRekap(); return }
+    kirimWrap.style.display = ''
+    const lp = laporanDari(lok, tgl)
+    const setorEl = document.getElementById('setor'), catEl = document.getElementById('catatan')
+    if (setorEl.dataset.untuk !== idLaporan(lok, tgl)) {
+      setorEl.value = lp?.setorTunai ? Number(lp.setorTunai).toLocaleString('id-ID') : ''
+      catEl.value = lp?.catatan || ''
+      setorEl.dataset.untuk = idLaporan(lok, tgl)
+    }
+    const terkunci = !!lp?.dicekAt && !isOwner()
+    setorEl.disabled = catEl.disabled = terkunci
+    hitungTunai()
+    const berubah = lp && (lp.total !== r.total || lp.jumlahTransaksi !== r.n)
+    stEl.innerHTML = !lp ? `<span class="st st-belum">⚠️ Belum dilaporkan ke Adi</span>`
+      : lp.dicekAt ? `<span class="st st-cek">✓ Sudah dicek ${esc(lp.dicekOleh || 'Adi')}</span>${berubah ? ' <span class="st st-ubah">ada pembayaran baru sesudah dicek</span>' : ''}`
+      : `<span class="st ${berubah ? 'st-ubah' : 'st-kirim'}">${berubah ? '⚠️ Ada perubahan sejak dilaporkan — kirim ulang' : '📲 Sudah dilaporkan'}</span> <span style="font-size:11px;color:rgba(3,69,67,.5)">${esc(lp.dikirimOleh || '')} · ${lp.dikirimAt?.toDate ? lp.dikirimAt.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''} · ${rp(lp.total)}</span>`
+    const aksi = []
+    if (!terkunci) aksi.push(`<button class="btn" style="background:#25d366;color:#fff" onclick="kirimLaporan()">📲 ${lp ? 'Kirim ulang' : 'Kirim Laporan'} ke Adi</button>`)
+    if (isOwner()) aksi.push(lp?.dicekAt ? `<button class="btn btn-ghost btn-sm" onclick="tandaiCek(false)">Batalkan tanda dicek</button>` : (lp ? `<button class="btn btn-green btn-sm" onclick="tandaiCek(true)">✓ Sudah saya cek</button>` : ''))
+    document.getElementById('aksi').innerHTML = aksi.join('')
+    renderRekap()
+  }
+
+  window.hitungTunai = function() {
+    const tgl = document.getElementById('tgl').value, lok = lokasiDipilih(); if (!lok) return
+    const kemarin = (() => { const x = new Date(tgl + 'T00:00:00'); x.setDate(x.getDate() - 1); return tglLokal(x) })()
+    const awal = sisaTunai(lok, kemarin)
+    const hariIni = tunaiSemua.filter(p => kunciLok(p) === lok && p.tgl === tgl).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+    const setor = angka(document.getElementById('setor').value)
+    const akhir = awal + hariIni - setor
+    document.getElementById('tunai').innerHTML = `<table style="width:100%">
+      <tr><td>Sisa tunai sebelumnya</td><td>${rp(awal)}</td></tr>
+      <tr><td>+ Tunai masuk hari ini</td><td>${rp(hariIni)}</td></tr>
+      <tr><td>− Diserahkan ke Adi hari ini</td><td>${rp(setor)}</td></tr>
+      <tr class="g"><td>= Tunai masih dipegang CS</td><td>${rp(akhir)}</td></tr></table>`
+  }
+
+  function pesanWa(lok, tgl, r, setor, sisa, catatan) {
+    const per = Object.entries(r.per).map(([k, v]) => `• ${k}: ${rp(v)}`).join('\n') || '• (tidak ada)'
+    return `📊 *Laporan Harian Custom Order*\n${namaLok(lok)} · ${new Date(tgl + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n\n*Total masuk: ${rp(r.total)}* (${r.n} pembayaran)\n${per}\n\n💵 Tunai diserahkan: ${rp(setor)}\n💵 Tunai masih dipegang: ${rp(sisa)}${catatan ? '\nCatatan: ' + catatan : ''}\n\nDilaporkan: ${profile.name}\nRincian: ${APP_URL}laporan-harian.html?tgl=${tgl}&lokasi=${encodeURIComponent(lok)}`
+  }
+
+  window.kirimLaporan = async function() {
+    const tgl = document.getElementById('tgl').value, lok = lokasiDipilih(); if (!lok) return
+    const hari = bulanData.filter(p => p.tgl === tgl && kunciLok(p) === lok)
+    const r = ringkas(hari)
+    const setor = angka(document.getElementById('setor').value), catatan = document.getElementById('catatan').value.trim()
+    const sisa = sisaTunai(lok, tgl, setor)
+    if (!r.n && !setor && !confirm('Tidak ada pembayaran di tanggal ini. Tetap kirim laporan kosong?')) return
+    // Buka jendela WA lebih dulu (langsung dari ketukan) supaya tidak diblokir Safari/iPad
+    const w = window.open('', '_blank')
+    const now = Timestamp.now(), lama = laporanDari(lok, tgl)
+    const data = { tgl, lokasiKey: lok, lokasiId: lok === TANPA ? '' : lok, lokasiNama: namaLok(lok),
+      total: r.total, jumlahTransaksi: r.n, perMetode: r.per, tunai: r.g.tunai, qris: r.g.qris, transfer: r.g.transfer,
+      setorTunai: setor, sisaTunai: sisa, catatan, pembayaranIds: hari.map(p => p.id),
+      dikirimOleh: profile.name || '', dikirimOlehUid: profile.id || '', dikirimAt: now, updatedAt: now }
+    try {
+      if (lama) await updateDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), data)
+      else await setDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), { ...data, dibuatOlehUid: profile.id || '', createdAt: now })
+      const url = `https://wa.me/${normalNoWa(waAdi)}?text=${encodeURIComponent(pesanWa(lok, tgl, r, setor, sisa, catatan))}`
+      if (w) w.location.href = url; else location.href = url
+      await muat(true)
+    } catch (err) { if (w) w.close(); alert('Gagal menyimpan laporan: ' + err.message) }
+  }
+
+  window.tandaiCek = async function(ya) {
+    const tgl = document.getElementById('tgl').value, lok = lokasiDipilih()
+    try {
+      await updateDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), ya
+        ? { dicekAt: Timestamp.now(), dicekOleh: profile.name || 'Adi', dicekUid: profile.id || '' }
+        : { dicekAt: null, dicekOleh: null, dicekUid: null })
+      await muat(true)
+    } catch (err) { alert('Gagal: ' + err.message) }
+  }
+
+  // Rekap bulan: per tanggal × lokasi (Adi: semua lokasi; CS: lokasinya)
+  function lokasiRekap() {
+    const lok = lokasiDipilih()
+    if (lok) return [lok]
+    const ada = new Set(bulanData.map(kunciLok)); laporan.forEach(l => { if (l.tgl?.startsWith(bulanDimuat)) ada.add(l.lokasiKey) })
+    return [...lokasiList.map(l => l.id), TANPA].filter(k => ada.has(k))
+  }
+  function renderRekap() {
+    const bulan = bulanDimuat
+    document.getElementById('judulBulan').textContent = new Date(bulan + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    const loks = lokasiRekap(), hariIni = tglLokal()
+    const n = new Date(+bulan.slice(0, 4), +bulan.slice(5, 7), 0).getDate()
+    const tglTerpilih = document.getElementById('tgl').value
+    let html = `<thead><tr><th>Tanggal</th>${loks.map(k => `<th class="r">${esc(namaLok(k))}</th>`).join('')}${loks.length > 1 ? '<th class="r">Total</th>' : ''}</tr></thead><tbody>`
+    const tot = {}
+    for (let d = 1; d <= n; d++) {
+      const tgl = `${bulan}-${String(d).padStart(2, '0')}`; if (tgl > hariIni) break
+      let jml = 0
+      const sel = loks.map(k => {
+        const r = ringkas(bulanData.filter(p => p.tgl === tgl && kunciLok(p) === k)); jml += r.total; tot[k] = (tot[k] || 0) + r.total
+        const lp = laporanDari(k, tgl)
+        const ikon = lp?.dicekAt ? '✅' : lp ? (lp.total !== r.total ? '⚠️' : '📲') : (r.n ? '🔴' : '')
+        return `<td class="r"><a href="#" onclick="lompat('${tgl}','${esc(k)}');return false" style="color:inherit;text-decoration:none">${r.n || lp ? rp(r.total) : '–'} ${ikon}</a></td>`
+      })
+      html += `<tr style="${tgl === tglTerpilih ? 'background:rgba(5,150,105,.06)' : ''}"><td>${new Date(tgl + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' })}</td>${sel.join('')}${loks.length > 1 ? `<td class="r" style="font-weight:700">${rp(jml)}</td>` : ''}</tr>`
+    }
+    const semua = Object.values(tot).reduce((a, b) => a + b, 0)
+    html += `</tbody><tfoot><tr style="font-weight:800"><td>Total</td>${loks.map(k => `<td class="r">${rp(tot[k] || 0)}</td>`).join('')}${loks.length > 1 ? `<td class="r">${rp(semua)}</td>` : ''}</tr></tfoot>`
+    document.getElementById('rekap').innerHTML = loks.length ? html : '<tr><td style="color:rgba(3,69,67,.4);padding:14px">Belum ada data bulan ini</td></tr>'
+  }
+  window.lompat = (tgl, lok) => { document.getElementById('tgl').value = tgl; if (isOwner()) document.getElementById('lokasi').value = lok; render(); scrollTo({ top: 0, behavior: 'smooth' }) }
+
+  window.unduhExcel = function() {
+    if (typeof XLSX === 'undefined') { alert('Library Excel belum termuat, muat ulang halaman'); return }
+    const loks = lokasiRekap()
+    const metodeAll = [...new Set(bulanData.map(p => labelMetode(p.metode)))].sort()
+    const rekap = []
+    const tglAda = [...new Set(bulanData.map(p => p.tgl).concat(laporan.filter(l => l.tgl?.startsWith(bulanDimuat)).map(l => l.tgl)))].sort()
+    tglAda.forEach(tgl => loks.forEach(k => {
+      const list = bulanData.filter(p => p.tgl === tgl && kunciLok(p) === k), lp = laporanDari(k, tgl)
+      if (!list.length && !lp) return
+      const r = ringkas(list)
+      const row = { Tanggal: tgl, Lokasi: namaLok(k) }
+      metodeAll.forEach(m => { row[m] = r.per[m] || 0 })
+      Object.assign(row, { Total: r.total, 'Jumlah Pembayaran': r.n, 'Tunai Diserahkan': lp?.setorTunai || 0, 'Sisa Tunai Dipegang': lp?.sisaTunai ?? sisaTunai(k, tgl),
+        Status: lp?.dicekAt ? 'Dicek ' + (lp.dicekOleh || '') : lp ? (lp.total !== r.total ? 'Berubah sejak dilaporkan' : 'Dilaporkan') : 'Belum dilaporkan',
+        'Dilaporkan Oleh': lp?.dikirimOleh || '', Catatan: lp?.catatan || '' })
+      rekap.push(row)
+    }))
+    const rinci = bulanData.filter(p => loks.includes(kunciLok(p))).sort((a, b) => a.tgl.localeCompare(b.tgl) || (a.at?.seconds || 0) - (b.at?.seconds || 0)).map(p => ({
+      Tanggal: p.tgl, Jam: p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '', Lokasi: namaLok(kunciLok(p)),
+      'No. Order': p.orderNumber, Customer: p.customerName, Divisi: p.division, Jenis: JENIS[p.jenis] || p.jenis, Metode: labelMetode(p.metode),
+      Jumlah: p.jumlah, 'Diterima Oleh': p.olehNama, 'Order Oleh': p.orderOleh || '', Catatan: p.catatan || '' }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rekap.length ? rekap : [{ Tanggal: 'Tidak ada data' }]), 'Rekap Harian')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rinci.length ? rinci : [{ Tanggal: 'Tidak ada data' }]), 'Rincian Pembayaran')
+    XLSX.writeFile(wb, `Laporan_Harian_CO_${bulanDimuat}${lokasiDipilih() ? '_' + namaLok(lokasiDipilih()).replace(/\s+/g, '_') : ''}.xlsx`)
+  }
+</script>
+</body>
+</html>
