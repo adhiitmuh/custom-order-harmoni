@@ -91,7 +91,7 @@
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
-  import { entriPembayaran, jenisDari, labelMetode, opsiMetode } from './js/pembayaran.js?v=20261106'
+  import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode } from './js/pembayaran.js?v=20261106b'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -2350,7 +2350,7 @@
       <label style="font-size:11px;color:rgba(3,69,67,.5)">Jumlah diterima (Rp) *</label>
       <input type="text" inputmode="numeric" id="tbJumlah" value="${prefill ? fmtPrice(prefill) : ''}" oninput="this.value=fmtInputPrice(this.value)" style="font-size:15px;font-weight:700;margin-bottom:10px">
       <label style="font-size:11px;color:rgba(3,69,67,.5)">Metode *</label>
-      <select id="tbMetode" style="font-size:13px;margin-bottom:10px">${opsiMetode(paymentInfo, order.paymentMethod || '')}</select>
+      <select id="tbMetode" style="font-size:13px;margin-bottom:10px">${opsiMetode(paymentInfo, order.paymentMethod || '', { lokasiId: getProfile().lokasiId || order.lokasiId || '', division: order.division })}</select>
       <label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label>
       <input type="text" id="tbCatatan" placeholder="cth: pelunasan ambil barang" style="font-size:13px;margin-bottom:10px">
       <label style="display:block;border:2px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:rgba(3,69,67,.6);cursor:pointer">
@@ -2382,7 +2382,7 @@
           bukti = await getDownloadURL(r)
         }
         const lamaDp = order.depositPaid || 0, baruDp = lamaDp + jumlah
-        const updates = { depositPaid: baruDp, paymentMethod: metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
+        const updates = { depositPaid: baruDp, paymentMethod: pisahMetode(metode).metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
         if (bukti) updates.paymentProofs = arrayUnion(bukti)
         if (order.status === 'draft' && lamaDp === 0) Object.assign(updates, calcDraftShift())
         const e = entriPembayaran(order, orderId, profile, { jumlah, metode, jenis: jenisDari(lamaDp, baruDp, order.totalPrice||0), catatan: bg.querySelector('#tbCatatan').value.trim() })
@@ -2410,7 +2410,7 @@
       el.innerHTML = `<p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:6px">Riwayat Pembayaran</p>
         ${tanpaRiwayat && list.length !== 0 || (!list.length && order.depositPaid > 0) ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">${fmtCurrency(tanpaRiwayat)} tercatat sebelum ada riwayat pembayaran</div>` : ''}
         ${list.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(3,69,67,.06)">
-          <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelMetode(p.metode))}
+          <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelRekening(p))}
             <div style="font-size:10px;color:rgba(3,69,67,.45)">diterima ${esc(p.olehNama || '-')}${p.lokasiNama ? ' · ' + esc(p.lokasiNama) : ''}${p.catatan ? ' · ' + esc(p.catatan) : ''}${p.bukti ? ` · <a href="${esc(p.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}</div></div>
           <b style="color:${p.jumlah < 0 ? '#b91c1c' : '#059669'};white-space:nowrap">${p.jumlah < 0 ? '−' : ''}${fmtCurrency(Math.abs(p.jumlah))}</b></div>`).join('')}`
     } catch { el.innerHTML = '' }

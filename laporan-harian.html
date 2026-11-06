@@ -80,6 +80,12 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="aksi"></div>
     </div>
 
+    <div class="card" style="margin-bottom:14px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:4px">🏦 Rekap per rekening</h2>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Uang masuk ke setiap rekening / QRIS / tunai — untuk dicocokkan dengan mutasi bank. <span id="ketRekening"></span></p>
+      <div class="lh-wrap"><table class="lh" id="perRekening"></table></div>
+    </div>
+
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <h2 style="font-size:14px;font-weight:700">Rekap bulan <span id="judulBulan"></span></h2>
@@ -95,7 +101,7 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, getDoc, doc, setDoc, updateDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { labelMetode, grupMetode, tglLokal } from './js/pembayaran.js?v=20261106'
+  import { labelMetode, labelRekening, grupMetode, tglLokal } from './js/pembayaran.js?v=20261106b'
   import { normalNoWa } from './js/notifwa.js'
 
   const APP_URL = 'https://adhiitmuh.github.io/custom-order-harmoni/'
@@ -165,7 +171,7 @@
 
   function ringkas(list) {
     const per = {}
-    list.forEach(p => { const k = labelMetode(p.metode); per[k] = (per[k] || 0) + (Number(p.jumlah) || 0) })
+    list.forEach(p => { const k = labelRekening(p); per[k] = (per[k] || 0) + (Number(p.jumlah) || 0) })
     const g = { tunai: 0, qris: 0, transfer: 0, lain: 0 }
     list.forEach(p => { g[grupMetode(p.metode)] += Number(p.jumlah) || 0 })
     return { total: list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), per, g, n: list.length }
@@ -192,7 +198,7 @@
     document.getElementById('tbody').innerHTML = hari.length ? hari.map(p => `<tr>
       <td>${p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}</td>
       <td><a href="order.html?id=${esc(p.orderId)}" style="color:var(--green);font-weight:700">${esc(p.orderNumber)}</a></td>
-      <td>${esc(p.customerName)}</td><td>${esc(JENIS[p.jenis] || p.jenis || '')}</td><td>${esc(labelMetode(p.metode))}</td>
+      <td>${esc(p.customerName)}</td><td>${esc(JENIS[p.jenis] || p.jenis || '')}</td><td>${esc(labelRekening(p))}</td>
       <td class="r" style="font-weight:700;color:${p.jumlah < 0 ? '#b91c1c' : '#059669'}">${p.jumlah < 0 ? '−' : ''}${rp(Math.abs(p.jumlah))}</td>
       <td>${esc(p.olehNama)}${!lok ? `<div style="font-size:10px;color:rgba(3,69,67,.45)">${esc(namaLok(kunciLok(p)))}</div>` : ''}</td><td>${esc(p.orderOleh || '-')}</td></tr>`).join('')
       : '<tr><td colspan="8" style="text-align:center;color:rgba(3,69,67,.4);padding:18px">Belum ada pembayaran yang dicatat di tanggal ini</td></tr>'
@@ -282,7 +288,26 @@
     const ada = new Set(bulanData.map(kunciLok)); laporan.forEach(l => { if (l.tgl?.startsWith(bulanDimuat)) ada.add(l.lokasiKey) })
     return [...lokasiList.map(l => l.id), TANPA].filter(k => ada.has(k))
   }
+  function renderPerRekening() {
+    const lok = lokasiDipilih(), tgl = document.getElementById('tgl').value
+    const bln = bulanData.filter(p => cocokLok(p, lok))
+    const urut = k => k.startsWith('Tunai') ? 0 : k.startsWith('QRIS') ? 1 : k.startsWith('Transfer') ? 2 : 3
+    const kunci = [...new Set(bln.map(labelRekening))].sort((a, b) => urut(a) - urut(b) || a.localeCompare(b))
+    document.getElementById('ketRekening').textContent = `${lok ? namaLok(lok) : 'Semua lokasi'} · ${new Date(tgl + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} dan bulan ${new Date(bulanDimuat + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long' })}`
+    if (!kunci.length) { document.getElementById('perRekening').innerHTML = '<tr><td style="color:rgba(3,69,67,.4);padding:14px">Belum ada pembayaran bulan ini</td></tr>'; return }
+    let tH = 0, tB = 0, nB = 0
+    const baris = kunci.map(k => {
+      const semua = bln.filter(p => labelRekening(p) === k), hari = semua.filter(p => p.tgl === tgl)
+      const h = hari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), b = semua.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+      tH += h; tB += b; nB += semua.length
+      return `<tr><td style="font-weight:700">${esc(k)}</td><td class="r">${h ? rp(h) : '–'}</td><td class="r">${rp(b)}</td><td class="r">${semua.length}</td></tr>`
+    }).join('')
+    document.getElementById('perRekening').innerHTML = `<thead><tr><th>Rekening / metode</th><th class="r">Tanggal ini</th><th class="r">Bulan ini</th><th class="r">Transaksi</th></tr></thead><tbody>${baris}</tbody>
+      <tfoot><tr style="font-weight:800"><td>Total</td><td class="r">${rp(tH)}</td><td class="r">${rp(tB)}</td><td class="r">${nB}</td></tr></tfoot>`
+  }
+
   function renderRekap() {
+    renderPerRekening()
     const bulan = bulanDimuat
     document.getElementById('judulBulan').textContent = new Date(bulan + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
     const loks = lokasiRekap(), hariIni = tglLokal()
@@ -310,7 +335,7 @@
   window.unduhExcel = function() {
     if (typeof XLSX === 'undefined') { alert('Library Excel belum termuat, muat ulang halaman'); return }
     const loks = lokasiRekap()
-    const metodeAll = [...new Set(bulanData.map(p => labelMetode(p.metode)))].sort()
+    const metodeAll = [...new Set(bulanData.map(labelRekening))].sort()
     const rekap = []
     const tglAda = [...new Set(bulanData.map(p => p.tgl).concat(laporan.filter(l => l.tgl?.startsWith(bulanDimuat)).map(l => l.tgl)))].sort()
     tglAda.forEach(tgl => loks.forEach(k => {
@@ -326,10 +351,20 @@
     }))
     const rinci = bulanData.filter(p => loks.includes(kunciLok(p))).sort((a, b) => a.tgl.localeCompare(b.tgl) || (a.at?.seconds || 0) - (b.at?.seconds || 0)).map(p => ({
       Tanggal: p.tgl, Jam: p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '', Lokasi: namaLok(kunciLok(p)),
-      'No. Order': p.orderNumber, Customer: p.customerName, Divisi: p.division, Jenis: JENIS[p.jenis] || p.jenis, Metode: labelMetode(p.metode),
+      'No. Order': p.orderNumber, Customer: p.customerName, Divisi: p.division, Jenis: JENIS[p.jenis] || p.jenis, Metode: labelMetode(p.metode), 'Rekening Tujuan': p.rekeningNo || '',
       Jumlah: p.jumlah, 'Diterima Oleh': p.olehNama, 'Order Oleh': p.orderOleh || '', Catatan: p.catatan || '' }))
+    // Per rekening: satu baris per tanggal, satu kolom per rekening (gabungan lokasi yang dipilih)
+    const dataLok = bulanData.filter(p => loks.includes(kunciLok(p)))
+    const perRek = [...new Set(dataLok.map(p => p.tgl))].sort().map(tgl => {
+      const row = { Tanggal: tgl }
+      metodeAll.forEach(m => { row[m] = dataLok.filter(p => p.tgl === tgl && labelRekening(p) === m).reduce((t, p) => t + (Number(p.jumlah) || 0), 0) })
+      row.Total = dataLok.filter(p => p.tgl === tgl).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+      return row
+    })
+    if (perRek.length) { const tot = { Tanggal: 'TOTAL' }; [...metodeAll, 'Total'].forEach(m => { tot[m] = perRek.reduce((t, r) => t + (r[m] || 0), 0) }); perRek.push({}, tot) }
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rekap.length ? rekap : [{ Tanggal: 'Tidak ada data' }]), 'Rekap Harian')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(perRek.length ? perRek : [{ Tanggal: 'Tidak ada data' }]), 'Per Rekening')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rinci.length ? rinci : [{ Tanggal: 'Tidak ada data' }]), 'Rincian Pembayaran')
     XLSX.writeFile(wb, `Laporan_Harian_CO_${bulanDimuat}${lokasiDipilih() ? '_' + namaLok(lokasiDipilih()).replace(/\s+/g, '_') : ''}.xlsx`)
   }
