@@ -133,7 +133,8 @@
 
     // CS di pusat dengan divisi yang di-assign → hanya lihat divisi itu dari semua lokasi
     // CS di cabang/titik → tidak difilter divisi (lihat semua divisi di lokasinya)
-    const csAtPusat = profile.role === 'cs' && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat')
+    // CS HQ (pusat) melihat semua order & semua divisi — tidak dikunci divisi
+    const csAtPusat = false
     if (csAtPusat && profile.divisions?.length) {
       const userDivs = profile.divisions
       if (userDivs.length === 1) {

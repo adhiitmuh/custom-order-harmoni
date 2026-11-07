@@ -150,10 +150,10 @@ export function canSeeOrder(o, profile) {
     return !profile.divisi || o.division === profile.divisi
   }
   if (profile.role === 'cs') {
+    // CS HQ (pusat) melihat semua order; CS cabang/titik hanya order lokasinya.
+    // (Divisi di akun CS hanya untuk "merangkap production", bukan pembatas order.)
     const isPusat = !profile.lokasiTipe || profile.lokasiTipe === 'pusat'
-    if (isPusat) {
-      return !profile.divisions?.length || profile.divisions.includes(o.division)
-    }
+    if (isPusat) return true
     return !profile.lokasiId || o.lokasiId === profile.lokasiId
   }
   if (profile.role === 'manager') {

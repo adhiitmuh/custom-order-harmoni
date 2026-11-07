@@ -117,7 +117,6 @@
       kartu('Selesai tapi belum lunas', semua.filter(x => x.s.level === 1).length),
       kartu('Lewat target', semua.filter(x => x.s.level === 2).length),
       kartu('Belum DP', semua.filter(x => x.s.bayar <= 0).length),
-      kartu('Total sisa tagihan', rp(semua.reduce((t, x) => t + x.s.sisa, 0))),
     ].join('')
     const list = (tab === 'perlu' ? perlu : tab === 'tunda' ? tunda : lain)
       .sort((a, b) => a.s.level - b.s.level || b.s.lewat - a.s.lewat || b.s.umur - a.s.umur)
