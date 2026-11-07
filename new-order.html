@@ -37,14 +37,14 @@
       <div class="card" style="margin-bottom:16px">
         <h2 style="font-size:15px;font-weight:700;margin-bottom:14px">Data Pemesan</h2>
         <div class="form-group">
-          <label>Nama Pemesan <span class="req">*</span></label>
-          <input type="text" id="customerName" placeholder="Nama lengkap atau perusahaan" required>
+          <label>No. WhatsApp / Email <span class="req">*</span></label>
+          <input type="text" id="customerContact" inputmode="tel" placeholder="08xx / email@…" required autocomplete="off">
+          <p class="form-hint">Isi nomor dulu — kalau customer lama, nama terisi otomatis. Hanya terlihat Owner & CS.</p>
+          <div id="returningCustomerHint" style="display:none;margin-top:8px;border-radius:10px;padding:10px 12px;font-size:12px;border:1.5px solid rgba(3,69,67,.15);background:rgba(3,69,67,.03)"></div>
         </div>
         <div class="form-group">
-          <label>No. WhatsApp / Email <span class="req">*</span></label>
-          <input type="text" id="customerContact" placeholder="08xx / email@…" required autocomplete="off">
-          <p class="form-hint">Hanya terlihat Owner & CS — tersembunyi untuk tim produksi</p>
-          <div id="returningCustomerHint" style="display:none;margin-top:8px;border-radius:10px;padding:10px 12px;font-size:12px;border:1.5px solid rgba(3,69,67,.15);background:rgba(3,69,67,.03)"></div>
+          <label>Nama Pemesan <span class="req">*</span></label>
+          <input type="text" id="customerName" placeholder="Nama lengkap atau perusahaan" required>
         </div>
       </div>
 
@@ -222,6 +222,7 @@
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
   import { entriPembayaran, pisahMetode, opsiMetode } from './js/pembayaran.js?v=20261107a'
+  import { nilaiTierOrder, bolehSetujui, LABEL_TIER, simpanDaftarHarga, cariMirip, kunciNama } from './js/hargaList.js?v=20261107a'
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon', 'tailor', 'butik', 'jilbab', 'sewa-kostum']
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -312,22 +313,30 @@
     const hint = document.getElementById('returningCustomerHint')
     if (!raw || raw.length < 5) { hint.style.display = 'none'; return }
 
-    const norm = normalizeContact(raw)
-    // Query dengan value asli DAN normalized (misal 08xx vs 628xx)
-    const [snap1, snap2] = await Promise.all([
-      getDocs(query(collection(db, 'orders'), where('customerContact', '==', raw))),
-      norm !== raw ? getDocs(query(collection(db, 'orders'), where('customerContact', '==', norm))) : Promise.resolve({ docs: [] })
-    ])
-    const docs = [...snap1.docs, ...snap2.docs]
-    if (!docs.length) { hint.style.display = 'none'; return }
+    // Cocokkan semua bentuk penulisan nomor: 0812…, 62812…, +62812…, dengan/tanpa spasi atau strip
+    const digit = raw.replace(/\D/g, '')
+    const inti = digit.replace(/^(62|0)/, '')
+    const kandidat = raw.includes('@') ? [raw, raw.toLowerCase()] : [raw, normalizeContact(raw), digit, '0' + inti, '62' + inti, '+62' + inti,
+      '0' + inti.replace(/(\d{3})(\d{4})(\d+)/, '$1-$2-$3'), '0' + inti.replace(/(\d{3})(\d{4})(\d+)/, '$1 $2 $3'), '+62 ' + inti.replace(/(\d{3})(\d{4})(\d+)/, '$1-$2-$3')]
+    const unik = [...new Set(kandidat.filter(Boolean))].slice(0, 30)
+    if (!raw.includes('@') && inti.length < 8) { hint.style.display = 'none'; return }
+    const snap = await getDocs(query(collection(db, 'orders'), where('customerContact', 'in', unik))).catch(() => ({ docs: [] }))
+    if (document.getElementById('customerContact').value.trim() !== raw) return // nomor sudah diganti
+    const docs = [...new Map(snap.docs.map(d => [d.id, d])).values()]
+    if (!docs.length) {
+      hint.style.display = ''
+      hint.innerHTML = `<span style="color:rgba(3,69,67,.55)">🆕 Customer baru — isi nama di bawah.</span>`
+      return
+    }
 
     // Ambil nama dari order terbaru
     const sorted = docs.sort((a, b) => (b.data().createdAt?.seconds||0) - (a.data().createdAt?.seconds||0))
     const latestName = sorted[0].data().customerName || ''
 
-    // Auto-isi nama dari data lama (selalu override)
+    // Auto-isi nama dari data lama (kecuali CS sudah mengetik nama lain)
     const nameEl = document.getElementById('customerName')
-    if (nameEl && latestName) {
+    if (nameEl && latestName && (!nameEl.value.trim() || nameEl.dataset.otomatis === '1')) {
+      nameEl.dataset.otomatis = '1'
       nameEl.value = latestName
       nameEl.style.background = 'rgba(3,69,67,.06)'
       nameEl.title = 'Diisi otomatis dari data order sebelumnya'
@@ -358,6 +367,7 @@
       </div>`
   }
 
+  document.getElementById('customerName').addEventListener('input', function() { this.dataset.otomatis = '0' })
   document.getElementById('customerContact').addEventListener('input', function() {
     clearTimeout(_contactLookupTimer)
     document.getElementById('returningCustomerHint').style.display = 'none'
@@ -515,6 +525,7 @@
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
           oninput="this.value=fmtInputPrice(this.value);calcRow(${id});showTierButtons(${id})">
         <div id="tier-btns-${id}" style="display:none;margin-top:3px;gap:3px;flex-wrap:wrap"></div>
+        <div id="item-baru-${id}" style="display:none;margin-top:3px;font-size:10px;line-height:1.5"></div>
       </td>
       <td style="padding:6px 4px;display:none" id="modalCell-${id}">
         <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.priceModal)}"
@@ -551,6 +562,7 @@
     const typed = nameEl?.value.trim().toLowerCase()
     if (!typed) return
     const match = currentPriceList.items.find(p => p.name.trim().toLowerCase() === typed)
+    tampilkanItemBaru(id, match ? null : nameEl.value.trim())
     if (match?.priceModal && getProfile()?.role === 'owner') {
       const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
       if (modalEl && !modalEl.value) {
@@ -570,6 +582,26 @@
     return !!l && l.tipe !== 'pusat'
   }
   const hargaDasar = o => (diCabang() && o?.priceCabang) ? o.priceCabang : (o?.priceNormal || 0)
+
+  // Item yang belum ada di daftar harga: tawarkan item yang mirip supaya tidak dobel
+  function tampilkanItemBaru(id, nama) {
+    const el = document.getElementById(`item-baru-${id}`)
+    if (!el) return
+    if (!nama) { el.style.display = 'none'; return }
+    const mirip = cariMirip(nama, currentPriceList?.items || [], 0.6).slice(0, 3)
+    el.innerHTML = mirip.length
+      ? `<span style="color:#b45309;font-weight:700">⚠ Mirip item yang sudah ada:</span> ${mirip.map(m => `<button type="button" onclick="pakaiItemKatalog(${id}, ${m.i})" style="border:1px solid #0369a1;color:#0369a1;background:#f0f9ff;border-radius:5px;padding:0 6px;font-size:10px;font-weight:700;cursor:pointer;margin:1px">${escHtml(m.it.name)}</button>`).join('')}<br><span style="color:rgba(3,69,67,.5)">Kalau barangnya sama, ketuk namanya. Kalau beda, biarkan — jadi 🆕 item baru di daftar harga.</span>`
+      : `<span style="color:#0369a1;font-weight:700">🆕 Item baru</span> <span style="color:rgba(3,69,67,.5)">— disimpan ke daftar harga saat order dibuat</span>`
+    el.style.display = ''
+  }
+  window.pakaiItemKatalog = function(id, idx) {
+    const p = currentPriceList?.items?.[idx]; if (!p) return
+    const nameEl = document.querySelector(`[data-field="name"][data-row="${id}"]`)
+    const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
+    nameEl.value = p.name
+    if (priceEl && !p.variants?.length) { priceEl.value = fmtPrice(hargaDasar(p)); calcRow(id) }
+    matchItemToPrice(id)
+  }
 
   window.showTierButtons = function(id) {
     const wrap = document.getElementById(`tier-btns-${id}`)
@@ -703,18 +735,9 @@
   }
 
   function getItemTier(name, varian, pricePerUnit) {
-    if (!currentPriceList?.items?.length || !pricePerUnit) return null
-    const nameLower = name.trim().toLowerCase()
-    const cat = currentPriceList.items.find(p => p.name.trim().toLowerCase() === nameLower)
-    if (!cat) return null
-    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
-    if (cat.variants?.length && varian) {
-      const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian.trim().toLowerCase())
-      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
-    }
-    if (!pN || pricePerUnit >= pN) return 'normal'
-    if (pP && pricePerUnit >= pP) return 'promo'
-    return 'admin'
+    if (!pricePerUnit) return null
+    const r = nilaiTierOrder([{ name, varian, qty: 1, pricePerUnit }], currentPriceList?.items || [], { diCabang: diCabang() })
+    return r.rincian[0]?.tier === 'baru' ? 'baru' : (r.rincian[0]?.tier || null)
   }
 
   function getItemRows() {
@@ -860,68 +883,44 @@
     showTierButtons(itemRowCount)
   }
 
+  let _hasilTier = { tier: 'normal', rincian: [], itemBaru: [] }
   window.checkPriceTierLive = function() {
     const totalPrice = parsePrice(document.getElementById('totalPrice').value)
     const infoEl = document.getElementById('priceTierInfo')
     const msgEl = document.getElementById('priceTierMsg')
     const reasonWrap = document.getElementById('approvalReasonWrap')
+    const items = getItemRows().filter(i => i.name)
+    if (!items.length) { infoEl.style.display = 'none'; currentPriceTier = 'normal'; return }
 
-    if (!totalPrice || !currentPriceList?.items?.length) {
-      infoEl.style.display = 'none'; return
-    }
-
-    // Cek tier per item jika ada item yang cocok di katalog
-    // Tier order = tier terburuk di antara semua item (admin > promo > normal)
-    let effectiveTier = null
-    const itemRows = [...document.querySelectorAll('#itemRows tr')]
-    for (const tr of itemRows) {
-      const name   = tr.querySelector('[data-field="name"]')?.value.trim() || ''
-      const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
-      const p      = parsePrice(tr.querySelector('[data-field="price"]')?.value)
-      const t      = getItemTier(name, varian, p)
-      if (!t) continue
-      if (t === 'admin') { effectiveTier = 'admin'; break }
-      if (t === 'promo') effectiveTier = 'promo'
-      else if (!effectiveTier) effectiveTier = 'normal'
-    }
-
-    // Fallback ke total harga vs minimum katalog (kalau item belum ada nama katalog)
-    if (!effectiveTier) {
-      const catItems = currentPriceList.items
-      const allN = catItems.flatMap(i => [i.priceNormal, ...(i.variants||[]).map(v=>v.priceNormal)]).filter(x=>x>0)
-      const allP = catItems.flatMap(i => [i.pricePromo,  ...(i.variants||[]).map(v=>v.pricePromo)]).filter(x=>x>0)
-      const allA = catItems.flatMap(i => [i.priceAdmin,  ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
-      const minN = allN.length ? Math.min(...allN) : Infinity
-      const minP = allP.length ? Math.min(...allP) : Infinity
-      const minA = allA.length ? Math.min(...allA) : Infinity
-      if (!isFinite(minN) || totalPrice >= minN) effectiveTier = 'normal'
-      else if (isFinite(minP) && totalPrice >= minP) effectiveTier = 'promo'
-      else if (isFinite(minA) && totalPrice >= minA) effectiveTier = 'admin'
-      else if (isFinite(minA) && totalPrice < minA) effectiveTier = 'blocked'
-      else effectiveTier = 'normal'
-    }
-
-    currentPriceTier = effectiveTier
-
-    if (effectiveTier === 'normal') {
-      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0'
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#059669">✓ Harga Normal — Langsung disetujui</span>`
+    // Tier per item dari daftar harga (harga per pcs; diskon total ikut dihitung)
+    const h = nilaiTierOrder(items, currentPriceList?.items || [], { diCabang: diCabang(), totalPrice: totalPrice || null })
+    _hasilTier = h
+    const prof = getProfile()
+    let tier = h.tier
+    // Owner boleh di bawah harga Admin (wajib alasan), tapi tidak di bawah modal
+    if (tier === 'blocked' && prof?.role === 'owner' && !h.dibawahModal) tier = 'admin'
+    currentPriceTier = tier
+    const otomatis = tier !== 'normal' && tier !== 'blocked' && bolehSetujui(prof, tier)
+    const rinci = h.rincian.filter(r => r.tier !== 'normal' && r.tier !== 'baru')
+      .map(r => `• ${escHtml(r.name)}${r.varian ? ' (' + escHtml(r.varian) + ')' : ''}: Rp ${r.harga.toLocaleString('id-ID')} — ${r.tier === 'blocked' ? '🚫 ' + r.alasan : LABEL_TIER[r.tier]}${r.dasar ? ` (normal Rp ${r.dasar.toLocaleString('id-ID')})` : ''}`).join('<br>')
+    const baru = h.itemBaru.length ? `<div style="font-size:11px;color:#0369a1;margin-top:6px">🆕 Item baru (belum ada di daftar harga): <b>${h.itemBaru.map(escHtml).join(', ')}</b> — otomatis ditambahkan ke daftar harga saat order disimpan.</div>` : ''
+    const diskon = h.diskonPersen > 0 ? `<div style="font-size:11px;color:#d97706;margin-top:4px">Diskon total ${h.diskonPersen}% ikut dihitung ke harga per pcs.</div>` : ''
+    const kotak = (bg, bd) => `display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:${bg};border:1px solid ${bd}`
+    if (tier === 'normal') {
+      infoEl.style.cssText = kotak('#f0fdf4', '#bbf7d0')
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#059669">✓ Harga sesuai daftar — langsung diproses</span>${diskon}${baru}`
       reasonWrap.style.display = 'none'
-    } else if (effectiveTier === 'promo') {
-      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a'
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#d97706">⚠ Harga Promo — Perlu approval Kepala Cabang</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval sebelum diproses</span>`
+    } else if (tier === 'promo' || tier === 'admin') {
+      const promo = tier === 'promo'
+      infoEl.style.cssText = promo ? kotak('#fffbeb', '#fde68a') : kotak('#fff1f2', '#fecdd3')
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:${promo ? '#d97706' : '#b91c1c'}">${promo ? '⚠ Harga Promo — perlu approval Kepala Cabang' : '🔒 Harga Admin — perlu approval Owner'}</span>
+        <div style="font-size:11px;color:rgba(3,69,67,.6);margin-top:4px">${rinci}</div>${diskon}
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px">${otomatis ? '✓ Anda berwenang — order langsung disetujui atas nama Anda (alasan tetap wajib).' : 'Order dibuat dan menunggu approval — belum bisa masuk produksi.'}</div>${baru}`
       reasonWrap.style.display = ''
-    } else if (effectiveTier === 'admin') {
-      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff1f2;border:1px solid #fecdd3'
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🔒 Harga Owner — Perlu approval Owner</span><br><span style="font-size:11px;color:rgba(3,69,67,.5)">Order akan dibuat dan menunggu approval Owner sebelum diproses</span>`
-      reasonWrap.style.display = ''
-    } else if (effectiveTier === 'blocked') {
-      infoEl.style.cssText = 'display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#fee2e2;border:1px solid #fca5a5'
-      const minA = currentPriceList.items.flatMap(i => [i.priceAdmin, ...(i.variants||[]).map(v=>v.priceAdmin)]).filter(x=>x>0)
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas minimum!</span><br><span style="font-size:11px;color:#b91c1c">Harga minimum absolut: <strong>Rp ${Math.min(...minA).toLocaleString('id-ID')}</strong> — tidak dapat disimpan</span>`
-      reasonWrap.style.display = 'none'
     } else {
-      infoEl.style.display = 'none'
+      infoEl.style.cssText = kotak('#fee2e2', '#fca5a5')
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:#b91c1c">🚫 Harga di bawah batas — order tidak bisa disimpan</span><div style="font-size:11px;color:#b91c1c;margin-top:4px">${rinci}</div>${diskon}${baru}`
+      reasonWrap.style.display = 'none'
     }
   }
 
@@ -1079,6 +1078,9 @@
         setStatus('Membuat nomor order…')
         const orderNumber = await generateOrderNumber(selectedDiv)
         const now = Timestamp.now()
+        // Kepala Cabang (Promo) / Owner (semua) yang membuat order langsung menyetujui harganya sendiri
+        const disetujuiOtomatis = currentPriceTier !== 'normal' && bolehSetujui(profile, currentPriceTier)
+        const lolos = currentPriceTier === 'normal' || disetujuiOtomatis
 
         let designFiles = []
         if (files.length > 0) {
@@ -1096,7 +1098,7 @@
           orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
           dueDate,
           designFiles,
-          status: isDraft ? 'draft' : (currentPriceTier==='normal' ? 'pending' : 'pending-approval'),
+          status: isDraft ? 'draft' : (lolos ? 'pending' : 'pending-approval'),
           originalDueDate: dueDate,
           progressPercentage: 0,
           totalPrice: parsePrice(document.getElementById('totalPrice').value),
@@ -1116,11 +1118,11 @@
           createdByName: profile.name,
           createdAt: now,
           updatedAt: now,
-          priceApprovalStatus: currentPriceTier === 'normal' ? 'approved' : 'pending',
+          priceApprovalStatus: lolos ? 'approved' : 'pending',
           priceApprovalTier: currentPriceTier === 'normal' ? null : currentPriceTier,
+          ...(disetujuiOtomatis ? { priceApprovalBy: profile.id, priceApprovalByName: profile.name, priceApprovalAt: now } : { priceApprovalBy: null, priceApprovalAt: null }),
+          hargaCek: { tier: currentPriceTier, itemBaru: _hasilTier.itemBaru || [], diskonPersen: _hasilTier.diskonPersen || 0, diCabang: diCabang() },
           priceApprovalReason: document.getElementById('approvalReason')?.value.trim() || '',
-          priceApprovalBy: null,
-          priceApprovalAt: null,
           orderItems: getItemRows(),
           paymentMethod: pisahMetode(document.getElementById('paymentMethod').value).metode || '',
           chatToken,
@@ -1149,7 +1151,23 @@
         })
 
         // Notifikasi approval harga ke owner/manager
-        if (currentPriceTier !== 'normal' && !isDraft) {
+        // Item baru dari order ini → masuk daftar harga (CS hanya mengisi Normal/Cabang; Promo/Admin diisi atasan)
+        if (!isDraft && _hasilTier.itemBaru?.length) {
+          try {
+            setStatus('Menyimpan item baru ke daftar harga…')
+            const kolom = diCabang() ? 'priceCabang' : 'priceNormal'
+            const tambah = []
+            getItemRows().filter(r => r.tier === 'baru' || r.tier === null).forEach(r => {
+              const cat = (currentPriceList?.items || []).find(p => kunciNama(p.name) === kunciNama(r.name))
+              const harga = { [kolom]: r.pricePerUnit || 0, ...(r.priceModal && profile.role === 'owner' ? { priceModal: r.priceModal } : {}) }
+              if (cat && r.varian) tambah.push({ name: cat.name, variants: [{ name: r.varian, ...harga }] })
+              else if (!cat) tambah.push(r.varian ? { name: r.name, variants: [{ name: r.varian, ...harga }] } : { name: r.name, ...harga })
+            })
+            if (tambah.length) await Promise.race([simpanDaftarHarga(profile, selectedDiv, tambah, 'tambah'), new Promise(r => setTimeout(r, 8000))])
+          } catch (e) { console.warn('Item baru belum masuk daftar harga:', e.message) }
+        }
+
+        if (!lolos && !isDraft) {
           const savedItems = getItemRows()
           const adminItems = savedItems.filter(i => i.tier === 'admin').map(i => i.name)
           const promoItems = savedItems.filter(i => i.tier === 'promo').map(i => i.name)

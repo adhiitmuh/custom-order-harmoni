@@ -121,6 +121,13 @@ export default {
 
     const url = new URL(request.url)
 
+    // /price-list-save: simpan daftar harga oleh staf selain Owner. Worker yang menentukan
+    // kolom harga mana yang boleh diubah per role (Firestore Rules hanya mengizinkan Owner
+    // menulis price_list langsung), lalu menyinkronkan salinan publik.
+    if (request.method === 'POST' && url.pathname === '/price-list-save') {
+      return handlePriceListSave(request, env)
+    }
+
     // /qris-img: ambil gambar QRIS (Firebase Storage / ImgBB) supaya bisa dibagikan
     // sebagai file lewat tombol Bagikan (Storage tidak mengizinkan fetch lintas-domain).
     // Hanya gambar dari sumber yang diizinkan, maks 5 MB.
@@ -1666,4 +1673,157 @@ async function handleQrisImg(url) {
   const buf = await r.arrayBuffer()
   if (buf.byteLength > 5 * 1024 * 1024) return json({ error: 'Gambar terlalu besar' }, 413)
   return new Response(buf, { headers: { ...CORS, 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' } })
+}
+
+
+// ── Daftar harga: simpan per role ────────────────────────────────────────────
+// Kolom harga & siapa yang boleh mengubah:
+//   priceNormal, priceCabang : CS (hanya mengisi yang masih kosong / item baru), Kepala Cabang (manager),
+//                              Data, Pemilik Divisi (divisinya), Owner
+//   pricePromo               : Kepala Cabang, Owner
+//   priceAdmin               : Owner
+//   priceModal               : Data, Pemilik Divisi (divisinya), Owner
+// Item baru boleh ditambah CS/Kepala Cabang/Data/Pemilik Divisi; menghapus & mengganti nama item hanya Owner.
+const HARGA_KOLOM = ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal']
+const HARGA_IZIN = {
+  cs:      { isiKosong: ['priceNormal', 'priceCabang'], ubah: [] },
+  manager: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo'] },
+  data:    { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'priceModal'] },
+  divisi:  { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'priceModal'] },
+}
+const kunciNama = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+function gabungHarga(lamaItems, baruItems, role, nama) {
+  const izin = HARGA_IZIN[role]
+  const ditolak = []
+  // CS boleh mengisi yang kosong, atau memperbaiki item/varian yang masih 'baru' (belum dicek Owner)
+  const boleh = (k, lamaV, lama) => izin.ubah.includes(k) || (izin.isiKosong.includes(k) && (!(Number(lamaV) > 0) || lama?.baru === true))
+  const pakaiHarga = (lama, baru, label) => {
+    const out = { ...lama }
+    for (const k of HARGA_KOLOM) {
+      const nb = Number(baru?.[k]) || 0, nl = Number(lama?.[k]) || 0
+      if (nb === nl) continue
+      if (boleh(k, nl, lama)) out[k] = nb
+      else ditolak.push(`${label}: ${k.replace('price', 'Harga ')} tidak boleh diubah oleh akun ini`)
+    }
+    for (const k of ['unit', 'note']) if (baru?.[k] !== undefined && String(baru[k]).trim() !== String(lama?.[k] || '')) {
+      if (role === 'cs' && lama?.[k]) ditolak.push(`${label}: ${k === 'unit' ? 'satuan' : 'keterangan'} hanya bisa diubah Kepala Cabang/Owner`)
+      else out[k] = String(baru[k]).trim()
+    }
+    return out
+  }
+  const hargaBaru = (baru, label) => {
+    const out = {}
+    for (const k of HARGA_KOLOM) {
+      const v = Number(baru?.[k]) || 0
+      if (!v) { out[k] = 0; continue }
+      if (izin.ubah.includes(k) || izin.isiKosong.includes(k)) out[k] = v
+      else { out[k] = 0; ditolak.push(`${label}: ${k.replace('price', 'Harga ')} diisi Kepala Cabang/Owner`) }
+    }
+    return out
+  }
+  const peta = new Map(lamaItems.map((it, i) => [kunciNama(it.name), i]))
+  const dipakai = new Set()
+  const hasil = []
+  for (const b of baruItems || []) {
+    const key = kunciNama(b?.name)
+    if (!key) continue
+    const idx = peta.get(key)
+    if (idx !== undefined) {
+      if (dipakai.has(idx)) continue
+      dipakai.add(idx)
+      const lama = lamaItems[idx]
+      const it = pakaiHarga(lama, b, lama.name)
+      // varian
+      const vLama = Array.isArray(lama.variants) ? lama.variants : []
+      const vPeta = new Map(vLama.map((v, i) => [kunciNama(v.name), i]))
+      const vPakai = new Set(), vHasil = []
+      for (const bv of (Array.isArray(b.variants) ? b.variants : [])) {
+        const vk = kunciNama(bv?.name); if (!vk) continue
+        const vi = vPeta.get(vk)
+        if (vi !== undefined) { if (vPakai.has(vi)) continue; vPakai.add(vi); vHasil.push(pakaiHarga(vLama[vi], bv, `${lama.name} – ${vLama[vi].name}`)) }
+        else vHasil.push({ name: String(bv.name).trim(), ...hargaBaru(bv, `${lama.name} – ${bv.name}`), baru: true, dibuatOleh: nama })
+      }
+      vLama.forEach((v, i) => { if (!vPakai.has(i)) { vHasil.push(v); ditolak.push(`Varian "${lama.name} – ${v.name}" hanya bisa dihapus Owner`) } })
+      it.variants = vHasil
+      hasil.push(it)
+    } else {
+      hasil.push({
+        name: String(b.name).trim(), unit: String(b.unit || '').trim(), note: String(b.note || '').trim(),
+        ...hargaBaru(b, b.name),
+        variants: (Array.isArray(b.variants) ? b.variants : []).filter(v => kunciNama(v?.name))
+          .map(v => ({ name: String(v.name).trim(), ...hargaBaru(v, `${b.name} – ${v.name}`) })),
+        baru: true, dibuatOleh: nama, dibuatAt: new Date().toISOString(),
+      })
+    }
+  }
+  lamaItems.forEach((it, i) => { if (!dipakai.has(i)) { hasil.push(it); ditolak.push(`Item "${it.name}" hanya bisa dihapus / diganti nama oleh Owner`) } })
+  return { items: hasil, ditolak: [...new Set(ditolak)] }
+}
+
+function keFs(v) {
+  if (v === null || v === undefined) return { nullValue: null }
+  if (typeof v === 'boolean') return { booleanValue: v }
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }
+  if (typeof v === 'string') return { stringValue: v }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(keFs) } }
+  if (typeof v === 'object') {
+    if (v.__type === 'timestamp') return { timestampValue: v.value }
+    return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, keFs(x)])) } }
+  }
+  return { stringValue: String(v) }
+}
+const _pubItem = ({ priceModal, pricePromo, priceAdmin, priceCabang, baru, dibuatOleh, dibuatAt, ...x }) => x
+const hargaPublikW = items => items.map(it => { const x = _pubItem(it); if (Array.isArray(x.variants)) x.variants = x.variants.map(_pubItem); return x })
+
+async function handlePriceListSave(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const firebaseUser = await verifyFirebaseIdToken(idToken, env)
+  if (!firebaseUser) return json({ error: 'Sesi login habis — muat ulang halaman' }, 401)
+  const staff = await getPortalStaff(idToken, firebaseUser)
+  if (!staff) return json({ error: 'Akun tidak punya akses Custom Order' }, 403)
+  const body = await request.json().catch(() => null)
+  const division = String(body?.division || '')
+  if (!VALID_DIVISIONS.includes(division) || !Array.isArray(body?.items)) return json({ error: 'Data tidak valid' }, 400)
+  if (staff.role !== 'owner' && !HARGA_IZIN[staff.role]) return json({ error: 'Akun ini tidak bisa mengubah daftar harga' }, 403)
+  if (staff.role === 'divisi' && staff.divisi !== division) return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
+  if (body.items.length > 500) return json({ error: 'Terlalu banyak item' }, 400)
+
+  const projectId = env.FIREBASE_PROJECT_ID
+  const token = await getFirebaseToken(env)
+  const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`
+  for (let coba = 0; coba < 3; coba++) {
+    const cur = await firestoreGet(projectId, token, `price_list/${division}`)
+    const lama = cur?.fields ? parseFields(cur.fields) : {}
+    const lamaItems = Array.isArray(lama.items) ? lama.items : []
+    // mode 'tambah' (dari form order): hanya menambah item yang belum ada, item lama tidak disentuh
+    let masukan = body.items
+    if (body.mode === 'tambah') {
+      masukan = lamaItems.map(l => ({ ...l, variants: [...(Array.isArray(l.variants) ? l.variants : [])] }))
+      for (const b of body.items) {
+        const l = masukan.find(x => kunciNama(x.name) === kunciNama(b?.name))
+        if (!l) { if (kunciNama(b?.name)) masukan.push(b); continue }
+        for (const v of (Array.isArray(b.variants) ? b.variants : []))
+          if (kunciNama(v?.name) && !l.variants.some(x => kunciNama(x.name) === kunciNama(v.name))) l.variants.push(v)
+      }
+    }
+    const { items, ditolak } = staff.role === 'owner'
+      ? { items: masukan.filter(b => kunciNama(b?.name)), ditolak: [] }
+      : gabungHarga(lamaItems, masukan, staff.role, staff.nama || staff.email)
+    const now = new Date().toISOString()
+    const fields = { division: keFs(division), items: keFs(items), updatedAt: { timestampValue: now }, updatedBy: keFs(staff.nama || staff.email || '') }
+    const pre = cur?.updateTime ? `?currentDocument.updateTime=${encodeURIComponent(cur.updateTime)}` : '?currentDocument.exists=false'
+    const res = await fetch(`${base}/price_list/${division}${pre}`, {
+      method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+    })
+    if (res.status === 400 || res.status === 409 || res.status === 412) { if (coba < 2) continue }
+    if (!res.ok) return json({ error: 'Gagal menyimpan: ' + (await res.text()).slice(0, 200) }, 500)
+    await firestoreSet(projectId, token, `price_list_public/${division}`, {
+      division: keFs(division), items: keFs(hargaPublikW(items)), updatedAt: { timestampValue: now },
+    }).catch(() => {})
+    return json({ success: true, items, ditolak })
+  }
+  return json({ error: 'Daftar harga sedang diubah orang lain — coba lagi' }, 409)
 }

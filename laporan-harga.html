@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Laporan Harga — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .lg-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .lg-bar input, .lg-bar select { width:auto; font-size:13px; }
+    .lg-kartu { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+    .lg-k { background:var(--white); border:1px solid rgba(3,69,67,.08); border-radius:12px; padding:12px 14px; }
+    .lg-k .l { font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.5); text-transform:uppercase; }
+    .lg-k .v { font-size:20px; font-weight:800; margin-top:4px; }
+    table.lg { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.lg th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:8px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; }
+    table.lg td { padding:8px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.lg td.r, table.lg th.r { text-align:right; white-space:nowrap; }
+    .lg-wrap { overflow-x:auto; }
+    .tg { font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; display:inline-block; }
+    .tg-normal { background:#ecfdf5; color:#047857; } .tg-promo { background:#fffbeb; color:#b45309; }
+    .tg-admin { background:#fef2f2; color:#b91c1c; } .tg-blocked { background:#7f1d1d; color:#fff; }
+    .tg-baru { background:#e0f2fe; color:#0369a1; } .tg-pending { background:#f1f5f9; color:#475569; }
+    tr.curiga td { background:#fff1f2; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Laporan Harga</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Order dengan harga Promo / Admin per CS & cabang, siapa yang menyetujui, dan item baru dari CS. Setiap order dihitung ulang dengan daftar harga — yang tercatat "Normal" padahal di bawah harga daftar ditandai merah.</p>
+    </div>
+    <div class="lg-bar">
+      <input type="month" id="bulan">
+      <select id="fLokasi"><option value="">Semua lokasi</option></select>
+      <select id="fTier">
+        <option value="">Semua order</option>
+        <option value="khusus" selected>Harga khusus & item baru</option>
+        <option value="curiga">⚠ Tidak sesuai daftar</option>
+        <option value="pending">Menunggu approval</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="unduhExcel()">⬇ Excel</button>
+    </div>
+    <div id="kartu" class="lg-kartu"></div>
+    <div class="card" style="margin-bottom:14px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Per CS</h3>
+      <div class="lg-wrap" id="perCs"><div class="loading">Memuat…</div></div>
+    </div>
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Rincian order</h3>
+      <div class="lg-wrap" id="rincian"><div class="loading">Memuat…</div></div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, getDoc, doc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS } from './js/utils.js'
+  import { nilaiTierOrder, URUTAN_TIER } from './js/hargaList.js?v=20261107a'
+
+  const rp = n => 'Rp' + Math.round(Number(n) || 0).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const LBL = { normal: 'Normal', promo: 'Promo', admin: 'Admin', blocked: 'Di bawah batas', baru: 'Item baru', pending: 'Menunggu' }
+  const tgl = o => { const a = o.createdAt; const d = a?.toDate ? a.toDate() : a?.seconds ? new Date(a.seconds * 1000) : new Date(a); return isNaN(d) ? null : d }
+  let profile, lokasiList = [], harga = {}, baris = []
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const now = new Date()
+    document.getElementById('bulan').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const [lSnap, ...pSnaps] = await Promise.all([getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] })),
+      ...DIVISIONS.map(d => getDoc(doc(db, 'price_list', d)).catch(() => null))])
+    lokasiList = lSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    DIVISIONS.forEach((d, i) => { harga[d] = pSnaps[i]?.exists() ? (pSnaps[i].data().items || []) : [] })
+    const sel = document.getElementById('fLokasi')
+    lokasiList.forEach(l => sel.insertAdjacentHTML('beforeend', `<option value="${esc(l.id)}">${esc(l.nama)}</option>`))
+    if (p.role === 'manager' && p.lokasiId) { sel.value = p.lokasiId; sel.disabled = true }
+    ;['bulan', 'fLokasi', 'fTier'].forEach(id => document.getElementById(id).addEventListener('change', id === 'bulan' ? muat : render))
+    muat()
+  })
+
+  async function muat() {
+    const [y, m] = document.getElementById('bulan').value.split('-').map(Number)
+    const awal = new Date(y, m - 1, 1), akhir = new Date(y, m, 1)
+    document.getElementById('rincian').innerHTML = '<div class="loading">Memuat…</div>'
+    const snap = await getDocs(query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(awal)), where('createdAt', '<', Timestamp.fromDate(akhir)))).catch(() => ({ docs: [] }))
+    baris = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(o => !['draft', 'cancelled'].includes(o.status))
+      .map(o => {
+        const h = nilaiTierOrder(o.orderItems || [], harga[o.division] || [], { diCabang: !!o.lokasiTipe && o.lokasiTipe !== 'pusat', totalPrice: o.totalPrice ?? null })
+        const tercatat = o.priceApprovalTier || 'normal'
+        const curiga = URUTAN_TIER[h.tier] > URUTAN_TIER[tercatat] && !o.priceApprovalBy
+        return { o, h, tercatat, curiga, pending: o.priceApprovalStatus === 'pending', tanggal: tgl(o), itemBaru: o.hargaCek?.itemBaru || [] }
+      })
+      .sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0))
+    render()
+  }
+
+  function tampil() {
+    const lok = document.getElementById('fLokasi').value, f = document.getElementById('fTier').value
+    return baris.filter(b => (!lok || b.o.lokasiId === lok)
+      && (f === '' || (f === 'curiga' && b.curiga) || (f === 'pending' && b.pending)
+        || (f === 'khusus' && (b.tercatat !== 'normal' || b.curiga || b.itemBaru.length || b.pending))))
+  }
+
+  function render() {
+    const lok = document.getElementById('fLokasi').value
+    const semua = baris.filter(b => !lok || b.o.lokasiId === lok)
+    const n = f => semua.filter(f).length
+    document.getElementById('kartu').innerHTML = [
+      ['Order', semua.length, ''], ['Harga Promo', n(b => b.tercatat === 'promo'), '#b45309'], ['Harga Admin', n(b => b.tercatat === 'admin'), '#b91c1c'],
+      ['Menunggu approval', n(b => b.pending), '#475569'], ['⚠ Tidak sesuai daftar', n(b => b.curiga), '#b91c1c'], ['Pakai item baru', n(b => b.itemBaru.length), '#0369a1'],
+    ].map(([l, v, c]) => `<div class="lg-k"><div class="l">${l}</div><div class="v" style="color:${c || 'var(--black)'}">${v}</div></div>`).join('')
+
+    const per = {}
+    semua.forEach(b => {
+      const k = b.o.createdByName || '—'
+      const x = per[k] = per[k] || { cs: k, lokasi: new Set(), order: 0, promo: 0, admin: 0, curiga: 0, baru: 0, selisih: 0 }
+      x.order++; if (b.o.lokasiNama) x.lokasi.add(b.o.lokasiNama)
+      if (b.tercatat === 'promo') x.promo++; if (b.tercatat === 'admin') x.admin++
+      if (b.curiga) x.curiga++; if (b.itemBaru.length) x.baru++
+      b.h.rincian.forEach(r => { if (r.dasar && r.harga < r.dasar) x.selisih += (r.dasar - r.harga) * (Number((b.o.orderItems || []).find(i => i.name === r.name)?.qty) || 1) })
+    })
+    const rows = Object.values(per).sort((a, b) => b.curiga - a.curiga || (b.promo + b.admin) - (a.promo + a.admin))
+    document.getElementById('perCs').innerHTML = rows.length ? `<table class="lg"><thead><tr><th>CS</th><th>Lokasi</th><th class="r">Order</th><th class="r">Promo</th><th class="r">Admin</th><th class="r">⚠ Tidak sesuai</th><th class="r">Item baru</th><th class="r">Total potongan</th></tr></thead><tbody>
+      ${rows.map(x => `<tr${x.curiga ? ' class="curiga"' : ''}><td><b>${esc(x.cs)}</b></td><td>${esc([...x.lokasi].join(', ') || '—')}</td><td class="r">${x.order}</td><td class="r">${x.promo || '—'}</td><td class="r">${x.admin || '—'}</td><td class="r">${x.curiga || '—'}</td><td class="r">${x.baru || '—'}</td><td class="r">${x.selisih ? rp(x.selisih) : '—'}</td></tr>`).join('')}
+      </tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">Belum ada order bulan ini.</p>'
+
+    const t = tampil()
+    document.getElementById('rincian').innerHTML = t.length ? `<table class="lg"><thead><tr><th>Tanggal</th><th>Order</th><th>CS · Lokasi</th><th class="r">Total</th><th>Tercatat</th><th>Disetujui</th><th>Hitung ulang</th></tr></thead><tbody>
+      ${t.map(b => {
+        const o = b.o
+        const rinci = b.h.rincian.filter(r => r.tier !== 'normal').map(r => r.tier === 'baru' ? `🆕 ${esc(r.name)}` : `${esc(r.name)} ${rp(r.harga)} <span style="color:rgba(3,69,67,.45)">(normal ${rp(r.dasar)})</span>`).join('<br>')
+        return `<tr${b.curiga ? ' class="curiga"' : ''}>
+          <td style="white-space:nowrap">${b.tanggal ? b.tanggal.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '—'}</td>
+          <td><a href="order.html?id=${esc(o.id)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(o.orderNumber || o.id)}</a><div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(DIVISION_META[o.division]?.label || o.division)}</div></td>
+          <td>${esc(o.createdByName || '—')}<div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(o.lokasiNama || '—')}</div></td>
+          <td class="r">${rp(o.totalPrice)}</td>
+          <td><span class="tg tg-${b.pending ? 'pending' : b.tercatat}">${b.pending ? 'Menunggu · ' : ''}${LBL[b.tercatat]}</span>${o.priceApprovalReason ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">“${esc(o.priceApprovalReason)}”</div>` : ''}</td>
+          <td style="font-size:12px">${esc(o.priceApprovalByName || (b.tercatat === 'normal' ? '—' : 'belum'))}</td>
+          <td style="font-size:12px">${b.curiga ? '<b style="color:#b91c1c">⚠ Seharusnya ' + LBL[b.h.tier] + '</b><br>' : ''}${rinci || '<span style="color:rgba(3,69,67,.35)">sesuai daftar</span>'}</td>
+        </tr>`
+      }).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">Tidak ada order untuk filter ini.</p>'
+  }
+
+  window.unduhExcel = function() {
+    const data = tampil().map(b => ({
+      Tanggal: b.tanggal ? b.tanggal.toLocaleDateString('id-ID') : '', 'No. Order': b.o.orderNumber, Divisi: DIVISION_META[b.o.division]?.label || b.o.division,
+      CS: b.o.createdByName || '', Lokasi: b.o.lokasiNama || '', Total: Number(b.o.totalPrice) || 0,
+      'Tier tercatat': LBL[b.tercatat], Status: b.pending ? 'Menunggu approval' : 'Selesai', 'Disetujui oleh': b.o.priceApprovalByName || '',
+      Alasan: b.o.priceApprovalReason || '', 'Hitung ulang': LBL[b.h.tier], 'Tidak sesuai': b.curiga ? 'YA' : '', 'Item baru': b.itemBaru.join(', '),
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+    data.forEach((_, i) => { const c = ws[XLSX.utils.encode_cell({ r: i + 1, c: 5 })]; if (c) c.z = fmt })
+    ws['!cols'] = [10, 18, 12, 14, 14, 14, 12, 16, 14, 30, 12, 10, 30].map(w => ({ wch: w }))
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Laporan Harga')
+    XLSX.writeFile(wb, `Laporan_Harga_${document.getElementById('bulan').value}.xlsx`)
+  }
+</script>
+</body>
+</html>

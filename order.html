@@ -91,6 +91,7 @@
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
+  import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER } from './js/hargaList.js?v=20261107a'
   import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261107a'
 
   const params = new URLSearchParams(location.search)
@@ -2014,8 +2015,9 @@
     )
     const newTotal = items.reduce((s, it) => s + (it.subtotal || 0), 0)
     try {
+      const cek = await cekUlangHarga(items, newTotal)
       await updateDoc(doc(db, 'orders', orderId), {
-        orderItems: items, totalPrice: newTotal, updatedAt: Timestamp.now(),
+        orderItems: items, totalPrice: newTotal, updatedAt: Timestamp.now(), ...cek,
       })
       await loadOrder(getProfile())
     } catch(err) { alert('Gagal simpan: ' + err.message) }
@@ -2132,7 +2134,9 @@
     })
     const totalPrice = items.reduce((s, item) => s + (item.subtotal||0), 0)
     try {
-      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now() })
+      const cek = await cekUlangHarga(items, totalPrice)
+      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now(), ...cek })
+      if (cek.priceApprovalStatus) { await loadOrder(getProfile()); return }
       order.orderItems = items
       order.totalPrice = totalPrice
       document.getElementById(`pval-${i}`).textContent = fmtCurrency(pricePerUnit)
@@ -2261,8 +2265,13 @@
         paymentEditBy: getProfile().name,
         paymentEditAt: now,
       }
+      if (updates.totalPrice !== (order.totalPrice || 0)) {
+        try { Object.assign(updates, await cekUlangHarga(order.orderItems || [], updates.totalPrice)) }
+        catch (e) { alert(e.message); return }
+      }
       if (order.status === 'draft' && newDp > 0 && (order.depositPaid||0) === 0) {
         Object.assign(updates, calcDraftShift())
+        if (updates.priceApprovalStatus === 'pending') updates.status = 'pending-approval'
       }
       const batch = writeBatch(db)
       batch.update(doc(db,'orders',orderId), updates)
@@ -2427,6 +2436,39 @@
             <div style="font-size:10px;color:rgba(3,69,67,.45)">diterima ${esc(p.olehNama || '-')}${p.lokasiNama ? ' · ' + esc(p.lokasiNama) : ''}${p.catatan ? ' · ' + esc(p.catatan) : ''}${p.bukti ? ` · <a href="${esc(p.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}</div></div>
           <b style="color:${p.jumlah < 0 ? '#b91c1c' : '#059669'};white-space:nowrap">${p.jumlah < 0 ? '−' : ''}${fmtCurrency(Math.abs(p.jumlah))}</b></div>`).join('')}`
     } catch { el.innerHTML = '' }
+  }
+
+  // ── Cek ulang harga saat order diedit ─────────────────────────────────────
+  // Harga/total turun di bawah tier yang sudah disetujui → approval lagi (kecuali yang mengedit berwenang).
+  let _daftarHargaOrder = null
+  async function daftarHargaOrder() {
+    if (_daftarHargaOrder) return _daftarHargaOrder
+    const snap = await getDoc(doc(db, 'price_list', order.division)).catch(() => null)
+    _daftarHargaOrder = snap?.exists() ? (snap.data().items || []) : []
+    return _daftarHargaOrder
+  }
+  async function cekUlangHarga(itemsBaru, totalBaru) {
+    const prof = getProfile()
+    const daftar = await daftarHargaOrder()
+    const h = nilaiTierOrder(itemsBaru, daftar, { diCabang: !!order.lokasiTipe && order.lokasiTipe !== 'pusat', totalPrice: totalBaru })
+    let tier = h.tier
+    if (tier === 'blocked' && prof.role === 'owner' && !h.dibawahModal) tier = 'admin'
+    if (tier === 'blocked') {
+      const r = h.rincian.find(x => x.tier === 'blocked')
+      throw new Error(`Harga ${r?.name || ''} ${r?.alasan || 'di bawah batas'} — tidak bisa disimpan`)
+    }
+    const disetujui = order.priceApprovalStatus === 'approved' ? (order.priceApprovalTier || 'normal') : order.priceApprovalStatus === 'pending' ? (order.priceApprovalTier || 'normal') : 'normal'
+    if (URUTAN_TIER[tier] <= URUTAN_TIER[disetujui]) return {}
+    const alasan = prompt(`Harga ini termasuk ${LABEL_TIER[tier]}. Tulis alasan / justifikasi:`)
+    if (alasan === null || !alasan.trim()) throw new Error('Dibatalkan — alasan wajib diisi untuk harga di bawah normal')
+    const now = Timestamp.now()
+    if (bolehSetujui(prof, tier)) {
+      return { priceApprovalStatus: 'approved', priceApprovalTier: tier, priceApprovalReason: alasan.trim(), priceApprovalBy: prof.id, priceApprovalByName: prof.name, priceApprovalAt: now }
+    }
+    addDoc(collection(db, 'notifications'), { type: 'price_approval', orderId, orderNumber: order.orderNumber, division: order.division, lokasiId: order.lokasiId || '',
+      fromUid: prof.id, fromName: prof.name, fromRole: prof.role, preview: `Harga diubah saat edit order (${LABEL_TIER[tier]})`, priceApprovalTier: tier, createdAt: now }).catch(() => {})
+    return { priceApprovalStatus: 'pending', priceApprovalTier: tier, priceApprovalReason: alasan.trim(), priceApprovalBy: null, priceApprovalByName: null, priceApprovalAt: null,
+      ...(['pending', 'draft'].includes(order.status) ? { status: 'pending-approval' } : {}) }
   }
 
   window.approvePrice = async function() {

@@ -19,6 +19,32 @@ service cloud.firestore {
       return !isDivisiOwner()
         || get(/databases/$(database)/documents/orders/$(orderId)).data.get('division', '') == userDivisi();
     }
+    // ── Approval harga order ──
+    // Promo disetujui Kepala Cabang (manager) / Owner; Admin hanya Owner. Staf lain hanya boleh
+    // menurunkan status ke 'pending' (minta approval), tidak bisa menyetujui sendiri.
+    function kunciApproval() { return ['priceApprovalStatus', 'priceApprovalBy', 'priceApprovalByName', 'priceApprovalAt', 'priceApprovalTier']; }
+    function bolehSetujuiTier(t) { return isOwner() || (isStaffAuth() && role() == 'manager' && t == 'promo'); }
+    function approvalSahBaru(d) {
+      return d.get('priceApprovalStatus', 'approved') != 'approved'
+        || d.get('priceApprovalTier', null) == null
+        || (bolehSetujuiTier(d.get('priceApprovalTier', null)) && d.get('priceApprovalBy', '') == request.auth.uid);
+    }
+    function approvalSahUbah() {
+      let n = request.resource.data;
+      let o = resource.data;
+      let ubahApproval = n.diff(o).affectedKeys().hasAny(kunciApproval());
+      let ubahStatus = n.get('status', '') != o.get('status', '');
+      let menunggu = o.get('priceApprovalStatus', '') == 'pending' || n.get('priceApprovalStatus', '') == 'pending';
+      let tierLama = o.get('priceApprovalTier', null);
+      let tierBaru = n.get('priceApprovalTier', tierLama);
+      return (!ubahApproval
+          || (bolehSetujuiTier(tierBaru) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTier(tierLama)))
+          || (n.get('priceApprovalStatus', '') == 'pending' && n.get('priceApprovalBy', null) == null))
+        // Order yang menunggu approval harga belum boleh masuk produksi
+        && (!ubahStatus || !menunggu
+          || n.get('status', '') in ['pending-approval', 'cancelled', 'draft']
+          || (bolehSetujuiTier(tierBaru) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTier(tierLama))));
+    }
     // Kolom yang hanya boleh diatur owner (users.html)
     function kolomOwner() { return ['lokasiId', 'lokasiNama', 'lokasiTipe', 'pin', 'divisions']; }
 
@@ -38,10 +64,11 @@ service cloud.firestore {
       // hanya membuka satu order lewat ID; daftar semua order khusus staff.
       allow get: if isAuth() && bolehOrderData(resource.data);
       allow list: if isStaffAuth() && bolehOrderData(resource.data);
-      allow create: if isStaffAuth() && bolehOrderData(request.resource.data);
+      allow create: if isStaffAuth() && bolehOrderData(request.resource.data) && approvalSahBaru(request.resource.data);
       // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
       // Tanda "sudah dicek di mutasi rekening" & "upah penjahit sudah ditransfer" hanya boleh diubah Owner
       allow update: if bolehOrderData(resource.data) && bolehOrderData(request.resource.data) && ((isStaffAuth()
+          && approvalSahUbah()
           && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['paymentVerifiedAt', 'paymentVerifiedBy', 'paymentVerifiedAmount',
                        'tailorPayments', 'tailorPaid', 'tailorPaidBy', 'tailorPaidAt'])))
@@ -76,15 +103,18 @@ service cloud.firestore {
     match /order_counters/{div} {
       allow read, write: if isStaffAuth();
     }
-    // Daftar harga lengkap (harga modal/promo/admin) — hanya staf
+    // Daftar harga lengkap (harga modal/promo/admin) — hanya staf.
+    // Hanya Owner yang menulis langsung. Staf lain (CS: Normal/Cabang yang kosong & item baru,
+    // Kepala Cabang: + Promo, Data/Pemilik Divisi: + Modal) menyimpan lewat Worker /price-list-save
+    // yang memeriksa kolom per role — Harga Admin hanya bisa diisi Owner.
     match /price_list/{div} {
       allow read: if isStaffAuth();
-      allow write: if isOwnerOrCS() || isData() || isDivisiOwnerOf(div);
+      allow write: if isOwner();
     }
-    // Salinan untuk customer (chat.html): hanya harga jual, disinkron dari knowledge.html
+    // Salinan untuk customer (chat.html): hanya harga jual — ditulis Owner / Worker
     match /price_list_public/{div} {
       allow read: if isAuth();
-      allow write: if isOwnerOrCS() || isData() || isDivisiOwnerOf(div);
+      allow write: if isOwner();
     }
     // Daftar penjahit + rekening (dipilih di order Jersey/Tailor). Penjahit baru boleh ditambah
     // Owner/CS/Produksi beserta rekeningnya; rekening yang sudah tersimpan hanya boleh diubah Owner
