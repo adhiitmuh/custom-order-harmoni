@@ -44,7 +44,7 @@
         </div>
         <div class="form-group">
           <label>Nama Pemesan <span class="req">*</span></label>
-          <input type="text" id="customerName" placeholder="Nama lengkap atau perusahaan" required>
+          <input type="text" id="customerName" placeholder="NAMA LENGKAP ATAU PERUSAHAAN" required autocapitalize="characters" oninput="kapital(this)" style="text-transform:uppercase">
         </div>
       </div>
 
@@ -331,12 +331,13 @@
 
     // Ambil nama dari order terbaru
     const sorted = docs.sort((a, b) => (b.data().createdAt?.seconds||0) - (a.data().createdAt?.seconds||0))
-    const latestName = sorted[0].data().customerName || ''
+    let latestName = sorted[0].data().customerName || ''
 
     // Auto-isi nama dari data lama (kecuali CS sudah mengetik nama lain)
     const nameEl = document.getElementById('customerName')
     if (nameEl && latestName && (!nameEl.value.trim() || nameEl.dataset.otomatis === '1')) {
       nameEl.dataset.otomatis = '1'
+      latestName = latestName.toUpperCase()
       nameEl.value = latestName
       nameEl.style.background = 'rgba(3,69,67,.06)'
       nameEl.title = 'Diisi otomatis dari data order sebelumnya'
@@ -451,6 +452,8 @@
     } catch(e) { console.error('Gagal load lokasi:', e) }
   }
 
+  // Nama customer, item & varian disimpan HURUF KAPITAL (mudah dibaca & dicari). Catatan/teks cetak tidak diubah.
+  window.kapital = el => { const a = el.selectionStart, b = el.selectionEnd; const v = el.value.toUpperCase(); if (v !== el.value) { el.value = v; try { el.setSelectionRange(a, b) } catch {} } }
   window.muatUlangMetode = () => { loadPaymentMethods(selectedDiv); sesuaikanHargaCabang() }
   // Ganti lokasi → item yang masih di harga Normal/Cabang ikut disesuaikan
   function sesuaikanHargaCabang() {
@@ -495,13 +498,13 @@
     tr.style.borderBottom = '1px solid rgba(3,69,67,.06)'
     tr.innerHTML = `
       <td style="padding:6px 4px">
-        <input type="text" placeholder="cth: Bordir Logo, Jersey Futsal S…" value="${item.name||''}"
-          data-field="name" data-row="${id}"
-          style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
+        <input type="text" placeholder="cth: BORDIR LOGO, JERSEY FUTSAL…" value="${(item.name||'').toUpperCase()}" autocapitalize="characters"
+          data-field="name" data-row="${id}" oninput="kapital(this)"
+          style="text-transform:uppercase;width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
-        <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${item.varian||''}"
-          data-field="varian" data-row="${id}"
-          style="width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
+        <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${(item.varian||'').toUpperCase()}" autocapitalize="characters"
+          data-field="varian" data-row="${id}" oninput="kapital(this)"
+          style="text-transform:uppercase;width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
           onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
           onchange="showTierButtons(${id})">
         <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
@@ -565,7 +568,7 @@
     // Nama sama tapi beda spasi/tanda baca/huruf besar → pakai item yang sudah ada (bukan item baru)
     if (!match) {
       match = currentPriceList.items.find(p => kunciNama(p.name) === kunciNama(nameEl.value))
-      if (match) nameEl.value = match.name
+      if (match) nameEl.value = match.name.toUpperCase()
     }
     tampilkanItemBaru(id, match ? null : nameEl.value.trim())
     if (match?.priceModal && getProfile()?.role === 'owner') {
@@ -603,7 +606,7 @@
     const p = currentPriceList?.items?.[idx]; if (!p) return
     const nameEl = document.querySelector(`[data-field="name"][data-row="${id}"]`)
     const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
-    nameEl.value = p.name
+    nameEl.value = p.name.toUpperCase()
     if (priceEl && !p.variants?.length) { priceEl.value = fmtPrice(hargaDasar(p)); calcRow(id) }
     matchItemToPrice(id)
   }
@@ -747,8 +750,8 @@
 
   function getItemRows() {
     return [...document.querySelectorAll('#itemRows tr')].map(tr => {
-      const name  = tr.querySelector('[data-field="name"]')?.value.trim() || ''
-      const varian = tr.querySelector('[data-field="varian"]')?.value.trim() || ''
+      const name  = (tr.querySelector('[data-field="name"]')?.value.trim() || '').toUpperCase()
+      const varian = (tr.querySelector('[data-field="varian"]')?.value.trim() || '').toUpperCase()
       const namaCustom = tr.querySelector('[data-field="namaCustom"]')?.value.trim() || ''
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
       const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
@@ -1105,7 +1108,7 @@
         await setDoc(doc(db,'orders',orderId), {
           orderNumber,
           division: selectedDiv,
-          customerName: document.getElementById('customerName').value.trim(),
+          customerName: document.getElementById('customerName').value.trim().toUpperCase(),
           customerContact: document.getElementById('customerContact').value.trim(),
           orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
           dueDate,
@@ -1144,7 +1147,7 @@
         const dpAwal = parsePrice(document.getElementById('depositPaid').value)
         if (dpAwal > 0) {
           try {
-            const e = entriPembayaran({ orderNumber, customerName: document.getElementById('customerName').value.trim(), division: selectedDiv,
+            const e = entriPembayaran({ orderNumber, customerName: document.getElementById('customerName').value.trim().toUpperCase(), division: selectedDiv,
               lokasiId: selectedLokasi?.id || '', lokasiNama: selectedLokasi?.nama || '', createdByName: profile.name },
               orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', jenis: dpAwal >= parsePrice(document.getElementById('totalPrice').value) ? 'lunas' : 'dp' })
             await setDoc(e.ref, e.data)
@@ -1155,7 +1158,7 @@
           orderId,
           orderNumber,
           division: selectedDiv,
-          customerName: document.getElementById('customerName').value.trim(),
+          customerName: document.getElementById('customerName').value.trim().toUpperCase(),
           status: 'pending',
           chatToken,
           createdAt: now,

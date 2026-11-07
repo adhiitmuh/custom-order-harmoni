@@ -75,11 +75,11 @@ export function cariMirip(nama, items, batas = 0.72, kecuali = -1) {
 // Rapikan satu item sebelum disimpan — kolom lain (minQty, baru, dibuatOleh, …) tetap dibawa
 export function rapikanItem(item) {
   const { _tersimpan, ...asli } = item
-  const out = { ...asli, name: String(item.name || '').trim(), unit: String(item.unit || '').trim(), note: String(item.note || '').trim() }
+  const out = { ...asli, name: String(item.name || '').trim().toUpperCase(), unit: String(item.unit || '').trim(), note: String(item.note || '').trim() }
   HARGA_KOLOM.forEach(k => { out[k] = Number(item[k]) || 0 })
   out.variants = (item.variants || []).filter(v => String(v.name || '').trim()).map(v => {
     const { _tersimpan: _t, ...va } = v
-    const o = { ...va, name: String(v.name).trim() }
+    const o = { ...va, name: String(v.name).trim().toUpperCase() }
     HARGA_KOLOM.forEach(k => { o[k] = Number(v[k]) || 0 })
     return o
   })

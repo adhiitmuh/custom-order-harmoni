@@ -1742,17 +1742,17 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
         const vk = kunciNama(bv?.name); if (!vk) continue
         const vi = vPeta.get(vk)
         if (vi !== undefined) { if (vPakai.has(vi)) continue; vPakai.add(vi); vHasil.push(pakaiHarga(vLama[vi], bv, `${lama.name} – ${vLama[vi].name}`)) }
-        else vHasil.push({ name: String(bv.name).trim(), ...hargaBaru(bv, `${lama.name} – ${bv.name}`), baru: true, dibuatOleh: nama })
+        else vHasil.push({ name: String(bv.name).trim().toUpperCase(), ...hargaBaru(bv, `${lama.name} – ${bv.name}`), baru: true, dibuatOleh: nama })
       }
       vLama.forEach((v, i) => { if (!vPakai.has(i)) { vHasil.push(v); ditolak.push(`Varian "${lama.name} – ${v.name}" hanya bisa dihapus Owner`) } })
       it.variants = vHasil
       hasil.push(it)
     } else {
       hasil.push({
-        name: String(b.name).trim(), unit: String(b.unit || '').trim(), note: String(b.note || '').trim(),
+        name: String(b.name).trim().toUpperCase(), unit: String(b.unit || '').trim(), note: String(b.note || '').trim(),
         ...hargaBaru(b, b.name),
         variants: (Array.isArray(b.variants) ? b.variants : []).filter(v => kunciNama(v?.name))
-          .map(v => ({ name: String(v.name).trim(), ...hargaBaru(v, `${b.name} – ${v.name}`) })),
+          .map(v => ({ name: String(v.name).trim().toUpperCase(), ...hargaBaru(v, `${b.name} – ${v.name}`) })),
         baru: true, dibuatOleh: nama, dibuatAt: new Date().toISOString(),
       })
     }
