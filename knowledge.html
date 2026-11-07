@@ -183,6 +183,19 @@
         const pSnap = await getDoc(doc(db,'price_list',d))
         if (pSnap.exists()) priceData[d] = pSnap.data()
       }))
+      // Owner: nama item & varian lama → HURUF KAPITAL (sekali jalan; data yang sudah kapital tidak disentuh)
+      if (getProfile()?.role === 'owner') {
+        await Promise.all(Object.entries(priceData).map(async ([d, data]) => {
+          const items = data.items || []
+          const perlu = items.some(it => (it.name || '') !== String(it.name || '').toUpperCase()
+            || (it.variants || []).some(v => (v.name || '') !== String(v.name || '').toUpperCase()))
+          if (!perlu) return
+          try {
+            const hasil = await simpanDaftarHarga(getProfile(), d, items)
+            priceData[d] = { ...data, items: hasil.items, updatedAt: Timestamp.now() }
+          } catch (e) { console.warn('Gagal mengkapitalkan daftar harga', d, e.message) }
+        }))
+      }
       // Owner: pastikan salinan publik ada & terbaru (sekali jalan untuk data lama)
       if (getProfile()?.role === 'owner') {
         Promise.all(Object.entries(priceData).map(async ([d, data]) => {
