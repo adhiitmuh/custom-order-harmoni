@@ -1053,8 +1053,9 @@
       html += `<p style="font-size:11px;font-weight:700;color:rgba(3,69,67,.5);margin:${activeBanks.length?'12px':'0'}px 0 8px">QRIS</p>`
       html += allQris.map(q => `
         <div style="text-align:center;margin-bottom:6px">
-          <img src="${q.imageUrl}" alt="QRIS" style="max-width:160px;border-radius:8px;border:1px solid rgba(3,69,67,.1)">
-          <p style="font-size:10px;color:rgba(3,69,67,.5);margin-top:4px">Scan dengan dompet digital atau m-banking</p>
+          ${q.imageUrl ? `<img src="${q.imageUrl}" alt="QRIS" style="max-width:160px;border-radius:8px;border:1px solid rgba(3,69,67,.1)">
+          <p style="font-size:10px;color:rgba(3,69,67,.5);margin-top:4px">Scan dengan dompet digital atau m-banking</p>`
+          : `<div style="font-size:13px;font-weight:700">📱 ${esc(q.nama || 'QRIS')}</div><p style="font-size:10px;color:rgba(3,69,67,.5);margin-top:2px">Kode QR dikirim admin / scan di toko</p>`}
         </div>`).join('')
     }
 
