@@ -172,6 +172,25 @@
     } catch(e) { /* ignore */ }
   }
 
+  // Gambar QRIS untuk dikirim bersama invoice (diambil lebih dulu supaya tombol Bagikan
+  // tetap jalan di iPhone/iPad — Safari menolak share kalau menunggu download dulu)
+  const _qrisFile = {}
+  function qrisUntukOrder() {
+    return order && paymentInfo ? qrisCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division }) : []
+  }
+  async function siapkanGambarQris() {
+    for (const q of qrisUntukOrder()) {
+      if (!q.imageUrl || _qrisFile[q.imageUrl]) continue
+      try {
+        const ambil = async u => { const r = await fetch(u).catch(() => null); const b = r?.ok ? await r.blob() : null; return b && b.size && b.type.startsWith('image/') ? b : null }
+        const blob = await ambil(q.imageUrl) || await ambil(`${WORKER_URL}/qris-img?u=${encodeURIComponent(q.imageUrl)}`)
+        if (!blob) continue
+        const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+        _qrisFile[q.imageUrl] = new File([blob], `${(q.nama || 'QRIS Harmoni').replace(/[^\w -]/g, '')}.${ext}`, { type: blob.type || 'image/jpeg' })
+      } catch (e) { /* kirim teks saja */ }
+    }
+  }
+
   requireAuth((profile) => {
     loadPaymentInfo()
     loadStaff().then(l => { staffList = l }).catch(() => {})
@@ -2584,6 +2603,7 @@
       <button onclick="sendWA()" class="btn" style="background:#25D366;color:white;border:none;font-size:13px;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer">📱 WhatsApp</button>`
     document.body.prepend(bar)
     window.scrollTo(0,0)
+    siapkanGambarQris()
   }
 
   // ===== CHAT =====
@@ -3201,7 +3221,7 @@
 
   window.backFromInvoice = function() { location.reload() }
 
-  window.sendWA = function() {
+  function teksInvoice() {
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const isPaid = sisa <= 0 && (order.totalPrice||0)>0
     const chatUrl = order.chatToken
@@ -3217,7 +3237,19 @@
           ``
         ]
       : []
-    const lines = [
+    // Cara pembayaran (hanya kalau belum lunas): rekening & QRIS cabang order ini
+    const bayarLines = []
+    if (!isPaid && paymentInfo) {
+      const banks = banksCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division }).filter(b => b.accountNumber)
+      const qris = qrisUntukOrder()
+      if (banks.length || qris.length) {
+        bayarLines.push(`*CARA PEMBAYARAN*`)
+        banks.forEach(b => bayarLines.push(`🏦 ${b.bankName} *${b.accountNumber}*${b.accountHolder ? `\n   a.n. ${b.accountHolder}` : ''}`))
+        qris.forEach(q => bayarLines.push(`📱 ${q.nama ? (/qris/i.test(q.nama) ? q.nama : 'QRIS ' + q.nama) : 'QRIS'}${q.imageUrl ? (_qrisFile[q.imageUrl] ? ' — gambar terlampir' : `:\n${q.imageUrl}`) : ' — scan di toko / minta ke admin'}`))
+        bayarLines.push(`Mohon kirim bukti transfer setelah membayar 🙏`, ``)
+      }
+    }
+    return [
       `*INVOICE HARMONI*`, ``,
       `No. Order: *${order.orderNumber}*`,
       `Divisi: ${DIVISION_META[order.division]?.label}`,
@@ -3230,6 +3262,7 @@
       `Total Harga: ${fmtCurrency(order.totalPrice)}`,
       `DP Dibayar: ${fmtCurrency(order.depositPaid)}`,
       `Sisa Bayar: *${fmtCurrency(sisa)}*`, ``,
+      ...bayarLines,
       order.notes ? `Catatan: ${order.notes}\n` : '',
       `Progress: ${order.progressPercentage||0}%`, ``,
       isPaid ? `✅ Status Pembayaran: LUNAS` : `⚠ Mohon segera melunasi sisa pembayaran`, ``,
@@ -3237,11 +3270,47 @@
       ``,
       `Terima kasih telah mempercayakan pesanan Anda kepada *Harmoni* 🙏`,
     ].filter(Boolean).join('\n')
+  }
+
+  function bukaWaTeks(teks) {
     const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
     const url = contact.startsWith('62')
-      ? `https://wa.me/${contact}?text=${encodeURIComponent(lines)}`
-      : `https://wa.me/?text=${encodeURIComponent(lines)}`
+      ? `https://wa.me/${contact}?text=${encodeURIComponent(teks)}`
+      : `https://wa.me/?text=${encodeURIComponent(teks)}`
     window.open(url,'_blank')
+  }
+
+  window.sendWA = function() {
+    const sisa = (order.totalPrice||0) - (order.depositPaid||0)
+    const isPaid = sisa <= 0 && (order.totalPrice||0)>0
+    const files = isPaid ? [] : qrisUntukOrder().map(q => _qrisFile[q.imageUrl]).filter(Boolean)
+    const bisaShare = files.length && navigator.canShare && navigator.canShare({ files })
+    if (!bisaShare) { bukaWaTeks(teksInvoice()); return }
+    // Pilihan: kirim dengan gambar QRIS (lewat menu Bagikan) atau teks saja langsung ke nomor customer
+    document.getElementById('waInvModal')?.remove()
+    const m = document.createElement('div')
+    m.id = 'waInvModal'
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
+    m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:18px">
+      <div style="font-weight:800;font-size:15px;margin-bottom:6px">Kirim invoice ke customer</div>
+      <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:14px">Belum lunas — gambar QRIS bisa ikut dikirim.</p>
+      <button id="waInvGambar" class="btn" style="width:100%;background:#25D366;color:#fff;border:none;font-weight:700;padding:11px;border-radius:12px;margin-bottom:6px">📲 Kirim + gambar QRIS</button>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin:0 0 12px">Pilih WhatsApp lalu chat customer. Teks invoice juga disalin — kalau tidak ikut, tinggal tempel.</p>
+      <button id="waInvTeks" class="btn btn-ghost" style="width:100%;padding:10px;border-radius:12px;margin-bottom:6px">💬 Teks saja (langsung ke nomor customer)</button>
+      <button id="waInvBatal" class="btn btn-ghost btn-sm" style="width:100%">Batal</button>
+    </div>`
+    document.body.appendChild(m)
+    const tutup = () => m.remove()
+    m.querySelector('#waInvBatal').onclick = tutup
+    m.querySelector('#waInvTeks').onclick = () => { tutup(); bukaWaTeks(teksInvoice()) }
+    m.querySelector('#waInvGambar').onclick = () => {
+      const teks = teksInvoice()
+      navigator.clipboard?.writeText(teks).catch(() => {})
+      navigator.share({ files, text: teks }).then(tutup).catch(err => {
+        if (err?.name === 'AbortError') return
+        tutup(); bukaWaTeks(teks)
+      })
+    }
   }
 </script>
 <script type="module" src="js/tempel-file.js"></script>

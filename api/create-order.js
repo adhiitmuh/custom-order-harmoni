@@ -121,6 +121,13 @@ export default {
 
     const url = new URL(request.url)
 
+    // /qris-img: ambil gambar QRIS (Firebase Storage / ImgBB) supaya bisa dibagikan
+    // sebagai file lewat tombol Bagikan (Storage tidak mengizinkan fetch lintas-domain).
+    // Hanya gambar dari sumber yang diizinkan, maks 5 MB.
+    if (request.method === 'GET' && url.pathname === '/qris-img') {
+      return handleQrisImg(url)
+    }
+
     // /notify-cs: pakai NOTIFY_KEY, aman di-embed di halaman publik (chat.html)
     if (request.method === 'POST' && url.pathname === '/notify-cs') {
       return handleNotifyCS(request, env)
@@ -1641,4 +1648,22 @@ function pemToBuffer(pem) {
   const base64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
   const binary  = atob(base64)
   return Uint8Array.from(binary, (c) => c.charCodeAt(0)).buffer
+}
+
+
+// ── QRIS image proxy ─────────────────────────────────────────────────────────
+const QRIS_SUMBER = [
+  /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/harmoni-custom-order\.firebasestorage\.app\/o\/settings%2Fqris_[^?]+\?/,
+  /^https:\/\/i\.ibb\.co\//,
+]
+async function handleQrisImg(url) {
+  const u = url.searchParams.get('u') || ''
+  if (!QRIS_SUMBER.some(r => r.test(u))) return json({ error: 'Sumber gambar tidak diizinkan' }, 400)
+  const r = await fetch(u, { cf: { cacheTtl: 3600 } }).catch(() => null)
+  if (!r || !r.ok) return json({ error: 'Gagal mengambil gambar' }, 502)
+  const type = r.headers.get('content-type') || ''
+  if (!type.startsWith('image/')) return json({ error: 'Bukan gambar' }, 415)
+  const buf = await r.arrayBuffer()
+  if (buf.byteLength > 5 * 1024 * 1024) return json({ error: 'Gambar terlalu besar' }, 413)
+  return new Response(buf, { headers: { ...CORS, 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' } })
 }
