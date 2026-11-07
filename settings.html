@@ -74,6 +74,9 @@
             <div id="bankLokasiChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
           </div>
           <p class="form-hint">Tiap cabang bisa beda rekening — centang cabang yang memakai rekening ini untuk pembayaran customer</p>
+          <label style="margin-top:12px;display:block">Khusus order divisi <span style="font-weight:500;color:rgba(3,69,67,.5)">(kosong = semua divisi)</span></label>
+          <div id="bankCustDivChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-top:8px"></div>
+          <p class="form-hint">Untuk HQ yang rekeningnya dibagi per divisi (mis. order Jersey → rekening ini). Cabang/titik biasanya dikosongkan.</p>
         </div>
         <div class="form-group" id="bankDivisiWrap" style="margin-bottom:12px;display:none">
           <label>Pemilik Divisi — modal divisi mana yang dibayar ke rekening ini <span class="req">*</span></label>
@@ -301,6 +304,12 @@
   }
 
   function populateDivisionSelects() {
+    const cd = document.getElementById('bankCustDivChecks')
+    if (cd) cd.innerHTML = DIVISIONS.map(d => `
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" class="bankCustDivCheck" value="${d}" style="width:14px;height:14px;accent-color:var(--green)">
+          ${DIVISION_META[d].icon} ${DIVISION_META[d].label}
+        </label>`).join('')
     // Bank: multi-checkbox
     const bankChecks = document.getElementById('bankDivisionChecks')
     if (bankChecks) {
@@ -320,6 +329,9 @@
     const lama = b && b.terimaCustomer === undefined && b.rekeningDivisi === undefined
     document.getElementById('bankCustomer').checked = !b || b.terimaCustomer !== false
     document.getElementById('bankPemilik').checked = !!b && (b.rekeningDivisi === true || (lama && getBankDivisions(b).length > 0))
+    // Data lama: pembagian divisi dulu juga berlaku untuk pembayaran customer → bawa ke "Khusus order divisi"
+    const custDiv = !b ? [] : Array.isArray(b.divisiCustomer) ? b.divisiCustomer : (lama ? getBankDivisions(b) : [])
+    document.querySelectorAll('.bankCustDivCheck').forEach(c => { c.checked = custDiv.includes(c.value) })
     toggleBankTujuan()
   }
 
@@ -377,7 +389,8 @@
     const lama = b.terimaCustomer === undefined && b.rekeningDivisi === undefined
     const divs = getBankDivisions(b), locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
     const out = []
-    if (b.terimaCustomer !== false) out.push('🧾 Customer · ' + (locs.length ? '📍 ' + namaLokasi(locs) : '📍 Semua Lokasi'))
+    const cdiv = Array.isArray(b.divisiCustomer) ? b.divisiCustomer : (lama ? divs : [])
+    if (b.terimaCustomer !== false) out.push('🧾 Customer · ' + (locs.length ? '📍 ' + namaLokasi(locs) : '📍 Semua Lokasi') + (cdiv.length ? ' · khusus ' + cdiv.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : ' · semua divisi'))
     if (b.rekeningDivisi === true || (lama && divs.length)) out.push('👤 Pemilik Divisi · ' + divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', '))
     return out.join('<br>') + (lama && divs.length ? '<br><span style="color:#b45309">⚠ Format lama — klik Edit lalu Simpan untuk memastikan pengaturannya</span>' : '')
   }
@@ -467,7 +480,8 @@
     const divisions = rekeningDivisi ? readBankDivisions() : []
     if (rekeningDivisi && !divisions.length) { showAlert('Centang divisi yang modalnya dibayar ke rekening ini', 'error'); return }
     const lokasiIds = terimaCustomer ? readBankLokasiIds() : []
-    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, terimaCustomer, rekeningDivisi, divisions, lokasiIds }
+    const divisiCustomer = terimaCustomer ? [...document.querySelectorAll('.bankCustDivCheck:checked')].map(c => c.value) : []
+    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, terimaCustomer, rekeningDivisi, divisions, lokasiIds, divisiCustomer }
     const idx = parseInt(document.getElementById('editBankIndex').value)
     if (idx >= 0) { paymentInfo.banks[idx] = bank } else { paymentInfo.banks.push(bank) }
 

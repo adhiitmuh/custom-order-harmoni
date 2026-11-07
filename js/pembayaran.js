@@ -38,7 +38,9 @@ export function banksCustomer(info, { lokasiId = '', division = '' } = {}) {
     if (b.isActive === false || !b.bankName || !bankTerimaCustomer(b)) return false
     const locs = _locs(b)
     if (locs.length && lokasiId && !locs.includes(lokasiId)) return false
-    if (_lama(b)) { const d = _divs(b); if (d.length && division && !d.includes(division)) return false }
+    // Khusus order divisi tertentu (HQ dibagi per divisi); data lama memakai pembagian divisi lamanya
+    const d = _lama(b) ? _divs(b) : (Array.isArray(b.divisiCustomer) ? b.divisiCustomer : [])
+    if (d.length && division && !d.includes(division)) return false
     return true
   })
 }
