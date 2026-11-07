@@ -24,18 +24,48 @@ export function pisahMetode(v) {
 export const labelRekening = p => labelMetode(p.metode) + (p.rekeningNo ? ' · ' + p.rekeningNo : '')
 export const grupMetode = m0 => { const m = String(m0 || '').split('@')[0]; return m === 'cash' ? 'tunai' : m === 'qris' ? 'qris' : m.startsWith('transfer_') ? 'transfer' : 'lain' }
 
-// Pilihan metode dari Pengaturan: setiap rekening aktif (sesuai lokasi & divisi), QRIS, tunai.
-// Nilai transfer membawa nomor rekening tujuan: "transfer_bri@1234567890".
+// ── Aturan rekening & QRIS ─────────────────────────────────────────────
+// Pembayaran customer: rekening/QRIS dipilih per LOKASI (cabang). Pengaturan divisi
+// pada rekening hanya untuk "Rekening Pemilik Divisi" (tujuan bayar modal/kewajiban).
+// Data lama (belum disimpan ulang dgn form baru) tetap memakai filter divisi lamanya.
+const _divs = b => Array.isArray(b?.divisions) ? b.divisions : (b?.division ? [b.division] : [])
+const _locs = x => Array.isArray(x?.lokasiIds) ? x.lokasiIds : []
+const _lama = b => b?.terimaCustomer === undefined && b?.rekeningDivisi === undefined
+export const bankTerimaCustomer = b => b?.terimaCustomer !== false
+export const bankRekeningDivisi = b => b?.rekeningDivisi === true || (_lama(b) && _divs(b).length > 0)
+export function banksCustomer(info, { lokasiId = '', division = '' } = {}) {
+  return (info?.banks || []).filter(b => {
+    if (b.isActive === false || !b.bankName || !bankTerimaCustomer(b)) return false
+    const locs = _locs(b)
+    if (locs.length && lokasiId && !locs.includes(lokasiId)) return false
+    if (_lama(b)) { const d = _divs(b); if (d.length && division && !d.includes(division)) return false }
+    return true
+  })
+}
+export function qrisCustomer(info, { lokasiId = '', division = '' } = {}) {
+  const list = Array.isArray(info?.qris) ? info.qris
+    : (info?.qrisImageUrl ? [{ imageUrl: info.qrisImageUrl, isActive: info.qrisActive !== false }] : [])
+  return list.filter(q => {
+    if (q.isActive === false) return false
+    if (Array.isArray(q.lokasiIds)) return !q.lokasiIds.length || !lokasiId || q.lokasiIds.includes(lokasiId)
+    return !q.division || !division || q.division === division // data lama
+  })
+}
+// Rekening tujuan pembayaran modal/kewajiban ke pemilik divisi
+export const banksPemilikDivisi = (info, div) =>
+  (info?.banks || []).filter(b => b.isActive !== false && bankRekeningDivisi(b) && _divs(b).includes(div))
+// Kunci QRIS untuk laporan per rekening: "qris@<nama>"
+export const kunciQris = (q, i = 0) => String(q?.nama || `QRIS ${i + 1}`).replace(/@/g, '').trim()
+
+// Pilihan metode dari Pengaturan: setiap rekening & QRIS aktif untuk lokasi itu, plus tunai.
+// Nilai transfer membawa nomor rekening tujuan: "transfer_bri@1234567890"; QRIS: "qris@QRIS Cabang A".
 export function opsiMetode(paymentInfo, terpilih = '', { lokasiId = '', division = '' } = {}) {
   const opts = []
   if (paymentInfo?.cashActive !== false) opts.push(['cash', '💵 Tunai'])
-  if ((paymentInfo?.qris || []).some(q => q.isActive !== false) || paymentInfo?.qrisActive) opts.push(['qris', '📱 QRIS'])
-  ;(paymentInfo?.banks || []).filter(b => {
-    if (b.isActive === false || !b.bankName) return false
-    const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
-    const locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
-    return (!divs.length || !division || divs.includes(division)) && (!locs.length || !lokasiId || locs.includes(lokasiId))
-  }).forEach(b => {
+  const qr = qrisCustomer(paymentInfo, { lokasiId, division })
+  if (qr.length === 1 && !qr[0].nama) opts.push(['qris', '📱 QRIS'])
+  else qr.forEach((q, i) => opts.push(['qris@' + kunciQris(q, i), `📱 QRIS · ${kunciQris(q, i)}`]))
+  banksCustomer(paymentInfo, { lokasiId, division }).forEach(b => {
     const val = 'transfer_' + b.bankName.toLowerCase().replace(/\s+/g, '_') + (b.accountNumber ? '@' + String(b.accountNumber).replace(/\s+/g, '') : '')
     opts.push([val, `🏦 Transfer ${b.bankName}${b.accountNumber ? ' · ' + b.accountNumber : ''}${b.accountHolder ? ' (' + b.accountHolder + ')' : ''}`])
   })

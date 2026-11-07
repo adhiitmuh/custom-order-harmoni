@@ -91,7 +91,7 @@
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
-  import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode } from './js/pembayaran.js?v=20261106b'
+  import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261107a'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -998,15 +998,11 @@
     }
 
     if (method && method.startsWith('transfer_')) {
-      const banks = paymentInfo.banks || []
       const bankName = method.replace('transfer_','')
       const byName = b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName
-      const divMatch = b => { const d = Array.isArray(b.divisions)?b.divisions:(b.division?[b.division]:[]); return !d.length||d.includes(order.division) }
-      const locMatch = b => { const l = Array.isArray(b.lokasiIds)?b.lokasiIds:[]; return !l.length||l.includes(order.lokasiId) }
-      const bank = banks.find(b => byName(b) && divMatch(b) && locMatch(b))
-                 || banks.find(b => byName(b) && divMatch(b))
-                 || banks.find(b => byName(b) && locMatch(b))
-                 || banks.find(b => byName(b))
+      const bank = banksCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division }).find(byName)
+                 || (paymentInfo.banks || []).find(b => byName(b) && bankTerimaCustomer(b))
+                 || (paymentInfo.banks || []).find(byName)
       if (!bank) return ''
       return `<div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px">
         <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:8px">TRANSFER BANK</p>
@@ -1016,21 +1012,9 @@
       </div>`
     }
 
-    // Kalau belum dipilih metode (atau QRIS) — tampilkan semua opsi pembayaran aktif
-    // Filter bank: tampilkan bank khusus divisi ini + bank universal (tanpa divisi)
-    // Bank khusus divisi lain tidak ditampilkan
-    const bankMatchesOrder = b => {
-      const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
-      const locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
-      return (!divs.length || divs.includes(order.division)) && (!locs.length || locs.includes(order.lokasiId))
-    }
-    const allActiveBanks = (paymentInfo.banks || []).filter(b => b.isActive !== false)
-    const activeBanks = allActiveBanks.filter(bankMatchesOrder)
-    const activeQris = (paymentInfo.qris || []).filter(q => q.isActive !== false && (!q.division || q.division === order.division))
-    // Legacy single QRIS
-    const legacyQris = (!paymentInfo.qris?.length && paymentInfo.qrisActive && paymentInfo.qrisImageUrl)
-      ? [{ imageUrl: paymentInfo.qrisImageUrl }] : []
-    const allQris = activeQris.length ? activeQris : legacyQris
+    // Kalau belum dipilih metode (atau QRIS) — tampilkan rekening & QRIS untuk lokasi (cabang) order ini
+    const activeBanks = banksCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division })
+    const allQris = qrisCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division })
 
     if (!activeBanks.length && !allQris.length && !paymentInfo.cashActive) return ''
 

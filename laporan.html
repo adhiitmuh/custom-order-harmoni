@@ -152,6 +152,7 @@
   import { requireAuth, dataAuthReady, getProfile, ordersQuery } from './js/auth.js'
   import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
   import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { banksPemilikDivisi } from './js/pembayaran.js?v=20261107a'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
   let allOrders = []
@@ -588,17 +589,11 @@
     // For divisi role, only show their own division's data
     const activeDivisions = isDivisiOwner ? [profile.divisi] : DIVISIONS
 
+    // Rekening tujuan bayar modal: hanya rekening yang ditandai "Rekening Pemilik Divisi"
     function getBankForDiv(div) {
-      const byDiv = bankList.filter(b => {
-        const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
-        return divs.includes(div)
-      })
-      if (byDiv.length) return byDiv
-      return bankList.filter(b => {
-        const divs = Array.isArray(b.divisions) ? b.divisions : (b.division ? [b.division] : [])
-        return !divs.length
-      })
+      return banksPemilikDivisi({ banks: bankList }, div)
     }
+
 
     // lokasiId → divisi pemilik lokasi (untuk deteksi kewajiban internal)
     const lokasiDivMap = {}

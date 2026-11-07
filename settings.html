@@ -54,18 +54,18 @@
           <input type="text" id="bankHolder" placeholder="Nama pemilik rekening">
         </div>
         <div class="form-group" style="margin-bottom:12px">
-          <label>Berlaku untuk Divisi</label>
-          <div style="margin-top:8px">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:10px;color:var(--green)">
-              <input type="checkbox" id="bankUniversal" onchange="toggleBankUniversal()" style="width:16px;height:16px;accent-color:var(--green)">
-              🌐 Universal — berlaku untuk semua divisi
-            </label>
-            <div id="bankDivisionChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
-          </div>
-          <p class="form-hint">Pilih Universal untuk tampil di semua divisi, atau centang divisi tertentu</p>
+          <label>Dipakai untuk</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px">
+            <input type="checkbox" id="bankCustomer" checked onchange="toggleBankTujuan()" style="width:16px;height:16px;accent-color:var(--green)">
+            🧾 Terima pembayaran customer (tampil di invoice &amp; pilihan bayar)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px">
+            <input type="checkbox" id="bankPemilik" onchange="toggleBankTujuan()" style="width:16px;height:16px;accent-color:var(--green)">
+            👤 Rekening Pemilik Divisi (tujuan bayar modal / kewajiban)
+          </label>
         </div>
-        <div class="form-group" style="margin-bottom:12px">
-          <label>Berlaku untuk Lokasi</label>
+        <div class="form-group" id="bankLokasiWrap" style="margin-bottom:12px">
+          <label>Cabang / Lokasi yang memakai rekening ini</label>
           <div style="margin-top:8px">
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:10px;color:var(--green)">
               <input type="checkbox" id="bankLokasiUniversal" onchange="toggleBankLokasi()" style="width:16px;height:16px;accent-color:var(--green)">
@@ -73,7 +73,14 @@
             </label>
             <div id="bankLokasiChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
           </div>
-          <p class="form-hint">Kosongkan untuk semua lokasi, atau pilih lokasi tertentu</p>
+          <p class="form-hint">Tiap cabang bisa beda rekening — centang cabang yang memakai rekening ini untuk pembayaran customer</p>
+        </div>
+        <div class="form-group" id="bankDivisiWrap" style="margin-bottom:12px;display:none">
+          <label>Pemilik Divisi — modal divisi mana yang dibayar ke rekening ini <span class="req">*</span></label>
+          <div style="margin-top:8px">
+            <div id="bankDivisionChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
+          </div>
+          <p class="form-hint">Dipakai di Laporan → Kewajiban ke Divisi sebagai rekening tujuan transfer modal</p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
           <input type="checkbox" id="bankActive" checked style="width:16px;height:16px;accent-color:var(--green)">
@@ -97,11 +104,15 @@
         <h3 style="font-size:13px;font-weight:700;margin-bottom:12px" id="qrisFormTitle">Tambah QRIS</h3>
         <input type="hidden" id="editQrisIndex" value="-1">
         <div class="form-group" style="margin-bottom:12px">
-          <label>Berlaku untuk Divisi</label>
-          <select id="qrisDivision" style="font-size:13px">
-            <option value="">— Semua Divisi —</option>
-          </select>
-          <p class="form-hint">Kosongkan jika QRIS ini berlaku untuk semua divisi</p>
+          <label>Cabang / Lokasi yang memakai QRIS ini</label>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:10px;color:var(--green)">
+              <input type="checkbox" id="qrisLokasiUniversal" onchange="toggleQrisLokasi()" style="width:16px;height:16px;accent-color:var(--green)">
+              🌐 Semua Lokasi
+            </label>
+            <div id="qrisLokasiChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
+          </div>
+          <p class="form-hint">QRIS tiap cabang beda — centang cabang pemilik QRIS ini</p>
         </div>
         <div class="form-group" style="margin-bottom:12px">
           <label>Nama QRIS</label>
@@ -241,6 +252,31 @@
       </label>`).join('')
   }
 
+  function populateQrisLokasiChecks() {
+    const el = document.getElementById('qrisLokasiChecks')
+    if (!el) return
+    el.innerHTML = _lokasiList.map(l => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" class="qrisLocCheck" value="${l.id}" style="width:14px;height:14px;accent-color:var(--green)">
+        ${l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏪' : '📍'} ${l.nama}
+      </label>`).join('')
+  }
+  window.toggleQrisLokasi = function() {
+    const isAll = document.getElementById('qrisLokasiUniversal').checked
+    const el = document.getElementById('qrisLokasiChecks')
+    el.style.opacity = isAll ? '0.3' : '1'; el.style.pointerEvents = isAll ? 'none' : ''
+    if (isAll) document.querySelectorAll('.qrisLocCheck').forEach(c => c.checked = false)
+  }
+  function setQrisLokasiUI(ids) {
+    document.getElementById('qrisLokasiUniversal').checked = !ids.length
+    document.querySelectorAll('.qrisLocCheck').forEach(c => { c.checked = ids.includes(c.value) })
+    toggleQrisLokasi()
+  }
+  function readQrisLokasiIds() {
+    if (document.getElementById('qrisLokasiUniversal').checked) return []
+    return [...document.querySelectorAll('.qrisLocCheck:checked')].map(c => c.value)
+  }
+
   window.toggleBankLokasi = function() {
     const isAll = document.getElementById('bankLokasiUniversal').checked
     document.getElementById('bankLokasiChecks').style.opacity = isAll ? '0.3' : '1'
@@ -270,22 +306,17 @@
           ${DIVISION_META[d].icon} ${DIVISION_META[d].label}
         </label>`).join('')
     }
-    // QRIS: single select tetap
-    const qrisSel = document.getElementById('qrisDivision')
-    if (qrisSel && qrisSel.options.length <= 1) {
-      DIVISIONS.forEach(d => {
-        const opt = document.createElement('option')
-        opt.value = d; opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-        qrisSel.appendChild(opt)
-      })
-    }
   }
 
-  window.toggleBankUniversal = function() {
-    const isUniversal = document.getElementById('bankUniversal').checked
-    document.getElementById('bankDivisionChecks').style.opacity = isUniversal ? '0.3' : '1'
-    document.getElementById('bankDivisionChecks').style.pointerEvents = isUniversal ? 'none' : ''
-    if (isUniversal) document.querySelectorAll('.bankDivCheck').forEach(c => c.checked = false)
+  window.toggleBankTujuan = function() {
+    document.getElementById('bankLokasiWrap').style.display = document.getElementById('bankCustomer').checked ? '' : 'none'
+    document.getElementById('bankDivisiWrap').style.display = document.getElementById('bankPemilik').checked ? '' : 'none'
+  }
+  function setBankTujuanUI(b) {
+    const lama = b && b.terimaCustomer === undefined && b.rekeningDivisi === undefined
+    document.getElementById('bankCustomer').checked = !b || b.terimaCustomer !== false
+    document.getElementById('bankPemilik').checked = !!b && (b.rekeningDivisi === true || (lama && getBankDivisions(b).length > 0))
+    toggleBankTujuan()
   }
 
   function getBankDivisions(b) {
@@ -295,16 +326,12 @@
   }
 
   function setBankDivisionUI(divisions) {
-    const isUniversal = !divisions.length
-    document.getElementById('bankUniversal').checked = isUniversal
     document.querySelectorAll('.bankDivCheck').forEach(c => {
       c.checked = divisions.includes(c.value)
     })
-    toggleBankUniversal()
   }
 
   function readBankDivisions() {
-    if (document.getElementById('bankUniversal').checked) return []
     return [...document.querySelectorAll('.bankDivCheck:checked')].map(c => c.value)
   }
 
@@ -322,7 +349,7 @@
     renderBankList()
     loadPaymentInfo()
     loadCloudBackupList()
-    loadLokasiList().then(populateBankLokasiChecks)
+    loadLokasiList().then(() => { populateBankLokasiChecks(); populateQrisLokasiChecks(); renderBankList(); renderQrisList() })
   })
 
   async function loadPaymentInfo() {
@@ -341,6 +368,16 @@
     document.getElementById('cashActive').checked = paymentInfo.cashActive !== false
   }
 
+  const namaLokasi = ids => ids.map(id => _lokasiList.find(x => x.id === id)?.nama || id).join(', ')
+  function tujuanBank(b) {
+    const lama = b.terimaCustomer === undefined && b.rekeningDivisi === undefined
+    const divs = getBankDivisions(b), locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []
+    const out = []
+    if (b.terimaCustomer !== false) out.push('🧾 Customer · ' + (locs.length ? '📍 ' + namaLokasi(locs) : '📍 Semua Lokasi'))
+    if (b.rekeningDivisi === true || (lama && divs.length)) out.push('👤 Pemilik Divisi · ' + divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', '))
+    return out.join('<br>') + (lama && divs.length ? '<br><span style="color:#b45309">⚠ Format lama — klik Edit lalu Simpan untuk memastikan pengaturannya</span>' : '')
+  }
+
   function renderBankList() {
     const el = document.getElementById('bankList')
     const banks = paymentInfo.banks || []
@@ -355,7 +392,7 @@
           <div style="font-weight:700;font-size:14px">${b.bankName}</div>
           <div style="font-family:monospace;font-size:13px;color:var(--green);margin-top:1px">${b.accountNumber}</div>
           <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder}</div>
-          <div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:2px">${(() => { const divs = getBankDivisions(b); return divs.length ? divs.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : '🌐 Semua Divisi' })()} · ${(() => { const locs = Array.isArray(b.lokasiIds) ? b.lokasiIds : []; return locs.length ? locs.map(id => { const l = _lokasiList.find(x=>x.id===id); return l ? l.nama : id }).join(', ') : '📍 Semua Lokasi' })()} </div>
+          <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">${tujuanBank(b)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:${b.isActive!==false?'rgba(5,150,105,.1)':'rgba(3,69,67,.06)'};color:${b.isActive!==false?'#065f46':'rgba(3,69,67,.4)'}">${b.isActive!==false?'Aktif':'Nonaktif'}</span>
@@ -373,11 +410,10 @@
     document.getElementById('bankHolder').value = ''
     document.getElementById('bankActive').checked = true
     setBankDivisionUI([])
-    document.getElementById('bankUniversal').checked = true
-    toggleBankUniversal()
     setBankLokasiUI([])
     document.getElementById('bankLokasiUniversal').checked = true
     toggleBankLokasi()
+    setBankTujuanUI(null)
     document.getElementById('bankForm').style.display = ''
     document.getElementById('bankName').focus()
   }
@@ -392,6 +428,7 @@
     document.getElementById('bankActive').checked = b.isActive !== false
     setBankDivisionUI(getBankDivisions(b))
     setBankLokasiUI(Array.isArray(b.lokasiIds) ? b.lokasiIds : [])
+    setBankTujuanUI(b)
     document.getElementById('bankForm').style.display = ''
   }
 
@@ -414,9 +451,13 @@
     const active = document.getElementById('bankActive').checked
     if (!name || !number || !holder) { showAlert('Nama bank, no. rekening, dan atas nama wajib diisi', 'error'); return }
 
-    const divisions = readBankDivisions()
-    const lokasiIds = readBankLokasiIds()
-    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, divisions, lokasiIds }
+    const terimaCustomer = document.getElementById('bankCustomer').checked
+    const rekeningDivisi = document.getElementById('bankPemilik').checked
+    if (!terimaCustomer && !rekeningDivisi) { showAlert('Pilih minimal satu: terima pembayaran customer atau rekening pemilik divisi', 'error'); return }
+    const divisions = rekeningDivisi ? readBankDivisions() : []
+    if (rekeningDivisi && !divisions.length) { showAlert('Centang divisi yang modalnya dibayar ke rekening ini', 'error'); return }
+    const lokasiIds = terimaCustomer ? readBankLokasiIds() : []
+    const bank = { bankName: name, accountNumber: number, accountHolder: holder, isActive: active, terimaCustomer, rekeningDivisi, divisions, lokasiIds }
     const idx = parseInt(document.getElementById('editBankIndex').value)
     if (idx >= 0) { paymentInfo.banks[idx] = bank } else { paymentInfo.banks.push(bank) }
 
@@ -438,7 +479,7 @@
         ${q.imageUrl ? `<img src="${q.imageUrl}" alt="QRIS" style="width:48px;height:48px;border-radius:10px;border:1px solid rgba(3,69,67,.1);object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`
           : `<div style="width:48px;height:48px;border-radius:10px;border:1.5px dashed rgba(3,69,67,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📱</div>`}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${q.nama ? q.nama.replace(/</g, '&lt;') : 'QRIS'}${q.division ? ` · ${DIVISION_META[q.division]?.icon||''} ${DIVISION_META[q.division]?.label||q.division}` : ' · Semua Divisi'}</div>
+          <div style="font-weight:700;font-size:14px">${q.nama ? q.nama.replace(/</g, '&lt;') : 'QRIS'}${Array.isArray(q.lokasiIds) ? (q.lokasiIds.length ? ' · 📍 ' + namaLokasi(q.lokasiIds) : ' · 📍 Semua Lokasi') : (q.division ? ` · ${DIVISION_META[q.division]?.icon||''} ${DIVISION_META[q.division]?.label||q.division} <span style="color:#b45309;font-weight:500">(format lama — Edit untuk atur cabang)</span>` : ' · 📍 Semua Lokasi')}</div>
           <div style="font-size:11px;color:${q.imageUrl ? 'rgba(3,69,67,.45)' : '#b45309'};margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.imageUrl ? q.imageUrl : '⚠ Foto QRIS belum diupload'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -452,7 +493,7 @@
   window.openQrisForm = function() {
     document.getElementById('editQrisIndex').value = '-1'
     document.getElementById('qrisFormTitle').textContent = 'Tambah QRIS'
-    document.getElementById('qrisDivision').value = ''
+    setQrisLokasiUI([])
     document.getElementById('qrisImageUrl').value = ''
     document.getElementById('qrisNama').value = ''
     document.getElementById('qrisFileTeks').textContent = '📷 Upload foto QRIS (pilih, tempel, atau seret)'
@@ -466,7 +507,7 @@
     const q = paymentInfo.qris[i]
     document.getElementById('editQrisIndex').value = i
     document.getElementById('qrisFormTitle').textContent = 'Edit QRIS'
-    document.getElementById('qrisDivision').value = q.division || ''
+    setQrisLokasiUI(Array.isArray(q.lokasiIds) ? q.lokasiIds : [])
     document.getElementById('qrisImageUrl').value = q.imageUrl || ''
     document.getElementById('qrisNama').value = q.nama || ''
     document.getElementById('qrisFileTeks').textContent = '📷 Upload foto QRIS (pilih, tempel, atau seret)'
@@ -507,10 +548,14 @@
   window.saveQris = async function() {
     const imageUrl = document.getElementById('qrisImageUrl').value.trim()
     if (imageUrl && !/^https?:\/\//i.test(imageUrl)) { showAlert('Link gambar harus diawali https://', 'error'); return }
-    const division = document.getElementById('qrisDivision').value
     const isActive = document.getElementById('qrisActive').checked
-    const nama = document.getElementById('qrisNama').value.trim()
-    const entry = { imageUrl: imageUrl || '', nama, division: division || '', isActive }
+    const nama = document.getElementById('qrisNama').value.trim().replace(/@/g, '')
+    const lokasiIds = readQrisLokasiIds()
+    if (!document.getElementById('qrisLokasiUniversal').checked && !lokasiIds.length) { showAlert('Centang cabang yang memakai QRIS ini, atau pilih Semua Lokasi', 'error'); return }
+    const lain = (paymentInfo.qris || []).filter((_, i) => i !== parseInt(document.getElementById('editQrisIndex').value))
+    if (lain.length && !nama) { showAlert('Isi Nama QRIS supaya bisa dibedakan (cth: QRIS Cabang Sudiang)', 'error'); return }
+    if (nama && lain.some(q => (q.nama || '').toLowerCase() === nama.toLowerCase())) { showAlert('Nama QRIS sudah dipakai', 'error'); return }
+    const entry = { imageUrl: imageUrl || '', nama, lokasiIds, division: '', isActive }
     if (!paymentInfo.qris) paymentInfo.qris = []
     const idx = parseInt(document.getElementById('editQrisIndex').value)
     if (idx >= 0) { paymentInfo.qris[idx] = entry } else { paymentInfo.qris.push(entry) }
