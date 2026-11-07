@@ -80,7 +80,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, ordersQuery } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, ordersQuery, csRangkapDivisi } from './js/auth.js'
   import { collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
   import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
@@ -133,10 +133,11 @@
 
     // CS di pusat dengan divisi yang di-assign → hanya lihat divisi itu dari semua lokasi
     // CS di cabang/titik → tidak difilter divisi (lihat semua divisi di lokasinya)
-    // CS HQ (pusat) melihat semua order & semua divisi — tidak dikunci divisi
-    const csAtPusat = false
-    if (csAtPusat && profile.divisions?.length) {
-      const userDivs = profile.divisions
+    // CS HQ (pusat) yang merangkap produksi → hanya divisinya; CS HQ biasa melihat semua divisi
+    const csAtPusat = profile.role === 'cs' && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat')
+    const divRangkap = csAtPusat ? csRangkapDivisi(profile) : []
+    if (divRangkap.length) {
+      const userDivs = divRangkap
       if (userDivs.length === 1) {
         lockedDivision = userDivs[0]
         const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
@@ -151,7 +152,7 @@
       }
     }
 
-    if (profile.role !== 'production' && profile.role !== 'divisi' && !(csAtPusat && profile.divisions?.length)) {
+    if (profile.role !== 'production' && profile.role !== 'divisi' && !divRangkap.length) {
       document.getElementById('divTabs').style.display = 'flex'
     }
 

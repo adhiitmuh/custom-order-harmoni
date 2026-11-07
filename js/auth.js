@@ -140,6 +140,14 @@ export function ordersQuery(profile, ...constraints) {
   return query(collection(db, 'orders'), ...filterDivisi, ...constraints)
 }
 
+// Divisi produksi milik CS yang "merangkap production" (diatur di Portal); kosong = tidak merangkap
+export function csRangkapDivisi(profile) {
+  if (profile?.role !== 'cs') return []
+  const rangkap = profile.merangkapProduction || profile.apps?.custom_order?.merangkapProduction === true
+  if (!rangkap) return []
+  return profile.apps?.custom_order?.divisions || profile.divisions || []
+}
+
 export function canSeeOrder(o, profile) {
   if (!profile || !o) return false
   if (profile.role === 'owner' || profile.role === 'data') return true
@@ -150,10 +158,13 @@ export function canSeeOrder(o, profile) {
     return !profile.divisi || o.division === profile.divisi
   }
   if (profile.role === 'cs') {
-    // CS HQ (pusat) melihat semua order; CS cabang/titik hanya order lokasinya.
-    // (Divisi di akun CS hanya untuk "merangkap production", bukan pembatas order.)
+    // CS HQ (pusat): semua order — kecuali yang merangkap produksi, hanya order divisinya.
+    // CS cabang/titik: hanya order lokasinya.
     const isPusat = !profile.lokasiTipe || profile.lokasiTipe === 'pusat'
-    if (isPusat) return true
+    if (isPusat) {
+      const divRangkap = csRangkapDivisi(profile)
+      return !divRangkap.length || divRangkap.includes(o.division)
+    }
     return !profile.lokasiId || o.lokasiId === profile.lokasiId
   }
   if (profile.role === 'manager') {
