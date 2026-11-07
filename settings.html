@@ -418,7 +418,7 @@
     document.getElementById('bankLokasiUniversal').checked = true
     toggleBankLokasi()
     setBankTujuanUI(null)
-    document.getElementById('bankForm').style.display = ''
+    document.getElementById('bankForm').style.display = ''; tampilkanForm('bankForm')
     document.getElementById('bankName').focus()
   }
 
@@ -433,7 +433,7 @@
     setBankDivisionUI(getBankDivisions(b))
     setBankLokasiUI(Array.isArray(b.lokasiIds) ? b.lokasiIds : [])
     setBankTujuanUI(b)
-    document.getElementById('bankForm').style.display = ''
+    document.getElementById('bankForm').style.display = ''; tampilkanForm('bankForm')
   }
 
   window.deleteBank = async function(i) {
@@ -442,6 +442,12 @@
     await savePaymentInfo()
     renderBankList()
     showAlert('Rekening dihapus', 'success')
+  }
+
+  // Form ada di bawah daftar — gulir ke form supaya langsung terlihat (daftar rekening bisa panjang)
+  function tampilkanForm(id) {
+    const el = document.getElementById(id)
+    setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.style.boxShadow = '0 0 0 3px rgba(3,69,67,.25)'; el.style.borderRadius = '12px'; setTimeout(() => { el.style.boxShadow = '' }, 1600) }, 50)
   }
 
   window.closeBankForm = function() {
@@ -503,7 +509,7 @@
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
     document.getElementById('qrisActive').checked = true
     document.getElementById('qrisPreview').style.display = 'none'
-    document.getElementById('qrisForm').style.display = ''
+    document.getElementById('qrisForm').style.display = ''; tampilkanForm('qrisForm')
     document.getElementById('qrisNama').focus()
   }
 
@@ -517,7 +523,7 @@
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
     document.getElementById('qrisActive').checked = q.isActive !== false
     if (q.imageUrl) showQrisPreview(q.imageUrl); else document.getElementById('qrisPreview').style.display = 'none'
-    document.getElementById('qrisForm').style.display = ''
+    document.getElementById('qrisForm').style.display = ''; tampilkanForm('qrisForm')
   }
 
   window.deleteQris = async function(i) {
