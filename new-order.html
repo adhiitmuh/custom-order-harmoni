@@ -441,7 +441,25 @@
     } catch(e) { console.error('Gagal load lokasi:', e) }
   }
 
-  window.muatUlangMetode = () => loadPaymentMethods(selectedDiv)
+  window.muatUlangMetode = () => { loadPaymentMethods(selectedDiv); sesuaikanHargaCabang() }
+  // Ganti lokasi → item yang masih di harga Normal/Cabang ikut disesuaikan
+  function sesuaikanHargaCabang() {
+    if (!currentPriceList?.items?.length) return
+    document.querySelectorAll('#itemRows tr').forEach(tr => {
+      const id = tr.id.replace('row-', '')
+      const name = tr.querySelector('[data-field="name"]')?.value.trim().toLowerCase() || ''
+      const varian = tr.querySelector('[data-field="varian"]')?.value.trim().toLowerCase() || ''
+      const priceEl = tr.querySelector('[data-field="price"]')
+      const cat = currentPriceList.items.find(p => p.name.trim().toLowerCase() === name)
+      if (!cat || !priceEl) return
+      const o = (varian && cat.variants?.find(v => v.name.trim().toLowerCase() === varian)) || cat
+      const cur = parsePrice(priceEl.value)
+      if (!o.priceCabang || (cur !== o.priceNormal && cur !== o.priceCabang)) return
+      const baru = hargaDasar(o)
+      if (baru && baru !== cur) { priceEl.value = fmtPrice(baru); calcRow(Number(id)) }
+      showTierButtons(Number(id))
+    })
+  }
   async function loadPaymentMethods(division = '') {
     try {
       if (!_paymentInfoCache) {
@@ -546,6 +564,13 @@
     checkDuplicateNames()
   }
 
+  // Harga Cabang: order yang diterima di cabang/titik memakai priceCabang (kalau diisi)
+  function diCabang() {
+    const l = lokasiList.find(x => x.id === document.getElementById('lokasiId')?.value)
+    return !!l && l.tipe !== 'pusat'
+  }
+  const hargaDasar = o => (diCabang() && o?.priceCabang) ? o.priceCabang : (o?.priceNormal || 0)
+
   window.showTierButtons = function(id) {
     const wrap = document.getElementById(`tier-btns-${id}`)
     if (!wrap) return
@@ -554,14 +579,14 @@
     const cat = currentPriceList?.items?.find(p => p.name.trim().toLowerCase() === name)
     if (!cat) { wrap.style.display = 'none'; return }
 
-    let pN = cat.priceNormal, pP = cat.pricePromo, pA = cat.priceAdmin
+    let pN = cat.priceNormal, pC = cat.priceCabang, pP = cat.pricePromo, pA = cat.priceAdmin
     if (cat.variants?.length && varian) {
       const v = cat.variants.find(v => v.name.trim().toLowerCase() === varian)
-      if (v) { pN = v.priceNormal; pP = v.pricePromo; pA = v.priceAdmin }
+      if (v) { pN = v.priceNormal; pC = v.priceCabang; pP = v.pricePromo; pA = v.priceAdmin }
     }
 
     const cur = parsePrice(document.querySelector(`[data-field="price"][data-row="${id}"]`)?.value)
-    const active = cur ? (pN && cur >= pN ? 'normal' : pP && cur >= pP ? 'promo' : 'admin') : null
+    const active = cur ? (pC && cur >= pC && pC > (pN || 0) ? 'cabang' : pN && cur >= pN ? 'normal' : pP && cur >= pP ? 'promo' : 'admin') : null
 
     const mkBtn = (tier, price, label, color) => !price ? '' :
       `<button type="button" onclick="setItemTier(${id},'${tier}')"
@@ -571,6 +596,7 @@
 
     wrap.innerHTML = [
       mkBtn('normal', pN, 'Normal', '#059669'),
+      mkBtn('cabang', pC, 'Cabang', '#0369a1'),
       mkBtn('promo',  pP, 'Promo',  '#d97706'),
       mkBtn('admin',  pA, 'Admin',  '#b91c1c'),
     ].join('')
@@ -745,7 +771,7 @@
     const showModal = role === 'owner'
 
     const fmtP = n => n ? Number(n).toLocaleString('id-ID') : '—'
-    const priceColCount = showModal ? 4 : 3
+    const priceColCount = showModal ? 5 : 4
 
     const mkPriceCell = (tier, price, color, itemIdx, varIdx) => {
       if (!price) return `<td style="padding:6px 8px;color:rgba(3,69,67,.15);font-size:12px;text-align:right">—</td>`
@@ -764,6 +790,7 @@
           <td style="padding:7px 10px;font-size:12px;font-weight:500;white-space:normal">${escHtml(p.name)}</td>
           <td style="padding:6px 8px;font-size:11px;color:rgba(3,69,67,.2)">—</td>
           ${mkPriceCell('normal', p.priceNormal, '#059669', i, -1)}
+          ${mkPriceCell('cabang', p.priceCabang, '#0369a1', i, -1)}
           ${mkPriceCell('promo',  p.pricePromo,  '#d97706', i, -1)}
           ${mkPriceCell('admin',  p.priceAdmin,  '#b91c1c', i, -1)}
           ${showModal ? mkPriceCell('modal', p.priceModal, '#7c3aed', i, -1) : ''}
@@ -781,6 +808,7 @@
           <td style="padding:6px 10px 6px 20px;font-size:11px;border-left:2px solid rgba(3,69,67,.07)"></td>
           <td style="padding:6px 8px;font-size:12px;color:rgba(3,69,67,.65);white-space:normal">${escHtml(v.name||'')}</td>
           ${mkPriceCell('normal', v.priceNormal, '#059669', i, vi)}
+          ${mkPriceCell('cabang', v.priceCabang, '#0369a1', i, vi)}
           ${mkPriceCell('promo',  v.pricePromo,  '#d97706', i, vi)}
           ${mkPriceCell('admin',  v.priceAdmin,  '#b91c1c', i, vi)}
           ${showModal ? mkPriceCell('modal', v.priceModal, '#7c3aed', i, vi) : ''}
@@ -795,6 +823,7 @@
         <th style="${hSt};text-align:left;padding-left:10px">LAYANAN / PRODUK</th>
         <th style="${hSt};text-align:left">VARIAN</th>
         <th style="${hSt};color:#059669">NORMAL</th>
+        <th style="${hSt};color:#0369a1">CABANG</th>
         <th style="${hSt};color:#d97706">PROMO</th>
         <th style="${hSt};color:#b91c1c">ADMIN</th>
         ${showModal ? `<th style="${hSt};color:#7c3aed">MODAL</th>` : ''}
@@ -824,9 +853,9 @@
     if (!p) return
     if (variantIndex >= 0 && p.variants?.[variantIndex]) {
       const v = p.variants[variantIndex]
-      addItemRow({ name: p.name, varian: v.name, pricePerUnit: v.priceNormal || 0, qty: p.minQty || 1, priceModal: v.priceModal || 0 })
+      addItemRow({ name: p.name, varian: v.name, pricePerUnit: hargaDasar(v) || hargaDasar(p), qty: p.minQty || 1, priceModal: v.priceModal || 0 })
     } else {
-      addItemRow({ name: p.name, pricePerUnit: p.priceNormal || 0, qty: p.minQty || 1, priceModal: p.priceModal || 0 })
+      addItemRow({ name: p.name, pricePerUnit: hargaDasar(p), qty: p.minQty || 1, priceModal: p.priceModal || 0 })
     }
     showTierButtons(itemRowCount)
   }

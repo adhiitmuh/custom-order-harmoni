@@ -184,7 +184,7 @@
         if (priceSnaps[i].exists()) {
           const { items, ...rest } = priceSnaps[i].data()
           // Only expose priceNormal — strip priceModal, pricePromo, priceAdmin
-          allPrices[d] = { ...rest, items: (items||[]).map(({ priceModal, pricePromo, priceAdmin, ...item }) => item) }
+          allPrices[d] = { ...rest, items: (items||[]).map(({ priceModal, pricePromo, priceAdmin, priceCabang, ...item }) => item) }
         }
       })
     } catch (_) { /* fallback: no prices */ }
