@@ -45,6 +45,10 @@
       <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Nota yang belum lunas. Follow up ke pemesan lewat WhatsApp, atau cek ulang apakah pembeli sebenarnya sudah bayar — lalu catat hasilnya.</p>
     </div>
     <div class="tg-kartu" id="kartu"></div>
+    <div class="card" id="perDivisiWrap" style="margin-bottom:14px;padding:14px 16px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">🏷️ Belum lunas per divisi <span style="font-size:11px;font-weight:500;color:rgba(3,69,67,.5)">— ketuk divisi untuk melihat notanya</span></div>
+      <div style="overflow-x:auto"><table id="perDivisi" style="width:100%;border-collapse:collapse;font-size:12.5px"></table></div>
+    </div>
     <div class="tg-bar">
       <button class="tab-st aktif" data-tab="perlu" onclick="pilihTab('perlu')">🔔 Perlu follow up</button>
       <button class="tab-st" data-tab="tunda" onclick="pilihTab('tunda')">⏳ Menunggu / janji bayar</button>
@@ -102,11 +106,34 @@
 
   window.pilihTab = t => { tab = t; document.querySelectorAll('.tab-st').forEach(b => b.classList.toggle('aktif', b.dataset.tab === t)); render() }
 
-  function tersaring() {
-    const q = document.getElementById('cari').value.toLowerCase().trim(), fl = document.getElementById('fLokasi').value, fd = document.getElementById('fDivisi').value
+  function tersaring(abaikanDivisi = false) {
+    const q = document.getElementById('cari').value.toLowerCase().trim(), fl = document.getElementById('fLokasi').value, fd = abaikanDivisi ? '' : document.getElementById('fDivisi').value
     return data.filter(({ o, s }) => (!q || [o.orderNumber, o.customerName, o.customerContact].some(t => String(t || '').toLowerCase().includes(q)))
       && (!fl || (o.lokasiId || '') === fl) && (!fd || (o.division || '') === fd))
   }
+
+  // Rekap per divisi (semua nota belum lunas, mengikuti filter lokasi & cari). Nominal sisa hanya untuk Owner.
+  function renderPerDivisi(semua) {
+    const isOwner = profile.role === 'owner'
+    const m = new Map()
+    semua.forEach(({ o, s }) => {
+      const k = o.division || ''
+      const r = m.get(k) || { n: 0, perlu: 0, selesai: 0, lewat: 0, belumDp: 0, sisa: 0 }
+      r.n++; if (s.perlu) r.perlu++; if (s.level === 1) r.selesai++; if (s.level === 2) r.lewat++; if (s.bayar <= 0) r.belumDp++; r.sisa += s.sisa
+      m.set(k, r)
+    })
+    const fd = document.getElementById('fDivisi').value
+    const baris = [...m.entries()].sort((a, b) => isOwner ? b[1].sisa - a[1].sisa : b[1].n - a[1].n)
+    const th = 'text-align:right;padding:6px 8px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:rgba(3,69,67,.5);border-bottom:1px solid rgba(3,69,67,.1);white-space:nowrap'
+    const td = 'text-align:right;padding:7px 8px;border-bottom:1px solid rgba(3,69,67,.06);white-space:nowrap'
+    document.getElementById('perDivisi').innerHTML = baris.length ? `<thead><tr><th style="${th};text-align:left">Divisi</th><th style="${th}">Nota belum lunas</th><th style="${th}">Perlu follow up</th><th style="${th}">Selesai blm lunas</th><th style="${th}">Lewat target</th><th style="${th}">Belum DP</th>${isOwner ? `<th style="${th}">Sisa tagihan</th>` : ''}</tr></thead><tbody>`
+      + baris.map(([k, r]) => `<tr style="cursor:pointer;${fd === k ? 'background:rgba(5,150,105,.08)' : ''}" onclick="pilihDivisiTagihan('${esc(k)}')">
+        <td style="padding:7px 8px;border-bottom:1px solid rgba(3,69,67,.06);font-weight:700;white-space:nowrap">${esc((DIVISION_META[k]?.icon || '') + ' ' + (DIVISION_META[k]?.label || k || 'Tanpa divisi'))}</td>
+        <td style="${td};font-weight:800">${r.n}</td><td style="${td};color:${r.perlu ? '#b91c1c' : 'inherit'}">${r.perlu}</td><td style="${td}">${r.selesai}</td><td style="${td}">${r.lewat}</td><td style="${td}">${r.belumDp}</td>
+        ${isOwner ? `<td style="${td};font-weight:800;color:#b91c1c">${rp(r.sisa)}</td>` : ''}</tr>`).join('') + '</tbody>'
+      : '<tr><td style="padding:10px;color:rgba(3,69,67,.45)">Tidak ada nota belum lunas 🎉</td></tr>'
+  }
+  window.pilihDivisiTagihan = k => { const sel = document.getElementById('fDivisi'); sel.value = sel.value === k ? '' : k; pilihTab('semua') }
 
   function render() {
     const semua = tersaring()
@@ -118,6 +145,8 @@
       kartu('Lewat target', semua.filter(x => x.s.level === 2).length),
       kartu('Belum DP', semua.filter(x => x.s.bayar <= 0).length),
     ].join('')
+    const fd = document.getElementById('fDivisi').value
+    renderPerDivisi(fd ? tersaring(true) : semua)
     const list = (tab === 'perlu' ? perlu : tab === 'tunda' ? tunda : lain)
       .sort((a, b) => a.s.level - b.s.level || b.s.lewat - a.s.lewat || b.s.umur - a.s.umur)
     const el = document.getElementById('daftar')
