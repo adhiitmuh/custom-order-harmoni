@@ -899,10 +899,12 @@
     let tier = h.tier
     // Owner boleh di bawah harga Admin (wajib alasan), tapi tidak di bawah modal
     if (tier === 'blocked' && prof?.role === 'owner' && !h.dibawahModal) tier = 'admin'
+    // Item baru belum punya batas harga → harganya dicek Kepala Cabang dulu
+    if (tier === 'normal' && h.itemBaru.length) tier = 'promo'
     currentPriceTier = tier
     const otomatis = tier !== 'normal' && tier !== 'blocked' && bolehSetujui(prof, tier)
     const rinci = h.rincian.filter(r => r.tier !== 'normal' && r.tier !== 'baru')
-      .map(r => `• ${escHtml(r.name)}${r.varian ? ' (' + escHtml(r.varian) + ')' : ''}: Rp ${r.harga.toLocaleString('id-ID')} — ${r.tier === 'blocked' ? '🚫 ' + r.alasan : LABEL_TIER[r.tier]}${r.dasar ? ` (normal Rp ${r.dasar.toLocaleString('id-ID')})` : ''}`).join('<br>')
+      .map(r => `• ${escHtml(r.name)}${r.varian ? ' (' + escHtml(r.varian) + ')' : ''}: Rp ${r.harga.toLocaleString('id-ID')} — ${r.tier === 'blocked' ? '🚫 ' + r.alasan : r.diskonCabang ? 'harga Normal pusat (diskon cabang) → Kepala Cabang' : LABEL_TIER[r.tier]}${r.dasar ? ` (normal Rp ${r.dasar.toLocaleString('id-ID')})` : ''}`).join('<br>')
     const baru = h.itemBaru.length ? `<div style="font-size:11px;color:#0369a1;margin-top:6px">🆕 Item baru (belum ada di daftar harga): <b>${h.itemBaru.map(escHtml).join(', ')}</b> — otomatis ditambahkan ke daftar harga saat order disimpan.</div>` : ''
     const diskon = h.diskonPersen > 0 ? `<div style="font-size:11px;color:#d97706;margin-top:4px">Diskon total ${h.diskonPersen}% ikut dihitung ke harga per pcs.</div>` : ''
     const kotak = (bg, bd) => `display:block;margin-top:12px;padding:10px 12px;border-radius:10px;background:${bg};border:1px solid ${bd}`
@@ -913,7 +915,8 @@
     } else if (tier === 'promo' || tier === 'admin') {
       const promo = tier === 'promo'
       infoEl.style.cssText = promo ? kotak('#fffbeb', '#fde68a') : kotak('#fff1f2', '#fecdd3')
-      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:${promo ? '#d97706' : '#b91c1c'}">${promo ? '⚠ Harga Promo — perlu approval Kepala Cabang' : '🔒 Harga Admin — perlu approval Owner'}</span>
+      const judul = promo ? (rinci ? '⚠ Harga Promo / diskon — perlu approval Kepala Cabang' : '⚠ Ada item baru — harga perlu dicek Kepala Cabang') : '🔒 Harga Admin — perlu approval Owner'
+      msgEl.innerHTML = `<span style="font-size:12px;font-weight:700;color:${promo ? '#d97706' : '#b91c1c'}">${judul}</span>
         <div style="font-size:11px;color:rgba(3,69,67,.6);margin-top:4px">${rinci}</div>${diskon}
         <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px">${otomatis ? '✓ Anda berwenang — order langsung disetujui atas nama Anda (alasan tetap wajib).' : 'Order dibuat dan menunggu approval — belum bisa masuk produksi.'}</div>${baru}`
       reasonWrap.style.display = ''
@@ -1051,6 +1054,10 @@
     const dueDate = document.getElementById('dueDate').value
     if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
     if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
+    // Approval hanya karena item baru → alasan terisi otomatis
+    const hanyaItemBaru = currentPriceTier === 'promo' && _hasilTier.tier === 'normal' && _hasilTier.itemBaru?.length
+    if (hanyaItemBaru && !document.getElementById('approvalReason').value.trim())
+      document.getElementById('approvalReason').value = 'Item baru: ' + _hasilTier.itemBaru.join(', ')
     if ((currentPriceTier==='promo'||currentPriceTier==='admin') && !document.getElementById('approvalReason').value.trim()) {
       errEl.textContent = 'Alasan/justifikasi diskon harus diisi'; errEl.style.display=''; return
     }

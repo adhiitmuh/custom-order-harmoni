@@ -130,6 +130,8 @@ export function tierItem(hargaPcs, h, diCabang = false) {
   const dasar = (diCabang && c) ? c : n
   if (m && hargaPcs < m) return { tier: 'blocked', alasan: 'di bawah harga modal', dasar, dibawahModal: true }
   if (!dasar || hargaPcs >= dasar) return { tier: 'normal', dasar }
+  // Di cabang: harga Normal pusat (di bawah Harga Cabang) = diskon cabang → Kepala Cabang
+  if (diCabang && c && n && hargaPcs >= n) return { tier: 'promo', dasar, diskonCabang: true }
   if (pr && hargaPcs >= pr) return { tier: 'promo', dasar }
   if (a && hargaPcs >= a) return { tier: 'admin', dasar }
   if (!pr && !a) return { tier: 'admin', dasar }            // batas belum diatur → Owner yang putuskan
