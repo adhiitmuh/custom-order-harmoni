@@ -115,57 +115,73 @@
     return { nama: pemilik[p.division] || 'Adi (Owner)', lewat: `${labelRekening(p)} · ${l?.nama || 'HQ'}` }
   }
 
+  // Semua pembayaran s.d. akhir bulan terpilih → saldo berjalan (tunggakan bulan-bulan sebelumnya ikut terbawa)
+  let _orders = null
   async function muat() {
     document.getElementById('ringkas').innerHTML = '<div class="loading">Memuat…</div>'
-    const bln = document.getElementById('bulan').value
+    const bln = document.getElementById('bulan').value, akhir = bln + '-31'
     const [pS, tS] = await Promise.all([
-      getDocs(query(collection(db, 'pembayaran'), where('tgl', '>=', bln + '-01'), where('tgl', '<=', bln + '-31'))),
-      getDocs(query(collection(db, 'setoran_pemilik'), where('bulan', '==', bln))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'pembayaran'), where('tgl', '<=', akhir))),
+      getDocs(collection(db, 'setoran_pemilik')).catch(() => ({ docs: [] })),
     ])
+    if (!_orders) { _orders = {}; (await getDocs(collection(db, 'orders'))).docs.forEach(d => { _orders[d.id] = d.data() }) }
     const bayar = pS.docs.map(d => ({ id: d.id, ...d.data() }))
-    transfer = tS.docs.map(d => ({ id: d.id, ...d.data() }))
-    const orderIds = [...new Set(bayar.map(p => p.orderId).filter(Boolean))]
-    const orders = {}
-    for (let i = 0; i < orderIds.length; i += 25) {
-      const part = await Promise.all(orderIds.slice(i, i + 25).map(id => getDoc(doc(db, 'orders', id)).catch(() => null)))
-      part.forEach(s => { if (s?.exists()) orders[s.id] = s.data() })
-    }
-    baris = []
+    const semuaTf = tS.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => (t.tgl || '') <= akhir)
+    transfer = semuaTf.filter(t => (t.tgl || '').startsWith(bln))
+    const semuaBaris = []
     bayar.forEach(p => {
       const ke = pemilik[p.division] || 'Adi (Owner)'
       const dari = penerima(p)
       if (norm(dari.nama) === norm(ke)) return
-      const o = orders[p.orderId] || {}
+      const o = _orders[p.orderId] || {}
       const total = Number(o.totalPrice) || 0, modal = Number(o.hargaModal) || 0
       const rasio = total > 0 && modal > 0 ? Math.min(1, modal / total) : null
-      baris.push({ p, dari: dari.nama, lewat: dari.lewat, ke, rasio, modal: rasio == null ? 0 : Math.round((Number(p.jumlah) || 0) * rasio) })
+      semuaBaris.push({ p, dari: dari.nama, lewat: dari.lewat, ke, rasio, modal: rasio == null ? 0 : Math.round((Number(p.jumlah) || 0) * rasio) })
     })
+    baris = semuaBaris.filter(b => (b.p.tgl || '').startsWith(bln))
+    window._semuaBaris = semuaBaris
     pasangan = {}
     const kunci = (a, b) => a + ' → ' + b
-    baris.forEach(b => { const k = kunci(b.dari, b.ke); (pasangan[k] = pasangan[k] || { dari: b.dari, ke: b.ke, wajib: 0, belumModal: 0, n: 0, sudah: 0 }); pasangan[k].wajib += b.modal; pasangan[k].n++; if (b.rasio == null) pasangan[k].belumModal++ })
-    transfer.forEach(t => { const k = kunci(t.dari, t.ke); (pasangan[k] = pasangan[k] || { dari: t.dari, ke: t.ke, wajib: 0, belumModal: 0, n: 0, sudah: 0 }); pasangan[k].sudah += Number(t.jumlah) || 0 })
+    const P = (d, k) => (pasangan[kunci(d, k)] = pasangan[kunci(d, k)] || { dari: d, ke: k, wajib: 0, belumModal: 0, n: 0, sudah: 0, wajibTotal: 0, sudahTotal: 0, perBulan: {} })
+    semuaBaris.forEach(b => {
+      const x = P(b.dari, b.ke), m = b.p.tgl.slice(0, 7)
+      x.wajibTotal += b.modal; x.perBulan[m] = (x.perBulan[m] || 0) + b.modal
+      if (m === bln) { x.wajib += b.modal; x.n++; if (b.rasio == null) x.belumModal++ }
+    })
+    semuaTf.forEach(t => { const x = P(t.dari, t.ke); x.sudahTotal += Number(t.jumlah) || 0; if ((t.tgl || '').startsWith(bln)) x.sudah += Number(t.jumlah) || 0 })
+    // Umur tunggakan: transfer melunasi bulan paling lama dulu
+    Object.values(pasangan).forEach(x => {
+      let bayarSisa = x.sudahTotal; x.tunggakan = []
+      Object.keys(x.perBulan).sort().forEach(m => { const pakai = Math.min(bayarSisa, x.perBulan[m]); bayarSisa -= pakai; const sisa = x.perBulan[m] - pakai; if (sisa > 0) x.tunggakan.push({ m, sisa }) })
+      const [y, mm] = bln.split('-').map(Number)
+      x.tunggakan.forEach(t => { const [ty, tm] = t.m.split('-').map(Number); t.umur = (y - ty) * 12 + (mm - tm) })
+      x.saldo = x.wajibTotal - x.sudahTotal
+    })
     render()
   }
 
   function render() {
-    const list = Object.values(pasangan).sort((a, b) => (b.wajib - b.sudah) - (a.wajib - a.sudah))
+    const list = Object.values(pasangan).filter(x => x.saldo > 0 || x.wajib || x.sudah).sort((a, b) => b.saldo - a.saldo)
+    const namaBln = m => new Date(m + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
     document.getElementById('ringkas').innerHTML = list.length ? list.map((x, i) => {
-      const sisa = x.wajib - x.sudah
+      const sisa = x.saldo, lama = x.tunggakan.filter(t => t.umur >= 3)
       const rekKe = (info.banks || []).filter(b => b.rekeningDivisi === true && norm(b.accountHolder) === norm(x.ke)).slice(0, 2)
       const tf = transfer.filter(t => t.dari === x.dari && t.ke === x.ke)
       return `<div class="kp-pair">
         <h3>${esc(x.dari)} <span style="color:rgba(3,69,67,.4)">→</span> ${esc(x.ke)}</h3>
         <div class="kp-angka">
-          <div><span>Wajib (modal)</span><b>${rp(x.wajib)}</b></div>
-          <div><span>Sudah ditransfer</span><b style="color:#059669">${rp(x.sudah)}</b></div>
-          <div><span>Sisa</span><b style="color:${sisa > 0 ? '#b91c1c' : '#059669'}">${rp(sisa)}</b></div>
+          <div><span>Wajib bulan ini</span><b>${rp(x.wajib)}</b></div>
+          <div><span>Ditransfer bulan ini</span><b style="color:#059669">${rp(x.sudah)}</b></div>
+          <div><span>Total sisa s.d. bulan ini</span><b style="color:${sisa > 0 ? '#b91c1c' : '#059669'}">${rp(sisa)}</b></div>
           <div><span>Pembayaran</span><b>${x.n}</b>${x.belumModal ? `<div style="font-size:10px;color:#b45309">⚠ ${x.belumModal} modal belum diisi</div>` : ''}</div>
         </div>
-        ${(() => { const balik = pasangan[x.ke + ' → ' + x.dari]; if (!balik) return ''; const bersih = sisa - (balik.wajib - balik.sudah)
-          return `<div style="font-size:12px;background:#f0f9ff;color:#0369a1;border-radius:8px;padding:6px 10px;margin-bottom:6px">↔ ${esc(x.ke)} juga punya kewajiban ${rp(balik.wajib - balik.sudah)} ke ${esc(x.dari)}. Setelah saling potong: <b>${bersih >= 0 ? esc(x.dari) + ' → ' + esc(x.ke) + ' ' + rp(bersih) : esc(x.ke) + ' → ' + esc(x.dari) + ' ' + rp(-bersih)}</b></div>` })()}
+        ${(() => { const balik = pasangan[x.ke + ' → ' + x.dari]; if (!balik || balik.saldo <= 0) return ''; const bersih = sisa - balik.saldo
+          return `<div style="font-size:12px;background:#f0f9ff;color:#0369a1;border-radius:8px;padding:6px 10px;margin-bottom:6px">↔ ${esc(x.ke)} juga punya kewajiban ${rp(balik.saldo)} ke ${esc(x.dari)}. Setelah saling potong: <b>${bersih >= 0 ? esc(x.dari) + ' → ' + esc(x.ke) + ' ' + rp(bersih) : esc(x.ke) + ' → ' + esc(x.dari) + ' ' + rp(-bersih)}</b></div>` })()}
+        ${x.tunggakan.length ? `<div style="font-size:12px;margin-bottom:6px">${lama.length ? `<b style="color:#b91c1c">⚠ Menunggak ${Math.max(...lama.map(t => t.umur))} bulan</b> · ` : ''}Belum lunas: ${x.tunggakan.map(t => `<span style="display:inline-block;border-radius:999px;padding:1px 8px;margin:2px;background:${t.umur >= 3 ? '#fee2e2' : t.umur >= 1 ? '#fef3c7' : 'rgba(3,69,67,.06)'}">${esc(namaBln(t.m))} ${rp(t.sisa)}</span>`).join('')}</div>` : ''}
         ${rekKe.length ? `<div style="font-size:12px;color:rgba(3,69,67,.6)">Transfer ke: ${rekKe.map(b => `🏦 ${esc(b.bankName)} <b>${esc(b.accountNumber)}</b>`).join(' · ')}</div>` : ''}
         ${tf.length ? `<div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:6px">${tf.map(t => `✓ ${esc(t.tgl)} ${rp(t.jumlah)}${t.catatan ? ' · ' + esc(t.catatan) : ''}${t.bukti ? ` · <a href="${esc(t.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}`).join('<br>')}</div>` : ''}
         <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="bukaTransfer(${i})">💸 Catat transfer</button>
+        <button class="btn btn-sm" style="margin-top:10px;background:#25D366;color:#fff;border:none" onclick="waRincian(${i})">📲 Kirim rincian</button>
       </div>`
     }).join('') : '<div class="card" style="font-size:13px;color:rgba(3,69,67,.5)">✓ Tidak ada kewajiban antar pemilik bulan ini — semua uang masuk ke rekening/kas pemilik divisinya sendiri.</div>'
     window._daftar = list
@@ -175,13 +191,23 @@
         <td class="r">${rp(b.p.jumlah)}</td><td class="r">${b.rasio == null ? '<span style="color:#b45309">⚠ modal belum diisi</span>' : rp(b.modal)}</td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">—</p>'
   }
 
+  window.waRincian = i => {
+    const x = window._daftar[i], rpT = n => 'Rp' + Math.round(n).toLocaleString('id-ID')
+    const nb = m => new Date(m + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    const det = (window._semuaBaris || []).filter(b => b.dari === x.dari && b.ke === x.ke && x.tunggakan.some(t => t.m === b.p.tgl.slice(0, 7)))
+    const rek = (info.banks || []).filter(b => b.rekeningDivisi === true && norm(b.accountHolder) === norm(x.ke)).slice(0, 2)
+    const teks = [`*Rincian kewajiban modal*`, `${x.dari} → ${x.ke}`, ``,
+      ...x.tunggakan.map(t => [`*${nb(t.m)}* — sisa ${rpT(t.sisa)}${t.umur >= 3 ? ' ⚠' : ''}`, ...det.filter(b => b.p.tgl.startsWith(t.m)).map(b => `• ${b.p.tgl.slice(8)}/${b.p.tgl.slice(5, 7)} ${b.p.orderNumber || ''} ${b.p.customerName || ''} — modal ${rpT(b.modal)}`)].join('\n')),
+      ``, `*TOTAL BELUM DITRANSFER: ${rpT(x.saldo)}*`, ...(rek.length ? [``, `Transfer ke:`, ...rek.map(b => `${b.bankName} ${b.accountNumber} a.n. ${b.accountHolder}`)] : [])].join('\n')
+    window.open(`https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank')
+  }
   window.tutupModal = id => { document.getElementById(id).style.display = 'none' }
   let _pilih = null
   window.bukaTransfer = i => {
     _pilih = window._daftar[i]
     document.getElementById('mtJudul').textContent = `Catat transfer: ${_pilih.dari} → ${_pilih.ke}`
     document.getElementById('mtTgl').value = tglLokal()
-    document.getElementById('mtJumlah').value = Math.max(0, _pilih.wajib - _pilih.sudah).toLocaleString('id-ID')
+    document.getElementById('mtJumlah').value = Math.max(0, _pilih.saldo).toLocaleString('id-ID')
     document.getElementById('mtCatatan').value = ''; document.getElementById('mtBukti').value = ''
     document.getElementById('mTransfer').style.display = 'flex'
   }
@@ -211,11 +237,13 @@
   window.unduhExcel = () => {
     const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
     const sheet = (rows, kolomUang) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); rows.forEach((r, i) => kolomUang.forEach(c => { const cell = ws[XLSX.utils.encode_cell({ r: i + 1, c })]; if (cell && typeof cell.v === 'number') cell.z = fmt })); return ws }
-    const ring = window._daftar.map(x => ({ Dari: x.dari, Ke: x.ke, Wajib: x.wajib, 'Sudah ditransfer': x.sudah, Sisa: x.wajib - x.sudah, Pembayaran: x.n, 'Modal belum diisi': x.belumModal }))
+    const ring = window._daftar.map(x => ({ Dari: x.dari, Ke: x.ke, 'Wajib bulan ini': x.wajib, 'Ditransfer bulan ini': x.sudah, 'Total sisa': x.saldo, 'Tunggakan': x.tunggakan.map(t => `${t.m}: ${t.sisa}`).join('; '), Pembayaran: x.n, 'Modal belum diisi': x.belumModal }))
     const rin = baris.map(b => ({ Tanggal: b.p.tgl, 'No. Order': b.p.orderNumber, Customer: b.p.customerName, Divisi: namaDiv(b.p.division), 'Diterima lewat': b.lewat, Dari: b.dari, Ke: b.ke, Dibayar: Number(b.p.jumlah) || 0, Modal: b.rasio == null ? 'modal belum diisi' : b.modal }))
     const tf = transfer.map(t => ({ Tanggal: t.tgl, Dari: t.dari, Ke: t.ke, Jumlah: t.jumlah, Catatan: t.catatan || '', Bukti: t.bukti || '', Oleh: t.olehNama || '' }))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, sheet(ring, [2, 3, 4]), 'Ringkasan')
+    const belum = (window._semuaBaris || []).filter(b => window._daftar.some(x => x.dari === b.dari && x.ke === b.ke && x.tunggakan.some(t => t.m === b.p.tgl.slice(0, 7)))).map(b => ({ Bulan: b.p.tgl.slice(0, 7), Tanggal: b.p.tgl, 'No. Order': b.p.orderNumber, Customer: b.p.customerName, Dari: b.dari, Ke: b.ke, Modal: b.modal }))
+    XLSX.utils.book_append_sheet(wb, sheet(belum, [6]), 'Rincian Tunggakan')
     XLSX.utils.book_append_sheet(wb, sheet(rin, [7, 8]), 'Rincian')
     XLSX.utils.book_append_sheet(wb, sheet(tf, [3]), 'Transfer')
     XLSX.writeFile(wb, `Kewajiban_Pemilik_${document.getElementById('bulan').value}.xlsx`)
