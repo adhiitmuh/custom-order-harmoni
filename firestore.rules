@@ -168,6 +168,10 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['dicekAt', 'dicekOleh']);
       allow update, delete: if isOwner();
     }
+    // Catatan follow up order ulang per customer (id = nomor WA) — staf non pemilik divisi
+    match /customer_followup/{id} {
+      allow read, write: if isStaffAuth() && !isDivisiOwner();
+    }
     // Transfer modal antar pemilik (Kewajiban Antar Pemilik) — hanya Owner
     match /setoran_pemilik/{id} {
       allow read, write: if isOwner();

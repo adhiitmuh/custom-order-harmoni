@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Order Ulang — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .ou-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .ou-bar select, .ou-bar input { width:auto; font-size:13px; }
+    .tab { border:1.5px solid rgba(3,69,67,.15); background:#fff; border-radius:999px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; }
+    .tab.on { background:var(--green); color:#fff; border-color:var(--green); }
+    .ou-c { background:#fff; border:1px solid rgba(3,69,67,.1); border-radius:14px; padding:12px 14px; margin-bottom:10px; display:flex; gap:12px; justify-content:space-between; flex-wrap:wrap; }
+    .ou-c .nm { font-weight:800; font-size:14px; }
+    .ou-c .s { font-size:12px; color:rgba(3,69,67,.6); margin-top:2px; }
+    .chip { display:inline-block; background:rgba(3,69,67,.06); border-radius:999px; padding:2px 8px; font-size:11px; margin:2px 2px 0 0; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">PESANAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Order Ulang</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Customer yang tahun lalu order di bulan-bulan ini (musim seragam, wisuda, lomba…) dan belum order lagi — waktunya ditawari. Tekan WA, lalu catat hasilnya.</p>
+    </div>
+    <div class="ou-bar">
+      <button class="tab on" id="t-musim" onclick="pilihTab('musim')">📅 Musim order tahun lalu</button>
+      <button class="tab" id="t-lama" onclick="pilihTab('lama')">💤 Lama tidak order (&gt; 6 bln)</button>
+      <button class="tab" id="t-tunda" onclick="pilihTab('tunda')">✓ Sudah dihubungi</button>
+      <select id="fDiv"><option value="">Semua divisi</option></select>
+      <input type="search" id="cari" placeholder="Cari nama…">
+    </div>
+    <div id="list"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady, canSeeOrder } from './js/auth.js'
+  import { collection, getDocs, doc, setDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, DIVISIONS, fmtCurrency } from './js/utils.js'
+
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const noWa = c => { const d = String(c || '').replace(/\D/g, ''); return d.startsWith('0') ? '62' + d.slice(1) : d.startsWith('8') ? '62' + d : d }
+  const tglDari = a => a?.toDate ? a.toDate() : a?.seconds ? new Date(a.seconds * 1000) : new Date(a)
+  const BLN = d => d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+  let profile, pelanggan = [], fu = {}, tab = 'musim'
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager', 'cs'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    DIVISIONS.forEach(d => document.getElementById('fDiv').insertAdjacentHTML('beforeend', `<option value="${d}">${DIVISION_META[d].icon} ${DIVISION_META[d].label}</option>`))
+    ;['fDiv', 'cari'].forEach(id => document.getElementById(id).addEventListener('input', render))
+    const awal = new Date(); awal.setMonth(awal.getMonth() - 18)
+    const [oS, fS] = await Promise.all([
+      getDocs(query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(awal)))),
+      getDocs(collection(db, 'customer_followup')).catch(() => ({ docs: [] })),
+    ])
+    fS.docs.forEach(d => { fu[d.id] = d.data() })
+    const per = {}
+    oS.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status !== 'cancelled' && canSeeOrder(o, p)).forEach(o => {
+      const k = noWa(o.customerContact); if (k.length < 9) return
+      const c = per[k] = per[k] || { k, nama: o.customerName, kontak: o.customerContact, orders: [] }
+      c.orders.push({ ...o, tgl: tglDari(o.createdAt) })
+    })
+    pelanggan = Object.values(per).map(c => { c.orders.sort((a, b) => b.tgl - a.tgl); c.terakhir = c.orders[0]; c.nama = c.terakhir.customerName || c.nama; return c })
+    render()
+  })
+
+  window.pilihTab = t => { tab = t; ['musim', 'lama', 'tunda'].forEach(x => document.getElementById('t-' + x).classList.toggle('on', x === t)); render() }
+
+  function kandidat() {
+    const now = new Date(), bulan = d => (d.getFullYear() * 12 + d.getMonth())
+    const nb = bulan(now), sudahFu = c => fu[c.k] && (now - tglDari(fu[c.k].at)) / 864e5 < 30
+    return pelanggan.filter(c => {
+      const sejak = nb - bulan(c.terakhir.tgl)
+      if (tab === 'tunda') return sudahFu(c)
+      if (sudahFu(c)) return false
+      if (tab === 'lama') return sejak > 6
+      // Musim: pernah order 11–13 bulan lalu (bulan ini/bulan depan tahun lalu) dan belum order 3 bulan terakhir
+      return sejak >= 3 && c.orders.some(o => { const x = nb - bulan(o.tgl); return x >= 10 && x <= 12 })
+    })
+  }
+
+  function render() {
+    const div = document.getElementById('fDiv').value, cari = document.getElementById('cari').value.toLowerCase()
+    const list = kandidat().filter(c => (!div || c.orders.some(o => o.division === div)) && (!cari || String(c.nama).toLowerCase().includes(cari)))
+      .sort((a, b) => b.orders.reduce((t, o) => t + (o.totalPrice || 0), 0) - a.orders.reduce((t, o) => t + (o.totalPrice || 0), 0))
+    document.getElementById('list').innerHTML = list.length ? list.map(c => {
+      const total = c.orders.reduce((t, o) => t + (Number(o.totalPrice) || 0), 0)
+      const divs = [...new Set(c.orders.map(o => o.division))]
+      const f = fu[c.k]
+      return `<div class="ou-c"><div style="min-width:0;flex:1">
+          <div class="nm">${esc(c.nama)}</div>
+          <div class="s">${c.orders.length} order · total ${fmtCurrency(total)} · terakhir <b>${esc(BLN(c.terakhir.tgl))}</b> (${esc(c.terakhir.orderNumber || '')})</div>
+          <div>${divs.map(d => `<span class="chip">${DIVISION_META[d]?.icon || ''} ${esc(DIVISION_META[d]?.label || d)}</span>`).join('')}${c.terakhir.lokasiNama ? `<span class="chip">📍 ${esc(c.terakhir.lokasiNama)}</span>` : ''}</div>
+          ${f ? `<div class="s" style="margin-top:4px">📝 ${esc(f.hasil || '')}${f.catatan ? ' — ' + esc(f.catatan) : ''} · ${esc(f.oleh || '')}, ${esc(tglDari(f.at).toLocaleDateString('id-ID'))}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:#25D366;color:#fff;border:none" onclick="wa('${c.k}')">📱 WA</button>
+          <button class="btn btn-ghost btn-sm" onclick="catat('${c.k}')">Catat hasil</button>
+        </div></div>`
+    }).join('') : `<div class="card" style="font-size:13px;color:rgba(3,69,67,.5)">${tab === 'tunda' ? 'Belum ada yang dihubungi dalam 30 hari terakhir.' : 'Tidak ada customer untuk ditawari saat ini.'}</div>`
+  }
+
+  window.wa = k => {
+    const c = pelanggan.find(x => x.k === k); if (!c) return
+    const o = c.terakhir, item = (o.orderItems || []).map(i => i.name).filter(Boolean).slice(0, 2).join(' & ') || DIVISION_META[o.division]?.label || 'pesanan'
+    const teks = `Halo ${c.nama} 👋\n\nTerima kasih sudah pernah order *${item}* di Harmoni (${BLN(o.tgl)}).\n\nKalau tahun ini ada kebutuhan lagi, kami siap bantu — bisa pakai desain yang sama supaya lebih cepat. Mau kami kirimkan penawaran harga terbaru?\n\n_Harmoni_`
+    window.open(`https://wa.me/${k}?text=${encodeURIComponent(teks)}`, '_blank')
+    catat(k, 'Dihubungi')
+  }
+  window.catat = async (k, hasilAwal) => {
+    const hasil = hasilAwal || prompt('Hasil: (cth: Tertarik / Belum butuh / Sudah order / Tidak aktif)', 'Belum butuh')
+    if (!hasil) return
+    const catatan = hasilAwal ? '' : (prompt('Catatan (opsional):') || '')
+    const data = { hasil, catatan, oleh: profile.name, olehUid: profile.id, at: Timestamp.now() }
+    try { await setDoc(doc(db, 'customer_followup', k), data); fu[k] = data; render() } catch (e) { alert('Gagal mencatat: ' + e.message) }
+  }
+</script>
+</body>
+</html>

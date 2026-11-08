@@ -351,6 +351,9 @@ export function renderSidebar(profile) {
       ${['owner', 'manager', 'cs'].includes(profile.role) ? `
       <a href="tagihan.html" class="sidebar-link ${page==='tagihan.html'?'active':''}">
         <span class="icon">💳</span>Tagihan<span id="tagihanBadge" class="mention-badge" style="display:none;background:#ef4444"></span>
+      </a>
+      <a href="order-ulang.html" class="sidebar-link ${page==='order-ulang.html'?'active':''}">
+        <span class="icon">🔁</span>Order Ulang
       </a>` : ''}
       ${!isDivisi && profile.role !== 'production' && profile.role !== 'data' ? `
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
@@ -407,6 +410,10 @@ export function renderSidebar(profile) {
       ${['owner', 'manager', 'cs'].includes(profile.role) ? `
       <a href="laporan-harian.html" class="sidebar-link ${page==='laporan-harian.html'?'active':''}">
         <span class="icon">🧾</span>Laporan Harian
+      </a>` : ''}
+      ${['owner', 'manager', 'cs'].includes(profile.role) ? `
+      <a href="komisi.html" class="sidebar-link ${page==='komisi.html'?'active':''}">
+        <span class="icon">🏆</span>Target & Komisi
       </a>` : ''}
       ${['owner', 'manager'].includes(profile.role) ? `
       <a href="laporan-harga.html" class="sidebar-link ${page==='laporan-harga.html'?'active':''}">

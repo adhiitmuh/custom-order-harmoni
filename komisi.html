@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Target & Komisi CS — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .km-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .km-bar input { width:auto; font-size:13px; }
+    .km-c { background:#fff; border:1px solid rgba(3,69,67,.1); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
+    .km-g { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-top:8px; }
+    .km-g div { background:rgba(3,69,67,.04); border-radius:10px; padding:8px 10px; }
+    .km-g span { display:block; font-size:10px; font-weight:700; color:rgba(3,69,67,.5); text-transform:uppercase; letter-spacing:.04em; }
+    .km-g b { font-size:15px; }
+    .prog { height:8px; border-radius:4px; background:rgba(3,69,67,.08); overflow:hidden; margin-top:8px; }
+    .prog i { display:block; height:100%; background:#059669; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Target & Komisi CS</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Omzet = total order yang dibuat CS di bulan itu (kecuali dibatalkan). Komisi dihitung dari order yang sudah <b>lunas</b>; kalau omzet mencapai target, persen komisi naik ke persen bonus.</p>
+    </div>
+    <div class="km-bar">
+      <input type="month" id="bulan">
+      <button class="btn btn-ghost btn-sm" id="btnAtur" style="display:none" onclick="bukaAtur()">⚙ Atur target & komisi</button>
+    </div>
+    <div id="atur" class="card" style="display:none;margin-bottom:14px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="form-group" style="margin:0"><label>Komisi dasar (%)</label><input type="number" step="0.1" id="aPersen" style="width:120px"></div>
+        <div class="form-group" style="margin:0"><label>Komisi bila capai target (%)</label><input type="number" step="0.1" id="aBonus" style="width:120px"></div>
+        <div class="form-group" style="margin:0"><label>Target default / CS (Rp)</label><input type="text" inputmode="numeric" id="aTarget" style="width:160px" oninput="this.value=(parseInt(this.value.replace(/\D/g,''))||0).toLocaleString('id-ID')"></div>
+      </div>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:6px">Target khusus per CS (kosong = pakai default):</p>
+      <div id="aPerCs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="simpanAtur()">Simpan</button>
+    </div>
+    <div id="list"><div class="loading">Memuat…</div></div>
+  </main>
+</div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, getDoc, setDoc, doc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { fmtCurrency } from './js/utils.js'
+
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const angka = v => parseInt(String(v || '').replace(/\D/g, '')) || 0
+  let profile, aturan = { persen: 1, bonus: 1.5, target: 50000000, perCs: {} }, baris = []
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager', 'cs'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const now = new Date(); document.getElementById('bulan').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    document.getElementById('bulan').addEventListener('change', muat)
+    if (p.role === 'owner') document.getElementById('btnAtur').style.display = ''
+    const s = await getDoc(doc(db, 'settings', 'komisi')).catch(() => null)
+    if (s?.exists?.()) aturan = { ...aturan, ...s.data() }
+    muat()
+  })
+
+  async function muat() {
+    const [y, m] = document.getElementById('bulan').value.split('-').map(Number)
+    const s = await getDocs(query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(new Date(y, m - 1, 1))), where('createdAt', '<', Timestamp.fromDate(new Date(y, m, 1))))).catch(() => ({ docs: [] }))
+    const per = {}
+    s.docs.map(d => d.data()).filter(o => !['cancelled', 'draft'].includes(o.status) && o.createdByName).forEach(o => {
+      const k = o.createdByName
+      const r = per[k] = per[k] || { cs: k, uid: o.createdBy, lokasi: new Set(), n: 0, omzet: 0, lunas: 0, nLunas: 0 }
+      r.n++; r.omzet += Number(o.totalPrice) || 0; if (o.lokasiNama) r.lokasi.add(o.lokasiNama)
+      if ((Number(o.totalPrice) || 0) > 0 && (Number(o.depositPaid) || 0) >= Number(o.totalPrice)) { r.lunas += Number(o.totalPrice); r.nLunas++ }
+    })
+    baris = Object.values(per).map(r => {
+      const target = Number(aturan.perCs?.[r.cs]) || Number(aturan.target) || 0
+      const capai = target ? r.omzet / target : 0
+      const persen = target && r.omzet >= target ? Number(aturan.bonus) : Number(aturan.persen)
+      return { ...r, target, capai, persen, komisi: Math.round(r.lunas * persen / 100) }
+    }).filter(r => profile.role === 'owner' || (profile.role === 'manager' && (!profile.lokasiNama || r.lokasi.has(profile.lokasiNama))) || r.cs === profile.name)
+      .sort((a, b) => b.omzet - a.omzet)
+    render()
+  }
+
+  function render() {
+    document.getElementById('list').innerHTML = baris.length ? baris.map((r, i) => `<div class="km-c">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b style="font-size:15px">${i < 3 && baris.length > 1 ? ['🥇', '🥈', '🥉'][i] + ' ' : ''}${esc(r.cs)}</b> <span style="font-size:12px;color:rgba(3,69,67,.5)">${esc([...r.lokasi].join(', '))}</span></div>
+        <div style="font-size:12px;font-weight:700;color:${r.capai >= 1 ? '#059669' : 'rgba(3,69,67,.6)'}">${r.target ? Math.round(r.capai * 100) + '% target' + (r.capai >= 1 ? ' 🎉' : '') : ''}</div></div>
+      ${r.target ? `<div class="prog"><i style="width:${Math.min(100, Math.round(r.capai * 100))}%;${r.capai >= 1 ? '' : 'background:#0369a1'}"></i></div>` : ''}
+      <div class="km-g">
+        <div><span>Omzet</span><b>${fmtCurrency(r.omzet)}</b><div style="font-size:11px;color:rgba(3,69,67,.5)">${r.n} order</div></div>
+        <div><span>Target</span><b>${r.target ? fmtCurrency(r.target) : '—'}</b>${r.target && r.omzet < r.target ? `<div style="font-size:11px;color:rgba(3,69,67,.5)">kurang ${fmtCurrency(r.target - r.omzet)}</div>` : ''}</div>
+        <div><span>Sudah lunas</span><b>${fmtCurrency(r.lunas)}</b><div style="font-size:11px;color:rgba(3,69,67,.5)">${r.nLunas} order</div></div>
+        <div><span>Komisi (${r.persen}%)</span><b style="color:#059669">${fmtCurrency(r.komisi)}</b><div style="font-size:11px;color:rgba(3,69,67,.5)">bertambah saat order lunas</div></div>
+      </div></div>`).join('') : '<div class="card" style="font-size:13px;color:rgba(3,69,67,.5)">Belum ada order bulan ini.</div>'
+  }
+
+  window.bukaAtur = () => {
+    const el = document.getElementById('atur'); el.style.display = el.style.display === 'none' ? '' : 'none'
+    document.getElementById('aPersen').value = aturan.persen; document.getElementById('aBonus').value = aturan.bonus
+    document.getElementById('aTarget').value = (Number(aturan.target) || 0).toLocaleString('id-ID')
+    const nama = [...new Set([...baris.map(r => r.cs), ...Object.keys(aturan.perCs || {})])]
+    document.getElementById('aPerCs').innerHTML = nama.map(n => `<label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><span style="flex:1">${esc(n)}</span><input type="text" inputmode="numeric" data-cs="${esc(n)}" value="${aturan.perCs?.[n] ? Number(aturan.perCs[n]).toLocaleString('id-ID') : ''}" placeholder="default" style="width:130px" oninput="this.value=this.value?(parseInt(this.value.replace(/\\D/g,''))||0).toLocaleString('id-ID'):''"></label>`).join('') || '<span style="font-size:12px;color:rgba(3,69,67,.4)">Nama CS muncul setelah ada order.</span>'
+  }
+  window.simpanAtur = async () => {
+    const perCs = {}
+    document.querySelectorAll('[data-cs]').forEach(i => { const v = angka(i.value); if (v) perCs[i.dataset.cs] = v })
+    aturan = { persen: Number(document.getElementById('aPersen').value) || 0, bonus: Number(document.getElementById('aBonus').value) || 0, target: angka(document.getElementById('aTarget').value), perCs }
+    await setDoc(doc(db, 'settings', 'komisi'), aturan)
+    document.getElementById('atur').style.display = 'none'; muat()
+  }
+</script>
+</body>
+</html>
