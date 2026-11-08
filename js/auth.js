@@ -415,6 +415,9 @@ export function renderSidebar(profile) {
       ${profile.role === 'owner' ? `
       <a href="kewajiban-pemilik.html" class="sidebar-link ${page==='kewajiban-pemilik.html'?'active':''}">
         <span class="icon">🤝</span>Kewajiban Pemilik
+      </a>
+      <a href="cocokkan-mutasi.html" class="sidebar-link ${page==='cocokkan-mutasi.html'?'active':''}">
+        <span class="icon">🔎</span>Cocokkan Mutasi
       </a>` : ''}
       ${profile.role === 'owner' || isDivisi ? `
       <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
