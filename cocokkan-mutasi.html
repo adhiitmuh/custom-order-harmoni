@@ -39,7 +39,11 @@
       <div class="cm-bar">
         <div class="form-group"><label>Rekening</label><select id="rek"></select></div>
         <div class="form-group"><label>Bulan pembayaran</label><input type="month" id="bulan"></div>
-        <div class="form-group"><label>File mutasi (.csv / .xlsx)</label><input type="file" id="file" accept=".csv,.xls,.xlsx,text/csv"></div>
+        <div class="form-group"><label>File mutasi (PDF e-statement / CSV / Excel)</label><input type="file" id="file" accept=".pdf,.csv,.xls,.xlsx,text/csv,application/pdf"></div>
+      </div>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin:-4px 0 8px">PDF rekening koran / e-statement dari BRImo, myBCA, Livin' Mandiri, BNI, CIMB, dll. dibaca otomatis (harus PDF asli dari bank, bukan foto/scan). CSV/Excel: kolom dipilih otomatis, bisa diubah.</p>
+      <div id="infoPdf" style="font-size:12px;margin-bottom:6px"></div>
+      <div>
       </div>
       <div id="peta" style="display:none">
         <p style="font-size:12px;color:rgba(3,69,67,.6);margin:6px 0">Kolom terdeteksi otomatis — ubah kalau salah:</p>
@@ -63,6 +67,7 @@
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, getDoc, doc, where, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META } from './js/utils.js'
+  import { bacaPdf } from './js/mutasi.js?v=20261108a'
 
   const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -79,8 +84,23 @@
   })
 
   // ── Baca file & tebak kolom ──
+  let mutasiPdf = null
   async function bacaFile(e) {
     const f = e.target.files[0]; if (!f) return
+    mutasiPdf = null; document.getElementById('infoPdf').innerHTML = ''
+    if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+      document.getElementById('peta').style.display = 'none'
+      document.getElementById('infoPdf').innerHTML = '⏳ Membaca PDF…'
+      try {
+        mutasiPdf = (await bacaPdf(f, document.getElementById('bulan').value.slice(0, 4))).map((m, i) => ({ i, tgl: m.tgl, ket: m.ket, jumlah: m.kredit, debit: m.debit }))
+        const k = mutasiPdf.reduce((t, m) => t + m.jumlah, 0), d = mutasiPdf.reduce((t, m) => t + m.debit, 0)
+        document.getElementById('infoPdf').innerHTML = mutasiPdf.length
+          ? `✓ ${mutasiPdf.length} transaksi terbaca (${mutasiPdf[0].tgl} s.d. ${mutasiPdf[mutasiPdf.length - 1].tgl}) · masuk ${rp(k)} · keluar ${rp(d)}. <span style="color:rgba(3,69,67,.5)">Cocokkan angka ini dengan total di PDF.</span>`
+          : '⚠ Tidak ada transaksi terbaca — pastikan PDF asli dari bank (bukan foto/scan), atau pakai CSV/Excel.'
+        if (mutasiPdf.length) cocokkan()
+      } catch (err) { document.getElementById('infoPdf').textContent = '⚠ Gagal membaca PDF: ' + err.message }
+      return
+    }
     const buf = await f.arrayBuffer()
     // CSV dibaca sebagai teks apa adanya (supaya 06/11 tidak dianggap format Amerika = 11 Juni)
     const csv = /\.csv$/i.test(f.name) || f.type === 'text/csv'
@@ -138,7 +158,7 @@
   window.cocokkan = async () => {
     const h = Number(document.getElementById('kHeader').value) || 0
     const iT = +document.getElementById('kTgl').value, iK = +document.getElementById('kKet').value, iC = +document.getElementById('kKredit').value
-    const mutasi = grid.slice(h + 1).map((r, i) => ({ i, tgl: keTanggal(r[iT]), ket: String(r[iK] || ''), jumlah: keAngka(r[iC]) }))
+    const mutasi = (mutasiPdf || grid.slice(h + 1).map((r, i) => ({ i, tgl: keTanggal(r[iT]), ket: String(r[iK] || ''), jumlah: keAngka(r[iC]) })))
       .filter(m => m.tgl && m.jumlah > 0)
     const b = banks[+document.getElementById('rek').value]
     const noRek = String(b.accountNumber).replace(/\s+/g, '')
