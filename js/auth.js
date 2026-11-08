@@ -474,6 +474,9 @@ export function renderSidebar(profile) {
       <button id="logoutBtn" title="Logout" style="background:none;border:none;cursor:pointer;opacity:.4;color:#FFFBD5;font-size:16px;padding:4px;line-height:1">⏻</button>
     </div>`
 
+  pasangLipatSidebar(el)
+  cekVersiBaru()
+
   document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     sessionStorage.clear()
     await Promise.all([signOut(auth), signOut(dataAuth).catch(() => {})])
@@ -814,4 +817,52 @@ export async function perbaruiBadgeTagihan(profile, paksa = false) {
     if (main) main.insertAdjacentHTML('afterbegin', `<a id="bannerTagihan" href="tagihan.html" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-decoration:none;font-size:13px;font-weight:700">
       <span>💳 ${n} nota belum lunas perlu di-follow up — hubungi pemesan atau cek ulang pembayarannya</span><span>Buka Tagihan →</span></a>`)
   }
+}
+
+
+// ── Sidebar: tiap bagian (PESANAN, PRODUKSI, KEUANGAN, …) bisa dibuka/tutup; diingat per perangkat.
+// Bagian yang berisi halaman aktif selalu terbuka.
+function pasangLipatSidebar(el) {
+  let tutup = {}
+  try { tutup = JSON.parse(localStorage.getItem('sidebar_tutup') || '{}') } catch {}
+  el.querySelectorAll('.sidebar-section').forEach(sec => {
+    const label = sec.querySelector(':scope > .sidebar-label')
+    if (!label) return // DIVISI punya tombol sendiri
+    const nama = label.textContent.trim()
+    const isi = [...sec.children].filter(c => c !== label)
+    if (!isi.length) return
+    const panah = document.createElement('span')
+    panah.textContent = '▶'
+    panah.style.cssText = 'float:right;font-size:8px;transition:transform .2s'
+    label.appendChild(panah)
+    label.style.cursor = 'pointer'
+    label.setAttribute('role', 'button')
+    const aktif = !!sec.querySelector('.sidebar-link.active')
+    const atur = buka => { isi.forEach(c => { c.style.display = buka ? '' : 'none' }); panah.style.transform = `rotate(${buka ? 90 : 0}deg)` }
+    atur(aktif || !tutup[nama])
+    label.addEventListener('click', () => {
+      const buka = isi[0].style.display === 'none'
+      atur(buka)
+      tutup[nama] = !buka
+      try { localStorage.setItem('sidebar_tutup', JSON.stringify(tutup)) } catch {}
+    })
+  })
+}
+
+// ── Versi baru aplikasi: Safari kadang memakai halaman/skrip lama dari cache. Cek tanda versi
+// (ETag) halaman ini & auth.js langsung ke server; kalau berubah sejak terakhir dibuka → muat ulang sekali.
+async function cekVersiBaru() {
+  try {
+    const kunci = 'versi_' + location.pathname
+    const terakhir = Number(sessionStorage.getItem('versi_cek_' + location.pathname) || 0)
+    if (Date.now() - terakhir < 120000) return
+    sessionStorage.setItem('versi_cek_' + location.pathname, String(Date.now()))
+    const urls = [location.pathname, new URL('./js/auth.js', location.href).pathname]
+    const tanda = (await Promise.all(urls.map(u => fetch(u, { method: 'HEAD', cache: 'no-store' })
+      .then(r => r.headers.get('etag') || r.headers.get('last-modified') || '').catch(() => '')))).join('|')
+    if (!tanda.replace(/\|/g, '')) return
+    const lama = localStorage.getItem(kunci)
+    localStorage.setItem(kunci, tanda)
+    if (lama && lama !== tanda) location.reload()
+  } catch {}
 }
