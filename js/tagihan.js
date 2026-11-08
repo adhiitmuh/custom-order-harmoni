@@ -1,7 +1,7 @@
 // Tagihan: nota custom order yang belum lunas → CS follow up ke pemesan / cek ulang pembayaran.
 // Data follow up disimpan di order: tagih = {at, oleh, olehUid, hasil, janjiTgl, catatan} (terakhir)
 // dan tagihRiwayat = [ ...semua follow up ].
-import { tglLokal } from './pembayaran.js?v=20261106b'
+import { tglLokal } from './pembayaran.js?v=20261108a'
 
 export const ULANG_HARI = 3            // follow up ulang bila sudah 3 hari tanpa kabar
 export const HASIL_TAGIH = {
