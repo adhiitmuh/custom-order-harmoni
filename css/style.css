@@ -218,3 +218,9 @@ hr.sep { border: none; border-top: 1px solid rgba(3,69,67,.07); margin: 16px 0; 
   background: var(--white); border-radius: 20px; padding: 40px; width: 100%; max-width: 380px;
   box-shadow: 0 8px 40px rgba(0,0,0,.2);
 }
+
+/* iPad/iPhone Safari: isian tanggal punya lebar bawaan sendiri → bisa menimpa kolom sebelahnya */
+input[type=date], input[type=month], input[type=time] { max-width:100%; min-width:0; box-sizing:border-box; -webkit-appearance:none; appearance:none; min-height:42px; text-align:left; }
+input[type=date]::-webkit-date-and-time-value, input[type=month]::-webkit-date-and-time-value { text-align:left; }
+.form-group, .grid-2 > *, .grid-3 > *, .g > * { min-width:0; }
+.form-group input[type=date], .form-group input[type=month] { width:100%; display:block; }
