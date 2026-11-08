@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Kewajiban Antar Pemilik — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .kp-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .kp-bar input, .kp-bar select { width:auto; font-size:13px; }
+    table.kp { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.kp th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:8px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; }
+    table.kp td { padding:8px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.kp td.r, table.kp th.r { text-align:right; white-space:nowrap; }
+    .kp-wrap { overflow-x:auto; }
+    .kp-pair { border:1px solid rgba(3,69,67,.1); border-radius:14px; padding:14px 16px; margin-bottom:12px; background:#fff; }
+    .kp-pair h3 { font-size:15px; font-weight:800; margin:0; }
+    .kp-angka { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin:10px 0; }
+    .kp-angka div { background:rgba(3,69,67,.04); border-radius:10px; padding:8px 10px; }
+    .kp-angka span { display:block; font-size:10px; font-weight:700; color:rgba(3,69,67,.5); text-transform:uppercase; letter-spacing:.04em; }
+    .kp-angka b { font-size:16px; }
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:2000; display:none; align-items:center; justify-content:center; padding:16px; }
+    .modal-box { background:#fff; border-radius:16px; max-width:420px; width:100%; padding:18px; max-height:90vh; overflow:auto; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kewajiban Antar Pemilik</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Kalau uang order masuk ke rekening/QRIS/tunai milik orang lain (mis. cabang milik Pak A menerima order Bordir milik Annisa), penerima wajib mengirim <b>modal</b> order itu ke pemilik divisinya. Dihitung otomatis dari setiap pembayaran yang dicatat CS.</p>
+    </div>
+    <div class="kp-bar">
+      <input type="month" id="bulan">
+      <button class="btn btn-ghost btn-sm" onclick="bukaPemilik()">👤 Atur pemilik divisi</button>
+      <button class="btn btn-ghost btn-sm" onclick="unduhExcel()">⬇ Excel</button>
+    </div>
+    <div id="ringkas"><div class="loading">Memuat…</div></div>
+    <div class="card" style="margin-top:14px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">Rincian pembayaran yang menimbulkan kewajiban</h3>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Modal = jumlah dibayar × (harga modal order ÷ total order). Order yang harga modalnya belum diisi ditandai ⚠ dan belum dihitung.</p>
+      <div class="kp-wrap" id="rincian"></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-bg" id="mTransfer"><div class="modal-box">
+  <div style="font-weight:800;font-size:15px;margin-bottom:10px" id="mtJudul">Catat transfer</div>
+  <div class="form-group"><label>Tanggal</label><input type="date" id="mtTgl"></div>
+  <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" id="mtJumlah" oninput="this.value=(parseInt(this.value.replace(/\D/g,''))||0).toLocaleString('id-ID')"></div>
+  <div class="form-group"><label>Catatan</label><input type="text" id="mtCatatan" placeholder="cth: transfer BCA ke BRI Annisa"></div>
+  <div class="form-group"><label>Bukti transfer (opsional)</label><input type="file" id="mtBukti" accept="image/*"></div>
+  <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="tutupModal('mTransfer')">Batal</button><button class="btn btn-primary" style="flex:1" id="mtSimpan" onclick="simpanTransfer()">Simpan</button></div>
+</div></div>
+
+<div class="modal-bg" id="mPemilik"><div class="modal-box">
+  <div style="font-weight:800;font-size:15px;margin-bottom:4px">Pemilik tiap divisi</div>
+  <p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:10px">Diisi otomatis dari "Rekening Pemilik Divisi" di Pengaturan. Samakan penulisan nama orang yang sama (mis. "Annisa Ramadhani"), karena nama ini juga dicocokkan dengan nama pemilik rekening.</p>
+  <div id="mpIsi"></div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="tutupModal('mPemilik')">Batal</button><button class="btn btn-primary" style="flex:1" onclick="simpanPemilik()">Simpan</button></div>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db, storage } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, getDoc, doc, setDoc, addDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+  import { compressImage } from './js/image.js'
+  import { DIVISION_META, DIVISIONS } from './js/utils.js'
+  import { banksPemilikDivisi, labelRekening, tglLokal } from './js/pembayaran.js?v=20261108a'
+
+  const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim()
+  const namaDiv = d => DIVISION_META[d] ? `${DIVISION_META[d].icon} ${DIVISION_META[d].label}` : (d || 'Tanpa divisi')
+  let profile, info = {}, lokasi = {}, pemilik = {}, baris = [], transfer = [], pasangan = {}
+
+  requireAuth(async p => {
+    profile = p
+    if (p.role !== 'owner') { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const now = new Date()
+    document.getElementById('bulan').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    document.getElementById('bulan').addEventListener('change', muat)
+    const [iS, lS, pS] = await Promise.all([getDoc(doc(db, 'settings', 'payment_info')), getDocs(collection(db, 'lokasi')), getDoc(doc(db, 'settings', 'pemilik_divisi')).catch(() => null)])
+    info = iS.exists() ? iS.data() : {}
+    lS.docs.forEach(d => { lokasi[d.id] = { id: d.id, ...d.data() } })
+    const simpanan = pS?.exists?.() ? pS.data() : {}
+    DIVISIONS.forEach(d => { pemilik[d] = simpanan[d] || banksPemilikDivisi(info, d)[0]?.accountHolder || 'Adi (Owner)' })
+    muat()
+  })
+
+  // Siapa pemilik uang yang diterima pembayaran ini
+  function penerima(p) {
+    const semuaPemilik = [...new Set(Object.values(pemilik))]
+    const cocokkan = nama => semuaPemilik.find(x => norm(x) === norm(nama)) || nama
+    if (p.rekeningNo && String(p.metode || '').startsWith('transfer')) {
+      const b = (info.banks || []).find(b => String(b.accountNumber || '').replace(/\s+/g, '') === p.rekeningNo)
+      if (b?.accountHolder) return { nama: cocokkan(b.accountHolder), lewat: labelRekening(p) }
+    }
+    if (String(p.metode || '').startsWith('qris')) {
+      const q = (info.qris || []).find(q => q.nama && q.nama === p.rekeningNo)
+      if (q?.atasNama) return { nama: cocokkan(q.atasNama), lewat: labelRekening(p) }
+    }
+    // Tunai / tanpa nomor rekening: milik pemilik lokasi; HQ (tanpa pemilik) → pemilik divisi order itu
+    const l = lokasi[p.lokasiId]
+    if (l?.divisiPemilik) return { nama: pemilik[l.divisiPemilik], lewat: `${labelRekening(p)} · ${l.nama}` }
+    return { nama: pemilik[p.division] || 'Adi (Owner)', lewat: `${labelRekening(p)} · ${l?.nama || 'HQ'}` }
+  }
+
+  async function muat() {
+    document.getElementById('ringkas').innerHTML = '<div class="loading">Memuat…</div>'
+    const bln = document.getElementById('bulan').value
+    const [pS, tS] = await Promise.all([
+      getDocs(query(collection(db, 'pembayaran'), where('tgl', '>=', bln + '-01'), where('tgl', '<=', bln + '-31'))),
+      getDocs(query(collection(db, 'setoran_pemilik'), where('bulan', '==', bln))).catch(() => ({ docs: [] })),
+    ])
+    const bayar = pS.docs.map(d => ({ id: d.id, ...d.data() }))
+    transfer = tS.docs.map(d => ({ id: d.id, ...d.data() }))
+    const orderIds = [...new Set(bayar.map(p => p.orderId).filter(Boolean))]
+    const orders = {}
+    for (let i = 0; i < orderIds.length; i += 25) {
+      const part = await Promise.all(orderIds.slice(i, i + 25).map(id => getDoc(doc(db, 'orders', id)).catch(() => null)))
+      part.forEach(s => { if (s?.exists()) orders[s.id] = s.data() })
+    }
+    baris = []
+    bayar.forEach(p => {
+      const ke = pemilik[p.division] || 'Adi (Owner)'
+      const dari = penerima(p)
+      if (norm(dari.nama) === norm(ke)) return
+      const o = orders[p.orderId] || {}
+      const total = Number(o.totalPrice) || 0, modal = Number(o.hargaModal) || 0
+      const rasio = total > 0 && modal > 0 ? Math.min(1, modal / total) : null
+      baris.push({ p, dari: dari.nama, lewat: dari.lewat, ke, rasio, modal: rasio == null ? 0 : Math.round((Number(p.jumlah) || 0) * rasio) })
+    })
+    pasangan = {}
+    const kunci = (a, b) => a + ' → ' + b
+    baris.forEach(b => { const k = kunci(b.dari, b.ke); (pasangan[k] = pasangan[k] || { dari: b.dari, ke: b.ke, wajib: 0, belumModal: 0, n: 0, sudah: 0 }); pasangan[k].wajib += b.modal; pasangan[k].n++; if (b.rasio == null) pasangan[k].belumModal++ })
+    transfer.forEach(t => { const k = kunci(t.dari, t.ke); (pasangan[k] = pasangan[k] || { dari: t.dari, ke: t.ke, wajib: 0, belumModal: 0, n: 0, sudah: 0 }); pasangan[k].sudah += Number(t.jumlah) || 0 })
+    render()
+  }
+
+  function render() {
+    const list = Object.values(pasangan).sort((a, b) => (b.wajib - b.sudah) - (a.wajib - a.sudah))
+    document.getElementById('ringkas').innerHTML = list.length ? list.map((x, i) => {
+      const sisa = x.wajib - x.sudah
+      const rekKe = (info.banks || []).filter(b => b.rekeningDivisi === true && norm(b.accountHolder) === norm(x.ke)).slice(0, 2)
+      const tf = transfer.filter(t => t.dari === x.dari && t.ke === x.ke)
+      return `<div class="kp-pair">
+        <h3>${esc(x.dari)} <span style="color:rgba(3,69,67,.4)">→</span> ${esc(x.ke)}</h3>
+        <div class="kp-angka">
+          <div><span>Wajib (modal)</span><b>${rp(x.wajib)}</b></div>
+          <div><span>Sudah ditransfer</span><b style="color:#059669">${rp(x.sudah)}</b></div>
+          <div><span>Sisa</span><b style="color:${sisa > 0 ? '#b91c1c' : '#059669'}">${rp(sisa)}</b></div>
+          <div><span>Pembayaran</span><b>${x.n}</b>${x.belumModal ? `<div style="font-size:10px;color:#b45309">⚠ ${x.belumModal} modal belum diisi</div>` : ''}</div>
+        </div>
+        ${(() => { const balik = pasangan[x.ke + ' → ' + x.dari]; if (!balik) return ''; const bersih = sisa - (balik.wajib - balik.sudah)
+          return `<div style="font-size:12px;background:#f0f9ff;color:#0369a1;border-radius:8px;padding:6px 10px;margin-bottom:6px">↔ ${esc(x.ke)} juga punya kewajiban ${rp(balik.wajib - balik.sudah)} ke ${esc(x.dari)}. Setelah saling potong: <b>${bersih >= 0 ? esc(x.dari) + ' → ' + esc(x.ke) + ' ' + rp(bersih) : esc(x.ke) + ' → ' + esc(x.dari) + ' ' + rp(-bersih)}</b></div>` })()}
+        ${rekKe.length ? `<div style="font-size:12px;color:rgba(3,69,67,.6)">Transfer ke: ${rekKe.map(b => `🏦 ${esc(b.bankName)} <b>${esc(b.accountNumber)}</b>`).join(' · ')}</div>` : ''}
+        ${tf.length ? `<div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:6px">${tf.map(t => `✓ ${esc(t.tgl)} ${rp(t.jumlah)}${t.catatan ? ' · ' + esc(t.catatan) : ''}${t.bukti ? ` · <a href="${esc(t.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}`).join('<br>')}</div>` : ''}
+        <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="bukaTransfer(${i})">💸 Catat transfer</button>
+      </div>`
+    }).join('') : '<div class="card" style="font-size:13px;color:rgba(3,69,67,.5)">✓ Tidak ada kewajiban antar pemilik bulan ini — semua uang masuk ke rekening/kas pemilik divisinya sendiri.</div>'
+    window._daftar = list
+    document.getElementById('rincian').innerHTML = baris.length ? `<table class="kp"><thead><tr><th>Tgl</th><th>Order</th><th>Divisi</th><th>Diterima lewat</th><th>Dari → Ke</th><th class="r">Dibayar</th><th class="r">Modal</th></tr></thead><tbody>
+      ${baris.sort((a, b) => a.p.tgl.localeCompare(b.p.tgl)).map(b => `<tr><td>${esc(b.p.tgl)}</td><td><a href="order.html?id=${esc(b.p.orderId)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(b.p.orderNumber || b.p.orderId)}</a><div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(b.p.customerName || '')}</div></td>
+        <td>${esc(namaDiv(b.p.division))}</td><td style="font-size:12px">${esc(b.lewat)}</td><td style="font-size:12px">${esc(b.dari)} → ${esc(b.ke)}</td>
+        <td class="r">${rp(b.p.jumlah)}</td><td class="r">${b.rasio == null ? '<span style="color:#b45309">⚠ modal belum diisi</span>' : rp(b.modal)}</td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">—</p>'
+  }
+
+  window.tutupModal = id => { document.getElementById(id).style.display = 'none' }
+  let _pilih = null
+  window.bukaTransfer = i => {
+    _pilih = window._daftar[i]
+    document.getElementById('mtJudul').textContent = `Catat transfer: ${_pilih.dari} → ${_pilih.ke}`
+    document.getElementById('mtTgl').value = tglLokal()
+    document.getElementById('mtJumlah').value = Math.max(0, _pilih.wajib - _pilih.sudah).toLocaleString('id-ID')
+    document.getElementById('mtCatatan').value = ''; document.getElementById('mtBukti').value = ''
+    document.getElementById('mTransfer').style.display = 'flex'
+  }
+  window.simpanTransfer = async () => {
+    const jumlah = parseInt(document.getElementById('mtJumlah').value.replace(/\D/g, '')) || 0
+    if (!jumlah) { alert('Isi jumlah transfer'); return }
+    const btn = document.getElementById('mtSimpan'); btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      let bukti = ''
+      const f = document.getElementById('mtBukti').files[0]
+      if (f) { const file = await compressImage(f); const r = sRef(storage, `bukti_setoran/${Date.now()}_${(file.name || 'bukti.jpg').replace(/[^\w.-]/g, '_')}`); await uploadBytes(r, file); bukti = await getDownloadURL(r) }
+      await addDoc(collection(db, 'setoran_pemilik'), { bulan: document.getElementById('bulan').value, dari: _pilih.dari, ke: _pilih.ke, jumlah, tgl: document.getElementById('mtTgl').value,
+        catatan: document.getElementById('mtCatatan').value.trim(), bukti, olehNama: profile.name, olehUid: profile.id, at: Timestamp.now() })
+      tutupModal('mTransfer'); muat()
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) } finally { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+  window.bukaPemilik = () => {
+    document.getElementById('mpIsi').innerHTML = DIVISIONS.map(d => `<div class="form-group" style="margin-bottom:8px"><label>${esc(namaDiv(d))}</label><input type="text" data-div="${d}" value="${esc(pemilik[d])}"></div>`).join('')
+    document.getElementById('mPemilik').style.display = 'flex'
+  }
+  window.simpanPemilik = async () => {
+    const data = {}
+    document.querySelectorAll('#mpIsi input[data-div]').forEach(i => { data[i.dataset.div] = i.value.trim() || 'Adi (Owner)' })
+    await setDoc(doc(db, 'settings', 'pemilik_divisi'), data)
+    pemilik = data; tutupModal('mPemilik'); muat()
+  }
+  window.unduhExcel = () => {
+    const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+    const sheet = (rows, kolomUang) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); rows.forEach((r, i) => kolomUang.forEach(c => { const cell = ws[XLSX.utils.encode_cell({ r: i + 1, c })]; if (cell && typeof cell.v === 'number') cell.z = fmt })); return ws }
+    const ring = window._daftar.map(x => ({ Dari: x.dari, Ke: x.ke, Wajib: x.wajib, 'Sudah ditransfer': x.sudah, Sisa: x.wajib - x.sudah, Pembayaran: x.n, 'Modal belum diisi': x.belumModal }))
+    const rin = baris.map(b => ({ Tanggal: b.p.tgl, 'No. Order': b.p.orderNumber, Customer: b.p.customerName, Divisi: namaDiv(b.p.division), 'Diterima lewat': b.lewat, Dari: b.dari, Ke: b.ke, Dibayar: Number(b.p.jumlah) || 0, Modal: b.rasio == null ? 'modal belum diisi' : b.modal }))
+    const tf = transfer.map(t => ({ Tanggal: t.tgl, Dari: t.dari, Ke: t.ke, Jumlah: t.jumlah, Catatan: t.catatan || '', Bukti: t.bukti || '', Oleh: t.olehNama || '' }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, sheet(ring, [2, 3, 4]), 'Ringkasan')
+    XLSX.utils.book_append_sheet(wb, sheet(rin, [7, 8]), 'Rincian')
+    XLSX.utils.book_append_sheet(wb, sheet(tf, [3]), 'Transfer')
+    XLSX.writeFile(wb, `Kewajiban_Pemilik_${document.getElementById('bulan').value}.xlsx`)
+  }
+</script>
+</body>
+</html>

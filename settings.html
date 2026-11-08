@@ -136,6 +136,11 @@
           <input type="text" id="qrisNama" placeholder="cth: QRIS Toko Harmoni (BRI)">
           <p class="form-hint">Opsional — membedakan bila ada lebih dari satu QRIS</p>
         </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Uang QRIS masuk ke rekening atas nama</label>
+          <input type="text" id="qrisAtasNama" placeholder="cth: Annisa Ramadhani">
+          <p class="form-hint">Dipakai menghitung Kewajiban Antar Pemilik (uang QRIS ini milik siapa)</p>
+        </div>
         <div class="form-group" style="margin-bottom:8px">
           <label>Foto QRIS <span style="font-weight:500;color:rgba(3,69,67,.5)">(boleh menyusul)</span></label>
           <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:2px dashed rgba(3,69,67,.25);border-radius:12px;padding:18px 10px;font-size:13px;font-weight:700;color:var(--green);cursor:pointer;margin-bottom:6px;background:var(--beige-soft);text-align:center">
@@ -560,6 +565,7 @@
     document.querySelectorAll('.qrisDivCheck').forEach(c => { c.checked = false })
     document.getElementById('qrisImageUrl').value = ''
     document.getElementById('qrisNama').value = ''
+    document.getElementById('qrisAtasNama').value = ''
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
     document.getElementById('qrisActive').checked = true
     document.getElementById('qrisPreview').style.display = 'none'
@@ -576,6 +582,7 @@
     document.querySelectorAll('.qrisDivCheck').forEach(c => { c.checked = qDiv.includes(c.value) })
     document.getElementById('qrisImageUrl').value = q.imageUrl || ''
     document.getElementById('qrisNama').value = q.nama || ''
+    document.getElementById('qrisAtasNama').value = q.atasNama || ''
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
     document.getElementById('qrisActive').checked = q.isActive !== false
     if (q.imageUrl) showQrisPreview(q.imageUrl); else document.getElementById('qrisPreview').style.display = 'none'
@@ -622,7 +629,8 @@
     if (lain.length && !nama) { showAlert('Isi Nama QRIS supaya bisa dibedakan (cth: QRIS Cabang Sudiang)', 'error'); return }
     if (nama && lain.some(q => (q.nama || '').toLowerCase() === nama.toLowerCase())) { showAlert('Nama QRIS sudah dipakai', 'error'); return }
     const divisiCustomer = [...document.querySelectorAll('.qrisDivCheck:checked')].map(c => c.value)
-    const entry = { imageUrl: imageUrl || '', nama, lokasiIds, divisiCustomer, division: '', isActive }
+    const atasNama = document.getElementById('qrisAtasNama').value.trim()
+    const entry = { imageUrl: imageUrl || '', nama, atasNama, lokasiIds, divisiCustomer, division: '', isActive }
     if (!paymentInfo.qris) paymentInfo.qris = []
     const idx = parseInt(document.getElementById('editQrisIndex').value)
     if (idx >= 0) { paymentInfo.qris[idx] = entry } else { paymentInfo.qris.push(entry) }

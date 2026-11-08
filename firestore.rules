@@ -168,6 +168,10 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['dicekAt', 'dicekOleh']);
       allow update, delete: if isOwner();
     }
+    // Transfer modal antar pemilik (Kewajiban Antar Pemilik) — hanya Owner
+    match /setoran_pemilik/{id} {
+      allow read, write: if isOwner();
+    }
     // Laporan harian uang masuk custom order per lokasi ({lokasi}_{tgl}); tanda "sudah dicek" hanya Owner,
     // setelah dicek laporan terkunci untuk selain Owner
     match /laporan_harian/{id} {

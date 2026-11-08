@@ -412,6 +412,10 @@ export function renderSidebar(profile) {
       <a href="laporan-harga.html" class="sidebar-link ${page==='laporan-harga.html'?'active':''}">
         <span class="icon">🏷️</span>Laporan Harga
       </a>` : ''}
+      ${profile.role === 'owner' ? `
+      <a href="kewajiban-pemilik.html" class="sidebar-link ${page==='kewajiban-pemilik.html'?'active':''}">
+        <span class="icon">🤝</span>Kewajiban Pemilik
+      </a>` : ''}
       ${profile.role === 'owner' || isDivisi ? `
       <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
         <span class="icon">📊</span>${isDivisi ? 'Laporan Kewajiban' : 'Laporan Keuangan'}
