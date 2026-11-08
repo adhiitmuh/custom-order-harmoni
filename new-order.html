@@ -58,7 +58,8 @@
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label>Target Selesai <span class="req">*</span></label>
-            <input type="date" id="dueDate" required>
+            <input type="date" id="dueDate" required onchange="cekKapasitas()">
+            <div id="kapasitasInfo" style="display:none;margin-top:6px;font-size:11.5px;border-radius:8px;padding:6px 10px"></div>
           </div>
         </div>
       </div>
@@ -454,6 +455,28 @@
 
   // Nama customer, item & varian disimpan HURUF KAPITAL (mudah dibaca & dicari). Catatan/teks cetak tidak diubah.
   window.kapital = el => { const a = el.selectionStart, b = el.selectionEnd; const v = el.value.toUpperCase(); if (v !== el.value) { el.value = v; try { el.setSelectionRange(a, b) } catch {} } }
+  // Kapasitas produksi: total pcs order aktif divisi ini yang targetnya di minggu yang sama
+  let _kapasitas = null
+  window.cekKapasitas = async function() {
+    const el = document.getElementById('kapasitasInfo')
+    const tgl = document.getElementById('dueDate').value
+    if (!tgl || !selectedDiv) { el.style.display = 'none'; return }
+    try {
+      if (!_kapasitas) { const s = await getDoc(fsDoc(db, 'settings', 'kapasitas')); _kapasitas = s.exists() ? s.data() : {} }
+      const maks = Number(_kapasitas[selectedDiv]) || 0
+      if (!maks) { el.style.display = 'none'; return }
+      const d = new Date(tgl + 'T00:00:00'), hari = (d.getDay() + 6) % 7
+      const senin = new Date(d); senin.setDate(d.getDate() - hari); const minggu = new Date(senin); minggu.setDate(senin.getDate() + 6)
+      const f = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+      const snap = await getDocs(query(collection(db, 'orders'), where('dueDate', '>=', f(senin)), where('dueDate', '<=', f(minggu))))
+      const pcs = o => (o.orderItems || []).reduce((t, i) => t + (Number(i.qty) || 0), 0)
+      const terpakai = snap.docs.map(x => x.data()).filter(o => o.division === selectedDiv && !['done', 'delivered', 'cancelled'].includes(o.status)).reduce((t, o) => t + pcs(o), 0)
+      const ini = getItemRows().reduce((t, i) => t + (Number(i.qty) || 0), 0)
+      const total = terpakai + ini, pen = total > maks
+      el.style.cssText = `display:block;margin-top:6px;font-size:11.5px;border-radius:8px;padding:6px 10px;background:${pen ? '#fef2f2' : total > maks * .8 ? '#fffbeb' : '#f0fdf4'};color:${pen ? '#b91c1c' : total > maks * .8 ? '#b45309' : '#047857'}`
+      el.innerHTML = `${pen ? '⚠ Minggu ini sudah penuh' : '🏭 Kapasitas minggu ini'}: <b>${terpakai.toLocaleString('id-ID')}</b>${ini ? ` + ${ini} (order ini)` : ''} / ${maks.toLocaleString('id-ID')} pcs ${DIVISION_META[selectedDiv]?.label || ''} (${senin.getDate()}–${minggu.getDate()} ${minggu.toLocaleDateString('id-ID', { month: 'short' })})${pen ? '<br>Sarankan tanggal lain ke customer, atau konfirmasi dulu ke produksi.' : ''}`
+    } catch (e) { el.style.display = 'none' }
+  }
   window.muatUlangMetode = () => { loadPaymentMethods(selectedDiv); sesuaikanHargaCabang() }
   // Ganti lokasi → item yang masih di harga Normal/Cabang ikut disesuaikan
   function sesuaikanHargaCabang() {
@@ -961,6 +984,7 @@
     _autoHargaModal = 0
     loadPriceList(d)
     if (!skipPaymentLoad) loadPaymentMethods(d)
+    window.cekKapasitas?.()
     refreshAllNamaCustom()
     const sizeCard = document.getElementById('sizeCard')
     if (SIZE_DIVISIONS.includes(d)) {

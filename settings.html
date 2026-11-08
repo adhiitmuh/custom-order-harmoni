@@ -168,6 +168,14 @@
       </div>
     </div>
 
+    <!-- Kapasitas produksi -->
+    <div class="card" style="margin-bottom:20px">
+      <h2 style="font-size:15px;font-weight:700;margin-bottom:4px">🏭 Kapasitas produksi per minggu</h2>
+      <p style="font-size:12px;color:rgba(3,69,67,.5);margin-bottom:10px">Jumlah pcs maksimal yang sanggup diselesaikan tiap divisi dalam seminggu. Saat CS mengisi target selesai, muncul peringatan kalau minggu itu sudah penuh. Kosongkan = tidak dibatasi.</p>
+      <div id="kapasitasIsi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px"></div>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="simpanKapasitas()">Simpan kapasitas</button>
+    </div>
+
     <!-- Cash -->
     <div class="card" style="margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -391,7 +399,7 @@
     renderBankList()
     loadPaymentInfo()
     loadCloudBackupList()
-    loadLokasiList().then(() => { populateBankLokasiChecks(); populateQrisLokasiChecks(); renderBankList(); renderQrisList(); cekRekening() })
+    muatKapasitas(); loadLokasiList().then(() => { populateBankLokasiChecks(); populateQrisLokasiChecks(); renderBankList(); renderQrisList(); cekRekening() })
   })
 
   async function loadPaymentInfo() {
@@ -487,6 +495,20 @@
   function tampilkanForm(id) {
     const el = document.getElementById(id)
     setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.style.boxShadow = '0 0 0 3px rgba(3,69,67,.25)'; el.style.borderRadius = '12px'; setTimeout(() => { el.style.boxShadow = '' }, 1600) }, 50)
+  }
+
+  async function muatKapasitas() {
+    const s = await getDoc(doc(db, 'settings', 'kapasitas')).catch(() => null)
+    const k = s?.exists?.() ? s.data() : {}
+    document.getElementById('kapasitasIsi').innerHTML = DIVISIONS.map(d => `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+      <span style="flex:1">${DIVISION_META[d].icon} ${DIVISION_META[d].label}</span>
+      <input type="number" min="0" data-kap="${d}" value="${k[d] || ''}" placeholder="pcs/minggu" style="width:110px;font-size:13px"></label>`).join('')
+  }
+  window.simpanKapasitas = async function() {
+    const data = {}
+    document.querySelectorAll('[data-kap]').forEach(i => { const v = parseInt(i.value); if (v > 0) data[i.dataset.kap] = v })
+    await setDoc(doc(db, 'settings', 'kapasitas'), data)
+    showAlert('Kapasitas produksi disimpan ✓', 'success')
   }
 
   window.cekRekening = function() {
