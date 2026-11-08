@@ -402,7 +402,7 @@
     }))
     const rinci = bulanData.filter(p => loks.includes(kunciLok(p))).sort((a, b) => a.tgl.localeCompare(b.tgl) || (a.at?.seconds || 0) - (b.at?.seconds || 0)).map(p => ({
       Tanggal: p.tgl, Jam: p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '', Lokasi: namaLok(kunciLok(p)),
-      'No. Order': p.orderNumber, Customer: p.customerName, Divisi: namaDiv(p.division), Jenis: JENIS[p.jenis] || p.jenis, Metode: labelMetode(p.metode), 'Rekening Tujuan': p.rekeningNo || '',
+      'No. Order': p.orderNumber, Customer: p.customerName, Divisi: namaDiv(p.division), Jenis: JENIS[p.jenis] || p.jenis, Metode: labelMetode(p.metode), 'Rekening Tujuan': p.rekeningNo || '', 'Atas Nama': (p.rekeningNo && atasNama[p.rekeningNo]) || '',
       Jumlah: p.jumlah, 'Diterima Oleh': p.olehNama, 'Order Oleh': p.orderOleh || '', Catatan: p.catatan || '' }))
     // Per rekening: satu baris per tanggal, satu kolom per rekening (gabungan lokasi yang dipilih)
     const dataLok = bulanData.filter(p => loks.includes(kunciLok(p)))
