@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Laba & Komplain — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .lb-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .lb-bar input, .lb-bar select { width:auto; font-size:13px; }
+    .lb-kartu { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+    .lb-k { background:#fff; border:1px solid rgba(3,69,67,.08); border-radius:12px; padding:12px 14px; }
+    .lb-k .l { font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.5); text-transform:uppercase; }
+    .lb-k .v { font-size:18px; font-weight:800; margin-top:4px; }
+    table.lb { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.lb th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:8px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; }
+    table.lb td { padding:8px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.lb td.r, table.lb th.r { text-align:right; white-space:nowrap; }
+    table.lb tfoot td { font-weight:800; border-top:1.5px solid rgba(3,69,67,.15); }
+    .lb-wrap { overflow-x:auto; }
+    .bar { height:6px; border-radius:3px; background:#059669; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:16px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KEUANGAN</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Laba & Komplain</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Laba bersih per divisi = harga jual − modal − upah penjahit − biaya lain − biaya komplain. Dihitung dari order yang dibuat di bulan terpilih (kecuali dibatalkan).</p>
+    </div>
+    <div class="lb-bar">
+      <input type="month" id="bulan">
+      <select id="fLok"><option value="">Semua lokasi</option></select>
+      <button class="btn btn-ghost btn-sm" onclick="unduh()">⬇ Excel</button>
+    </div>
+    <div id="kartu" class="lb-kartu"></div>
+    <div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;font-weight:700;margin-bottom:4px">Per divisi</h3><p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">* Laba & margin hanya dari order yang harga modalnya sudah diisi.</p><div class="lb-wrap" id="perDiv"></div></div>
+    <div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Komplain / revisi / retur</h3><div id="komp"></div></div>
+    <div class="card"><h3 style="font-size:14px;font-weight:700;margin-bottom:6px">Per order</h3><p style="font-size:11px;color:rgba(3,69,67,.5);margin-bottom:8px">Urut dari laba terkecil. ⚠ = harga modal belum diisi (laba belum akurat).</p><div class="lb-wrap" id="perOrder"></div></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META } from './js/utils.js'
+  import { daftarPenjahit } from './js/penjahit.js'
+
+  const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const namaDiv = d => DIVISION_META[d] ? `${DIVISION_META[d].icon} ${DIVISION_META[d].label}` : (d || '—')
+  const PENYEBAB = { desain: 'Desain', produksi: 'Produksi / jahit', bahan: 'Bahan', cs: 'Salah input CS', customer: 'Customer berubah pikiran', ekspedisi: 'Ekspedisi', lain: 'Lainnya' }
+  let semua = []
+
+  requireAuth(async p => {
+    if (p.role !== 'owner') { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const now = new Date(); document.getElementById('bulan').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const lS = await getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))
+    lS.docs.forEach(d => document.getElementById('fLok').insertAdjacentHTML('beforeend', `<option value="${esc(d.id)}">${esc(d.data().nama)}</option>`))
+    document.getElementById('bulan').addEventListener('change', muat); document.getElementById('fLok').addEventListener('change', render)
+    muat()
+  })
+
+  async function muat() {
+    const [y, m] = document.getElementById('bulan').value.split('-').map(Number)
+    const s = await getDocs(query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(new Date(y, m - 1, 1))), where('createdAt', '<', Timestamp.fromDate(new Date(y, m, 1))))).catch(() => ({ docs: [] }))
+    semua = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => !['cancelled', 'draft'].includes(o.status)).map(o => {
+      const jual = Number(o.totalPrice) || 0, modal = Number(o.hargaModal) || 0
+      const upah = daftarPenjahit(o).reduce((t, x) => t + (Number(x.upah) || 0), 0)
+      const biaya = (o.biayaLain || []).reduce((t, b) => t + (Number(b.jumlah) || 0), 0)
+      const komp = (o.komplain || []).reduce((t, k) => t + (Number(k.biaya) || 0), 0)
+      return { o, jual, modal, upah, biaya, komp, laba: jual - modal - upah - biaya - komp, tanpaModal: !modal && jual > 0 }
+    })
+    render()
+  }
+
+  const tampil = () => { const l = document.getElementById('fLok').value; return semua.filter(x => !l || x.o.lokasiId === l) }
+  function render() {
+    const t = tampil(), lengkap = t.filter(x => !x.tanpaModal), jml = (k, a = t) => a.reduce((s, x) => s + x[k], 0)
+    // Laba & margin hanya dari order yang modalnya sudah diisi (supaya tidak menyesatkan)
+    const laba = jml('laba', lengkap), jualL = jml('jual', lengkap)
+    document.getElementById('kartu').innerHTML = [
+      ['Omzet (semua order)', rp(jml('jual'))], ['Modal', rp(jml('modal'))], ['Upah penjahit', rp(jml('upah'))], ['Biaya lain + komplain', rp(jml('biaya') + jml('komp'))],
+      [`Laba bersih (${lengkap.length} order bermodal)`, `<span style="color:${laba >= 0 ? '#059669' : '#b91c1c'}">${rp(laba)}</span>`], ['Margin', jualL ? Math.round(laba / jualL * 100) + '%' : '—'],
+    ].map(([l, v]) => `<div class="lb-k"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('') + (t.some(x => x.tanpaModal) ? `<div class="lb-k" style="border-color:#fde68a"><div class="l">⚠ Modal belum diisi</div><div class="v" style="color:#b45309">${t.filter(x => x.tanpaModal).length} order</div></div>` : '')
+
+    const per = {}
+    t.forEach(x => { const d = x.o.division || ''; const r = per[d] = per[d] || { d, n: 0, jual: 0, modal: 0, upah: 0, biaya: 0, komp: 0, laba: 0, tanpa: 0, nk: 0, jualL: 0 }
+      r.n++; ['jual', 'modal', 'upah', 'biaya', 'komp'].forEach(k => { r[k] += x[k] }); if (x.tanpaModal) r.tanpa++; else { r.laba += x.laba; r.jualL += x.jual } r.nk += (x.o.komplain || []).length })
+    const rows = Object.values(per).sort((a, b) => b.laba - a.laba), maks = Math.max(1, ...rows.map(r => Math.abs(r.laba)))
+    document.getElementById('perDiv').innerHTML = rows.length ? `<table class="lb"><thead><tr><th>Divisi</th><th class="r">Order</th><th class="r">Omzet</th><th class="r">Modal</th><th class="r">Upah</th><th class="r">Biaya + komplain</th><th class="r">Laba*</th><th class="r">Margin*</th><th style="width:90px"></th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><b>${esc(namaDiv(r.d))}</b>${r.tanpa ? `<div style="font-size:10px;color:#b45309">⚠ ${r.tanpa} modal belum diisi</div>` : ''}</td><td class="r">${r.n}</td><td class="r">${rp(r.jual)}</td><td class="r">${rp(r.modal)}</td><td class="r">${rp(r.upah)}</td><td class="r">${rp(r.biaya + r.komp)}</td>
+        <td class="r" style="font-weight:800;color:${r.laba >= 0 ? '#059669' : '#b91c1c'}">${r.jualL ? rp(r.laba) : '—'}</td><td class="r">${r.jualL ? Math.round(r.laba / r.jualL * 100) + '%' : '—'}</td><td><div class="bar" style="width:${Math.round(Math.abs(r.laba) / maks * 100)}%;${r.laba < 0 ? 'background:#b91c1c' : ''}"></div></td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">Belum ada order.</p>'
+
+    const k = t.flatMap(x => (x.o.komplain || []).map(c => ({ ...c, o: x.o })))
+    const hit = (key, lbl) => { const m = {}; k.forEach(c => { const v = c[key] || ''; (m[v] = m[v] || { n: 0, b: 0 }); m[v].n++; m[v].b += Number(c.biaya) || 0 }); return Object.entries(m).sort((a, b) => b[1].n - a[1].n).map(([v, x]) => `<span style="display:inline-block;background:rgba(3,69,67,.06);border-radius:999px;padding:3px 10px;margin:2px;font-size:12px">${esc(lbl(v))}: <b>${x.n}×</b>${x.b ? ' · ' + rp(x.b) : ''}</span>`).join('') }
+    document.getElementById('komp').innerHTML = k.length ? `
+      <div style="font-size:12px;margin-bottom:6px"><b>${k.length}</b> komplain/revisi di ${new Set(k.map(c => c.o.id)).size} order (${Math.round(new Set(k.map(c => c.o.id)).size / Math.max(1, t.length) * 100)}% order) · belum selesai: <b style="color:#b91c1c">${k.filter(c => !c.selesai).length}</b></div>
+      <div style="margin-bottom:4px"><span style="font-size:11px;color:rgba(3,69,67,.5)">Penyebab:</span> ${hit('penyebab', v => PENYEBAB[v] || v)}</div>
+      <div><span style="font-size:11px;color:rgba(3,69,67,.5)">Divisi:</span> ${(() => { const m = {}; k.forEach(c => { m[c.o.division] = (m[c.o.division] || 0) + 1 }); return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([d, n]) => `<span style="display:inline-block;background:rgba(3,69,67,.06);border-radius:999px;padding:3px 10px;margin:2px;font-size:12px">${esc(namaDiv(d))}: <b>${n}×</b></span>`).join('') })()}</div>
+      <table class="lb" style="margin-top:10px"><thead><tr><th>Tgl</th><th>Order</th><th>Jenis · penyebab</th><th>Keterangan</th><th class="r">Biaya</th><th>Status</th></tr></thead><tbody>
+      ${k.map(c => `<tr><td>${esc(c.tgl)}</td><td><a href="order.html?id=${esc(c.o.id)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(c.o.orderNumber)}</a></td><td>${esc(c.jenis)} · ${esc(PENYEBAB[c.penyebab] || c.penyebab)}</td><td>${esc(c.ket)}</td><td class="r">${c.biaya ? rp(c.biaya) : '—'}</td><td>${c.selesai ? '✓' : '<b style="color:#b91c1c">belum</b>'}</td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.4)">Tidak ada komplain bulan ini 🎉</p>'
+
+    document.getElementById('perOrder').innerHTML = t.length ? `<table class="lb"><thead><tr><th>Order</th><th>Divisi</th><th class="r">Jual</th><th class="r">Modal</th><th class="r">Upah</th><th class="r">Biaya</th><th class="r">Laba</th></tr></thead><tbody>
+      ${[...t].sort((a, b) => a.laba - b.laba).map(x => `<tr><td><a href="order.html?id=${esc(x.o.id)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(x.o.orderNumber)}</a><div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(x.o.customerName)}</div></td><td>${esc(namaDiv(x.o.division))}</td>
+        <td class="r">${rp(x.jual)}</td><td class="r">${x.tanpaModal ? '<span style="color:#b45309">⚠</span>' : rp(x.modal)}</td><td class="r">${x.upah ? rp(x.upah) : '—'}</td><td class="r">${x.biaya + x.komp ? rp(x.biaya + x.komp) : '—'}</td><td class="r" style="font-weight:800;color:${x.laba >= 0 ? '#059669' : '#b91c1c'}">${x.tanpaModal ? '—' : rp(x.laba)}</td></tr>`).join('')}</tbody></table>` : ''
+  }
+
+  window.unduh = () => {
+    const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+    const sheet = rows => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); Object.keys(ws).forEach(a => { if (a[0] !== '!' && typeof ws[a].v === 'number' && ws[a].v >= 1000) ws[a].z = fmt }); return ws }
+    const t = tampil(), per = {}
+    t.forEach(x => { const d = namaDiv(x.o.division); const r = per[d] = per[d] || { Divisi: d, Order: 0, Omzet: 0, Modal: 0, Upah: 0, 'Biaya lain': 0, Komplain: 0, Laba: 0 }; r.Order++; r.Omzet += x.jual; r.Modal += x.modal; r.Upah += x.upah; r['Biaya lain'] += x.biaya; r.Komplain += x.komp; r.Laba += x.laba })
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, sheet(Object.values(per)), 'Per Divisi')
+    XLSX.utils.book_append_sheet(wb, sheet(t.map(x => ({ 'No. Order': x.o.orderNumber, Customer: x.o.customerName, Divisi: namaDiv(x.o.division), Lokasi: x.o.lokasiNama || '', Jual: x.jual, Modal: x.modal, Upah: x.upah, 'Biaya lain': x.biaya, Komplain: x.komp, Laba: x.laba, Catatan: x.tanpaModal ? 'modal belum diisi' : '' }))), 'Per Order')
+    XLSX.utils.book_append_sheet(wb, sheet(t.flatMap(x => (x.o.komplain || []).map(c => ({ Tanggal: c.tgl, 'No. Order': x.o.orderNumber, Divisi: namaDiv(x.o.division), Jenis: c.jenis, Penyebab: PENYEBAB[c.penyebab] || c.penyebab, Keterangan: c.ket, Biaya: Number(c.biaya) || 0, Oleh: c.oleh, Selesai: c.selesai ? 'ya' : 'belum' })))), 'Komplain')
+    XLSX.writeFile(wb, `Laba_Komplain_${document.getElementById('bulan').value}.xlsx`)
+  }
+</script>
+</body>
+</html>

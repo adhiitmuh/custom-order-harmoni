@@ -870,6 +870,8 @@
             </div>
           </div>` : ''}
 
+          ${kartuBiayaKomplain()}
+
           <!-- Status -->
           ${canEdit ? `
           <div class="card" style="margin-bottom:14px">
@@ -2469,6 +2471,81 @@
       fromUid: prof.id, fromName: prof.name, fromRole: prof.role, preview: `Harga diubah saat edit order (${LABEL_TIER[tier]})`, priceApprovalTier: tier, createdAt: now }).catch(() => {})
     return { priceApprovalStatus: 'pending', priceApprovalTier: tier, priceApprovalReason: alasan.trim(), priceApprovalBy: null, priceApprovalByName: null, priceApprovalAt: null,
       ...(['pending', 'draft'].includes(order.status) ? { status: 'pending-approval' } : {}) }
+  }
+
+  // ── Biaya lain & komplain/revisi per order (untuk Laporan Laba & Komplain) ──
+  const PENYEBAB = { desain: 'Desain', produksi: 'Produksi / jahit', bahan: 'Bahan', cs: 'Salah input CS', customer: 'Customer berubah pikiran', ekspedisi: 'Ekspedisi', lain: 'Lainnya' }
+  const JENIS_KOMPLAIN = { revisi: 'Revisi', komplain: 'Komplain', retur: 'Retur / ganti barang' }
+  function kartuBiayaKomplain() {
+    const prof = getProfile()
+    if (!prof || prof.role === 'divisi') return ''
+    const bolehBiaya = ['owner', 'manager', 'cs'].includes(prof.role)
+    const biaya = order.biayaLain || [], komp = order.komplain || []
+    const tB = biaya.reduce((t, b) => t + (Number(b.jumlah) || 0), 0), tK = komp.reduce((t, k) => t + (Number(k.biaya) || 0), 0)
+    const upah = daftarPenjahit(order).reduce((t, x) => t + (Number(x.upah) || 0), 0)
+    const laba = (order.totalPrice || 0) - (order.hargaModal || 0) - upah - tB - tK
+    return `<div class="card" style="margin-bottom:14px">
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">Biaya Lain & Komplain</h2>
+      <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:4px">💸 Biaya lain (ongkir, bahan tambahan, dll)</div>
+      ${biaya.map((b, i) => `<div style="display:flex;justify-content:space-between;gap:6px;font-size:12.5px;padding:3px 0"><span>${esc(b.ket)} <span style="color:rgba(3,69,67,.4);font-size:10px">${esc(b.oleh || '')}</span></span><span style="white-space:nowrap">${fmtCurrency(b.jumlah)}${prof.role === 'owner' ? ` <button onclick="hapusBiaya(${i})" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}</span></div>`).join('') || '<div style="font-size:12px;color:rgba(3,69,67,.35)">—</div>'}
+      ${bolehBiaya ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="tambahBiaya()">+ Biaya</button>` : ''}
+      <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin:12px 0 4px">⚠ Komplain / revisi / retur</div>
+      ${komp.map((k, i) => `<div style="font-size:12px;padding:5px 0;border-top:1px solid rgba(3,69,67,.06)">
+          <b>${esc(JENIS_KOMPLAIN[k.jenis] || k.jenis)}</b> · ${esc(PENYEBAB[k.penyebab] || k.penyebab)} ${k.biaya ? '· ' + fmtCurrency(k.biaya) : ''}
+          <span style="float:right">${k.selesai ? '<span style="color:#059669;font-weight:700">✓ selesai</span>' : `<button class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:11px" onclick="selesaiKomplain(${i})">Tandai selesai</button>`}</span>
+          <div style="color:rgba(3,69,67,.55)">${esc(k.ket || '')} <span style="font-size:10px">— ${esc(k.oleh || '')}, ${esc(k.tgl || '')}</span></div></div>`).join('') || '<div style="font-size:12px;color:rgba(3,69,67,.35)">—</div>'}
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="tambahKomplain()">+ Catat komplain/revisi</button>
+      ${prof.role === 'owner' ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(3,69,67,.15);font-size:12px;line-height:1.7">
+        <div style="display:flex;justify-content:space-between"><span>Harga jual</span><b>${fmtCurrency(order.totalPrice || 0)}</b></div>
+        <div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Modal${order.hargaModal ? '' : ' (belum diisi)'}</span><span>${fmtCurrency(order.hargaModal || 0)}</span></div>
+        ${upah ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Upah penjahit</span><span>${fmtCurrency(upah)}</span></div>` : ''}
+        ${tB ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya lain</span><span>${fmtCurrency(tB)}</span></div>` : ''}
+        ${tK ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya komplain</span><span>${fmtCurrency(tK)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;font-weight:800;color:${laba >= 0 ? '#059669' : '#b91c1c'}"><span>Laba bersih</span><span>${fmtCurrency(laba)}</span></div></div>` : ''}
+    </div>`
+  }
+  const tglHariIni = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+  window.tambahBiaya = async function() {
+    const ket = prompt('Biaya apa? (cth: Ongkir JNE ke customer, tambahan bahan)'); if (!ket?.trim()) return
+    const jumlah = parsePrice(prompt('Jumlah (Rp):') || ''); if (!jumlah) return
+    const prof = getProfile()
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { biayaLain: arrayUnion({ id: Date.now().toString(36), ket: ket.trim(), jumlah, oleh: prof.name, tgl: tglHariIni() }), updatedAt: Timestamp.now() })
+      await loadOrder(prof)
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
+  }
+  window.hapusBiaya = async function(i) {
+    if (!confirm('Hapus biaya ini?')) return
+    const list = [...(order.biayaLain || [])]; list.splice(i, 1)
+    await updateDoc(doc(db, 'orders', orderId), { biayaLain: list, updatedAt: Timestamp.now() }); await loadOrder(getProfile())
+  }
+  window.tambahKomplain = function() {
+    document.getElementById('kompModal')?.remove()
+    const m = document.createElement('div'); m.id = 'kompModal'
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
+    m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:400px;width:100%;padding:18px">
+      <div style="font-weight:800;font-size:15px;margin-bottom:10px">Catat komplain / revisi</div>
+      <div class="form-group"><label>Jenis</label><select id="kJenis">${Object.entries(JENIS_KOMPLAIN).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Penyebab</label><select id="kPenyebab">${Object.entries(PENYEBAB).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Keterangan</label><input type="text" id="kKet" placeholder="cth: logo miring, ukuran L kekecilan 5 pcs"></div>
+      <div class="form-group"><label>Biaya perbaikan (Rp, opsional)</label><input type="text" inputmode="numeric" id="kBiaya" oninput="this.value=fmtInputPrice(this.value)"></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('kompModal').remove()">Batal</button><button class="btn btn-primary" style="flex:1" onclick="simpanKomplain()">Simpan</button></div></div>`
+    document.body.appendChild(m)
+  }
+  window.simpanKomplain = async function() {
+    const ket = document.getElementById('kKet').value.trim()
+    if (!ket) { alert('Isi keterangan'); return }
+    const prof = getProfile()
+    const k = { id: Date.now().toString(36), jenis: document.getElementById('kJenis').value, penyebab: document.getElementById('kPenyebab').value, ket,
+      biaya: parsePrice(document.getElementById('kBiaya').value) || 0, oleh: prof.name, tgl: tglHariIni(), selesai: false }
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { komplain: arrayUnion(k), adaKomplain: true, updatedAt: Timestamp.now() })
+      document.getElementById('kompModal').remove(); await loadOrder(prof)
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
+  }
+  window.selesaiKomplain = async function(i) {
+    const list = (order.komplain || []).map((k, j) => j === i ? { ...k, selesai: true, selesaiOleh: getProfile().name, selesaiTgl: tglHariIni() } : k)
+    await updateDoc(doc(db, 'orders', orderId), { komplain: list, updatedAt: Timestamp.now() }); await loadOrder(getProfile())
   }
 
   window.approvePrice = async function() {
