@@ -122,6 +122,8 @@
   const TANPA = '_tanpa'
   const kunciLok = p => p.lokasiId || TANPA
 
+  const atasNama = {}
+  const pemilikRek = p => p.rekeningNo && atasNama[p.rekeningNo] ? ' (a.n. ' + atasNama[p.rekeningNo] + ')' : ''
   let profile, lokasiList = [], bulanData = [], tunaiSemua = [], laporan = [], waAdi = '', bulanDimuat = ''
   const isOwner = () => profile.role === 'owner'
 
@@ -132,7 +134,8 @@
     const [lSnap, sSnap] = await Promise.all([
       getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] })),
       getDoc(doc(db, 'settings', 'pengajuan_upah')).catch(() => null),
-    ])
+      getDoc(doc(db, 'settings', 'payment_info')).catch(() => null),
+    ]).then(r => { const pi = r[2]?.exists?.() ? r[2].data() : {}; (pi.banks || []).forEach(b => { if (b.accountNumber) atasNama[String(b.accountNumber).replace(/\s+/g, '')] = b.accountHolder || '' }); return r })
     lokasiList = lSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.nama).localeCompare(String(b.nama)))
     waAdi = sSnap?.exists?.() ? (sSnap.data().waOwner || '') : ''
     const sel = document.getElementById('lokasi')
@@ -325,7 +328,10 @@
       const semua = bln.filter(p => labelRekening(p) === k), hari = semua.filter(p => p.tgl === tgl)
       const h = hari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), b = semua.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
       tH += h; tB += b; nB += semua.length
-      return `<tr><td style="font-weight:700">${esc(k)}</td><td class="r">${h ? rp(h) : '–'}</td><td class="r">${rp(b)}</td><td class="r">${semua.length}</td></tr>`
+      const perDiv = {}
+      semua.forEach(p => { const d = p.division || ''; perDiv[d] = (perDiv[d] || 0) + (Number(p.jumlah) || 0) })
+      const rinciDiv = Object.entries(perDiv).sort((a, b) => b[1] - a[1]).map(([d, v]) => `${esc(namaDiv(d))} ${rp(v)}`).join(' · ')
+      return `<tr><td><b>${esc(k)}</b><span style="color:rgba(3,69,67,.5);font-size:11px">${esc(pemilikRek(semua[0]))}</span><div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:2px">${rinciDiv}</div></td><td class="r">${h ? rp(h) : '–'}</td><td class="r">${rp(b)}</td><td class="r">${semua.length}</td></tr>`
     }).join('')
     document.getElementById('perRekening').innerHTML = `<thead><tr><th>Rekening / metode</th><th class="r">Tanggal ini</th><th class="r">Bulan ini</th><th class="r">Transaksi</th></tr></thead><tbody>${baris}</tbody>
       <tfoot><tr style="font-weight:800"><td>Total</td><td class="r">${rp(tH)}</td><td class="r">${rp(tB)}</td><td class="r">${nB}</td></tr></tfoot>`
@@ -420,6 +426,18 @@
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rekap.length ? rekap : [{ Tanggal: 'Tidak ada data' }]), 'Rekap Harian')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(perDiv.length ? perDiv : [{ Tanggal: 'Tidak ada data' }]), 'Per Divisi')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(perRek.length ? perRek : [{ Tanggal: 'Tidak ada data' }]), 'Per Rekening')
+    // Rekening × Divisi (bulan ini, lokasi terpilih)
+    const dataRD = bulanData.filter(p => cocokLok(p, lokasiDipilih()))
+    const divRD = [...new Set(dataRD.map(p => p.division || ''))]
+    const rekRD = [...new Set(dataRD.map(labelRekening))].sort()
+    const rd = rekRD.map(k => {
+      const row = { 'Rekening / metode': k + pemilikRek(dataRD.find(p => labelRekening(p) === k) || {}) }
+      divRD.forEach(d => { row[namaDiv(d)] = dataRD.filter(p => labelRekening(p) === k && (p.division || '') === d).reduce((t, p) => t + (Number(p.jumlah) || 0), 0) })
+      row.Total = dataRD.filter(p => labelRekening(p) === k).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+      return row
+    })
+    if (rd.length) { const tot = { 'Rekening / metode': 'TOTAL' }; [...divRD.map(namaDiv), 'Total'].forEach(m => { tot[m] = rd.reduce((t, r) => t + (r[m] || 0), 0) }); rd.push({}, tot) }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rd.length ? rd : [{ 'Rekening / metode': 'Tidak ada data' }]), 'Rekening x Divisi')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rinci.length ? rinci : [{ Tanggal: 'Tidak ada data' }]), 'Rincian Pembayaran')
     XLSX.writeFile(wb, `Laporan_Harian_CO_${bulanDimuat}${lokasiDipilih() ? '_' + namaLok(lokasiDipilih()).replace(/\s+/g, '_') : ''}.xlsx`)
   }
