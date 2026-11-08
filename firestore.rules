@@ -168,6 +168,47 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['dicekAt', 'dicekOleh']);
       allow update, delete: if isOwner();
     }
+    // ── Kas Cabang: tutup kasir harian & kas keluar/masuk per lokasi ──
+    // Penerima/penyetuju: Owner, Kepala Cabang (manager) lokasi itu, atau pemilik cabang (Pemilik Divisi pemilik lokasi).
+    function lokasiData(id) { return get(/databases/$(database)/documents/lokasi/$(id)).data; }
+    function lokasiSaya() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('lokasiId', ''); }
+    function penerimaCabang(lokId) {
+      return isOwner()
+        || (isStaffAuth() && role() == 'manager' && lokasiSaya() == lokId)
+        || (isDivisiOwner() && lokasiData(lokId).get('divisiPemilik', '') == userDivisi());
+    }
+    function bacaCabang(lokId) { return (isStaffAuth() && !isDivisiOwner()) || penerimaCabang(lokId); }
+    function kunciTerima() { return ['status', 'diterimaNama', 'diterimaUid', 'diterimaAt', 'catatanKembali']; }
+    match /tutup_kasir_cabang/{id} {
+      allow read: if bacaCabang(resource.data.lokasiId);
+      allow create: if isStaffAuth() && role() in ['owner', 'manager', 'cs']
+        && request.resource.data.status == 'menunggu' && id == request.resource.data.lokasiId + '_' + request.resource.data.tgl;
+      // Penginput boleh mengubah selama belum diterima (status kembali 'menunggu'); penerima memutuskan
+      allow update: if isOwner()
+        || (isStaffAuth() && role() in ['manager', 'cs'] && resource.data.status in ['menunggu', 'dikembalikan']
+            && request.resource.data.status == 'menunggu' && request.resource.data.lokasiId == resource.data.lokasiId)
+        || (penerimaCabang(resource.data.lokasiId) && resource.data.status == 'menunggu'
+            && request.resource.data.status in ['diterima', 'dikembalikan']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(kunciTerima()));
+      allow delete: if isOwner();
+    }
+    function batasKas() {
+      let p = /databases/$(database)/documents/settings/kas_cabang;
+      return exists(p) ? get(p).data.get('batasApproval', 500000) : 500000;
+    }
+    function kunciSetuju() { return ['status', 'disetujuiNama', 'disetujuiUid', 'disetujuiAt']; }
+    match /kas_cabang/{id} {
+      allow read: if bacaCabang(resource.data.lokasiId);
+      allow create: if isStaffAuth() && role() in ['owner', 'manager', 'cs']
+        && request.resource.data.olehUid == request.auth.uid && request.resource.data.jumlah is number
+        && (request.resource.data.status == 'menunggu' || (request.resource.data.status == 'ok'
+            && (request.resource.data.jenis == 'masuk' || request.resource.data.jumlah < batasKas()
+                || penerimaCabang(request.resource.data.lokasiId))));
+      allow update: if isOwner()
+        || (penerimaCabang(resource.data.lokasiId) && resource.data.status == 'menunggu'
+            && request.resource.data.status in ['ok', 'ditolak'] && request.resource.data.diff(resource.data).affectedKeys().hasOnly(kunciSetuju()));
+      allow delete: if isOwner() || (isStaffAuth() && resource.data.olehUid == request.auth.uid && resource.data.status == 'menunggu');
+    }
     // Catatan follow up order ulang per customer (id = nomor WA) — staf non pemilik divisi
     match /customer_followup/{id} {
       allow read, write: if isStaffAuth() && !isDivisiOwner();

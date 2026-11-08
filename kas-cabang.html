@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Kas Cabang — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261103b">
+  <style>
+    .kc-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    .kc-bar select, .kc-bar input { width:auto; font-size:13px; }
+    .tab { border:1.5px solid rgba(3,69,67,.15); background:#fff; border-radius:999px; padding:7px 14px; font-size:12.5px; font-weight:700; cursor:pointer; }
+    .tab.on { background:var(--green); color:#fff; border-color:var(--green); }
+    .blok { border:1px solid rgba(3,69,67,.1); border-radius:12px; padding:12px 14px; margin-bottom:12px; background:#fff; }
+    .blok h3 { font-size:13px; font-weight:800; color:var(--green); margin:0 0 8px; }
+    .g { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px 12px; }
+    .g .form-group { margin:0; }
+    .rw { display:grid; grid-template-columns:1fr 150px 30px; gap:6px; margin-bottom:6px; align-items:center; }
+    .cek { font-size:12px; border-radius:8px; padding:6px 10px; margin-top:8px; }
+    .cek.ok { background:#ecfdf5; color:#047857; } .cek.warn { background:#fffbeb; color:#b45309; } .cek.bad { background:#fef2f2; color:#b91c1c; }
+    table.kc { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.kc th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:7px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; }
+    table.kc td { padding:7px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.kc td.r, table.kc th.r { text-align:right; white-space:nowrap; }
+    table.kc tfoot td { font-weight:800; border-top:1.5px solid rgba(3,69,67,.15); }
+    .wrap { overflow-x:auto; }
+    .st { font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; display:inline-block; }
+    .st-menunggu { background:#fffbeb; color:#b45309; } .st-diterima { background:#ecfdf5; color:#047857; } .st-dikembalikan { background:#fef2f2; color:#b91c1c; }
+    .hitung td { padding:3px 0; font-size:13px; } .hitung td:last-child { text-align:right; white-space:nowrap; } .hitung tr.t td { border-top:1px solid #cbd5e1; font-weight:800; padding-top:6px; }
+    @media (max-width:600px) { .rw { grid-template-columns:1fr 110px 26px; } }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:14px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">KAS CABANG</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Kas Cabang</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Tutup kasir harian per cabang (penjualan Olsera + Custom Order), kas keluar/masuk, dan laporan. Sistem <b>minim tunai</b>: laci hanya berisi modal kembalian, tunai lebih wajib disetor ke rekening cabang.</p>
+    </div>
+    <div class="kc-bar">
+      <select id="lokasi"></select>
+      <button class="tab on" data-tab="tutup" onclick="pilihTab('tutup')">🧾 Tutup Kasir</button>
+      <button class="tab" data-tab="kas" onclick="pilihTab('kas')">💸 Kas Keluar/Masuk</button>
+      <button class="tab" data-tab="laporan" onclick="pilihTab('laporan')">📊 Laporan</button>
+      <button class="btn btn-ghost btn-sm" id="btnAtur" style="display:none" onclick="aturKas()">⚙ Atur</button>
+    </div>
+    <div id="menunggu"></div>
+
+    <!-- TUTUP KASIR -->
+    <div id="tab-tutup">
+      <div id="formTutup">
+        <div class="blok">
+          <div class="g">
+            <div class="form-group"><label>Tanggal</label><input type="date" id="tTgl"></div>
+            <div class="form-group"><label>Modal awal laci (kembalian)</label><input type="text" inputmode="numeric" id="tModal" class="ang"></div>
+          </div>
+          <div id="tCatatanKembali"></div>
+        </div>
+        <div class="blok">
+          <h3>1 · Penjualan Olsera (barang ready) — salin dari struk "Penutupan Penjualan"</h3>
+          <div class="g">
+            <div class="form-group"><label>Resi (jumlah transaksi)</label><input type="text" inputmode="numeric" id="oResi"></div>
+            <div class="form-group"><label>Total penjualan</label><input type="text" inputmode="numeric" id="oTotal" class="ang"></div>
+            <div class="form-group"><label>Penjualan tunai</label><input type="text" inputmode="numeric" id="oTunai" class="ang"></div>
+            <div class="form-group"><label>Retur / pembatalan tunai</label><input type="text" inputmode="numeric" id="oRetur" class="ang"></div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.55);margin:10px 0 6px">QRIS & transfer (langsung masuk rekening)</div>
+          <div id="oNon"></div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="tambahNon()">+ Metode</button>
+          <div class="g" style="margin-top:10px"><div class="form-group"><label>Kas Masuk-Keluar di struk Olsera</label><input type="text" id="oKmk" placeholder="cth: -150.000"></div></div>
+          <div id="cekOlsera"></div>
+        </div>
+        <div class="blok">
+          <h3>2 · Custom Order hari ini (otomatis dari pembayaran yang dicatat)</h3>
+          <div id="coRingkas" style="font-size:13px"></div>
+        </div>
+        <div class="blok">
+          <h3>3 · Kas keluar/masuk dari laci hari ini</h3>
+          <div id="kasLaci" style="font-size:13px"></div>
+          <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Catat di tab <b>💸 Kas Keluar/Masuk</b> (pilih "Laci"). Totalnya harus sama dengan Kas Masuk-Keluar di struk Olsera.</p>
+          <div id="cekKmk"></div>
+          <div class="form-group" id="wAlasanKmk" style="display:none;margin-top:8px"><label>Alasan beda dengan struk *</label><input type="text" id="tAlasanKmk"></div>
+        </div>
+        <div class="blok">
+          <h3>4 · Setor tunai ke rekening & hitung laci</h3>
+          <div id="setoran"></div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="tambahSetor()">+ Setoran</button>
+          <div class="g" style="margin-top:10px"><div class="form-group"><label>Uang fisik di laci sekarang</label><input type="text" inputmode="numeric" id="tFisik" class="ang" placeholder="hitung uangnya"></div></div>
+          <table class="hitung" style="width:100%;max-width:460px;margin-top:10px"><tbody id="hitung"></tbody></table>
+          <div id="cekLaci"></div>
+          <div class="form-group" id="wAlasanSelisih" style="display:none;margin-top:8px"><label>Alasan selisih *</label><input type="text" id="tAlasanSelisih"></div>
+        </div>
+        <div class="blok">
+          <h3>5 · Foto struk Olsera</h3>
+          <input type="file" id="tFoto" accept="image/*"><div id="tFotoLama" style="font-size:11px;margin-top:4px"></div>
+        </div>
+        <button class="btn btn-primary" id="btnSimpanTutup" onclick="simpanTutup()">💾 Simpan & kirim ke Kepala Cabang</button>
+        <div id="infoTutup" style="font-size:12px;margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- KAS -->
+    <div id="tab-kas" style="display:none">
+      <div class="blok" id="formKas">
+        <h3>Catat kas keluar / masuk cabang</h3>
+        <div class="g">
+          <div class="form-group"><label>Tanggal</label><input type="date" id="kTgl"></div>
+          <div class="form-group"><label>Jenis</label><select id="kJenis" onchange="isiKategori()"><option value="keluar">Keluar</option><option value="masuk">Masuk</option></select></div>
+          <div class="form-group"><label>Kategori</label><select id="kKat"></select></div>
+          <div class="form-group"><label>Jumlah</label><input type="text" inputmode="numeric" id="kJumlah" class="ang"></div>
+          <div class="form-group"><label>Dari / ke</label><select id="kVia"></select></div>
+          <div class="form-group"><label>Keterangan</label><input type="text" id="kKet" placeholder="cth: beli benang 5 roll"></div>
+        </div>
+        <div class="form-group" style="margin-top:8px"><label>Bukti / nota (foto)</label><input type="file" id="kBukti" accept="image/*"></div>
+        <div id="kInfoBatas" style="font-size:11px;color:#b45309;margin:4px 0"></div>
+        <button class="btn btn-primary btn-sm" onclick="simpanKas()">Simpan</button>
+      </div>
+      <div class="kc-bar"><input type="month" id="kBulan"></div>
+      <div class="wrap" id="daftarKas"></div>
+    </div>
+
+    <!-- LAPORAN -->
+    <div id="tab-laporan" style="display:none">
+      <div class="kc-bar"><input type="month" id="lBulan"><button class="btn btn-ghost btn-sm" onclick="unduhExcel()">⬇ Excel</button></div>
+      <div id="lapRingkas" class="g" style="margin-bottom:12px"></div>
+      <div class="blok"><h3>Per hari</h3><div class="wrap" id="lapHarian"></div></div>
+      <div class="blok"><h3>Per rekening (uang masuk ke rekening bulan ini)</h3><div class="wrap" id="lapRekening"></div></div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db, storage } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs, getDoc, doc, setDoc, addDoc, updateDoc, deleteDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
+  import { compressImage } from './js/image.js'
+  import { labelRekening, grupMetode, tglLokal, banksCustomer, qrisCustomer, kunciQris } from './js/pembayaran.js?v=20261108a'
+
+  const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const ang = v => parseInt(String(v || '').replace(/\D/g, '')) || 0
+  const angTanda = v => { const s = String(v || '').trim(); const n = ang(s); return /^[-−]/.test(s) ? -n : n }
+  const fmt = el => { const n = ang(el.value); el.value = n ? n.toLocaleString('id-ID') : '' }
+  const KAT_KELUAR = ['Bahan / perlengkapan produksi', 'Operasional toko', 'Transport / bensin', 'Makan / konsumsi', 'Ongkir', 'Gaji / upah harian', 'Kasbon karyawan', 'Lainnya']
+  const KAT_MASUK = ['Tambahan modal kembalian', 'Penjualan lain', 'Lainnya']
+  let profile, lokasiList = [], info = {}, aturan = { modalKembalian: 300000, batasApproval: 500000, toleransi: 5000 }
+  let tutupList = [], kasList = [], bayarHari = [], editId = null
+
+  const lokasiId = () => document.getElementById('lokasi').value
+  const lokasiNama = () => lokasiList.find(l => l.id === lokasiId())?.nama || ''
+  const bolehTerima = lokId => profile.role === 'owner' || (profile.role === 'manager' && profile.lokasiId === lokId)
+    || (profile.role === 'divisi' && lokasiList.find(l => l.id === lokId)?.divisiPemilik === profile.divisi)
+  const bolehInput = () => ['owner', 'manager', 'cs'].includes(profile.role)
+
+  requireAuth(async p => {
+    profile = p
+    if (!['owner', 'manager', 'cs', 'divisi'].includes(p.role)) { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    const [lS, iS, aS] = await Promise.all([getDocs(collection(db, 'lokasi')), getDoc(doc(db, 'settings', 'payment_info')), getDoc(doc(db, 'settings', 'kas_cabang')).catch(() => null)])
+    lokasiList = lS.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.aktif !== false)
+    info = iS.exists() ? iS.data() : {}
+    if (aS?.exists?.()) aturan = { ...aturan, ...aS.data() }
+    let boleh = lokasiList
+    if (p.role === 'divisi') boleh = lokasiList.filter(l => l.divisiPemilik === p.divisi)
+    else if (p.role !== 'owner' && p.lokasiId) boleh = lokasiList.filter(l => l.id === p.lokasiId)
+    const sel = document.getElementById('lokasi')
+    sel.innerHTML = boleh.map(l => `<option value="${esc(l.id)}">${esc(l.nama)}</option>`).join('')
+    if (!boleh.length) { document.querySelector('main').insertAdjacentHTML('beforeend', '<div class="card">Belum ada cabang untuk akun ini.</div>'); return }
+    if (p.role === 'owner') document.getElementById('btnAtur').style.display = ''
+    if (!bolehInput()) { document.getElementById('formTutup').style.display = 'none'; document.getElementById('formKas').style.display = 'none' }
+    const hari = tglLokal(), bln = hari.slice(0, 7)
+    document.getElementById('tTgl').value = hari; document.getElementById('kTgl').value = hari
+    document.getElementById('kBulan').value = bln; document.getElementById('lBulan').value = bln
+    document.querySelectorAll('.ang').forEach(el => el.addEventListener('input', () => { fmt(el); hitung() }))
+    ;['oKmk', 'tAlasanKmk', 'tAlasanSelisih'].forEach(id => document.getElementById(id).addEventListener('input', hitung))
+    sel.addEventListener('change', muatSemua)
+    document.getElementById('tTgl').addEventListener('change', muatTutup)
+    document.getElementById('kBulan').addEventListener('change', muatKas)
+    document.getElementById('lBulan').addEventListener('change', muatLaporan)
+    document.getElementById('kJumlah').addEventListener('input', () => { const n = ang(document.getElementById('kJumlah').value); document.getElementById('kInfoBatas').textContent = document.getElementById('kJenis').value === 'keluar' && n >= aturan.batasApproval ? `≥ ${rp(aturan.batasApproval)} → perlu persetujuan Kepala Cabang / pemilik cabang` : '' })
+    isiKategori(); muatSemua()
+  })
+
+  window.pilihTab = t => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t))
+    ;['tutup', 'kas', 'laporan'].forEach(x => { document.getElementById('tab-' + x).style.display = x === t ? '' : 'none' })
+    if (t === 'laporan') muatLaporan()
+  }
+  async function muatSemua() { isiVia(); await Promise.all([muatTutup(), muatKas(), muatMenunggu()]) }
+
+  // ── Pilihan rekening/QRIS cabang ──
+  function opsiRekening() {
+    const lok = lokasiId()
+    const banks = banksCustomer(info, { lokasiId: lok }).filter(b => b.accountNumber).map(b => ({ v: 'rek@' + String(b.accountNumber).replace(/\s+/g, ''), l: `${b.bankName} ${b.accountNumber}${b.accountHolder ? ' a.n. ' + b.accountHolder : ''}` }))
+    const qr = qrisCustomer(info, { lokasiId: lok }).map((q, i) => ({ v: 'qris@' + kunciQris(q, i), l: /qris/i.test(kunciQris(q, i)) ? kunciQris(q, i) : `QRIS ${kunciQris(q, i)}` }))
+    return [...qr, ...banks]
+  }
+  function isiVia() {
+    document.getElementById('kVia').innerHTML = `<option value="laci">Laci (tunai)</option>` + opsiRekening().filter(o => o.v.startsWith('rek@')).map(o => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')
+  }
+  window.isiKategori = () => { document.getElementById('kKat').innerHTML = (document.getElementById('kJenis').value === 'keluar' ? KAT_KELUAR : KAT_MASUK).map(k => `<option>${k}</option>`).join('') }
+
+  // ── TUTUP KASIR ──
+  const barisNon = (v = '', j = '') => `<div class="rw"><select class="nonV">${opsiRekening().map(o => `<option value="${esc(o.v)}" ${o.v === v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}<option value="lain" ${v === 'lain' ? 'selected' : ''}>Lainnya</option></select><input type="text" inputmode="numeric" class="nonJ ang2" value="${j ? Number(j).toLocaleString('id-ID') : ''}" placeholder="0"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove();hitung()">✕</button></div>`
+  const barisSetor = (v = '', j = '', b = '') => `<div class="rw"><select class="setV">${opsiRekening().filter(o => o.v.startsWith('rek@')).map(o => `<option value="${esc(o.v)}" ${o.v === v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select><input type="text" inputmode="numeric" class="setJ ang2" value="${j ? Number(j).toLocaleString('id-ID') : ''}" placeholder="0"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove();hitung()">✕</button>
+    <input type="file" accept="image/*" class="setB" style="grid-column:1/-1;font-size:11px" data-lama="${esc(b)}">${b ? `<a href="${esc(b)}" target="_blank" style="font-size:11px;grid-column:1/-1">bukti tersimpan</a>` : ''}</div>`
+  window.tambahNon = () => { document.getElementById('oNon').insertAdjacentHTML('beforeend', barisNon()); pasangAng() }
+  window.tambahSetor = () => { document.getElementById('setoran').insertAdjacentHTML('beforeend', barisSetor()); pasangAng() }
+  const pasangAng = () => document.querySelectorAll('.ang2').forEach(el => { if (!el._p) { el._p = 1; el.addEventListener('input', () => { fmt(el); hitung() }) } })
+
+  async function muatTutup() {
+    const lok = lokasiId(), tgl = document.getElementById('tTgl').value
+    const [tS, bS] = await Promise.all([
+      getDoc(doc(db, 'tutup_kasir_cabang', `${lok}_${tgl}`)).catch(() => null),
+      bolehInput() ? getDocs(query(collection(db, 'pembayaran'), where('tgl', '==', tgl))).catch(() => ({ docs: [] })) : { docs: [] },
+    ])
+    bayarHari = bS.docs.map(d => d.data()).filter(p => (p.lokasiId || '') === lok)
+    const t = tS?.exists?.() ? tS.data() : null
+    editId = t ? `${lok}_${tgl}` : null
+    const isi = (id, v) => { document.getElementById(id).value = v ? Number(v).toLocaleString('id-ID') : '' }
+    const o = t?.olsera || {}
+    isi('tModal', t ? t.modal : aturan.modalKembalian); isi('oTotal', o.total); isi('oTunai', o.tunai); isi('oRetur', o.retur); isi('tFisik', t?.fisik)
+    document.getElementById('oResi').value = o.resi || ''
+    document.getElementById('oKmk').value = o.kmk ? (o.kmk < 0 ? '-' : '') + Math.abs(o.kmk).toLocaleString('id-ID') : ''
+    document.getElementById('oNon').innerHTML = (o.non || []).map(x => barisNon(x.v, x.jumlah)).join('') || barisNon()
+    document.getElementById('setoran').innerHTML = (t?.setoran || []).map(x => barisSetor(x.v, x.jumlah, x.bukti)).join('')
+    document.getElementById('tAlasanKmk').value = t?.alasanKmk || ''; document.getElementById('tAlasanSelisih').value = t?.alasanSelisih || ''
+    document.getElementById('tFotoLama').innerHTML = t?.foto ? `<a href="${esc(t.foto)}" target="_blank">foto struk tersimpan</a>` : ''
+    document.getElementById('tCatatanKembali').innerHTML = t?.status === 'dikembalikan' ? `<div class="cek bad">↩ Dikembalikan ${esc(t.diterimaNama || '')}: ${esc(t.catatanKembali || '')} — perbaiki lalu simpan lagi.</div>` : t?.status === 'diterima' ? `<div class="cek ok">✓ Sudah diterima ${esc(t.diterimaNama || '')} — tidak bisa diubah lagi.</div>` : t ? `<div class="cek warn">⏳ Sudah dikirim, menunggu diterima Kepala Cabang / pemilik cabang. Masih bisa diubah.</div>` : ''
+    const kunci = t?.status === 'diterima'
+    document.querySelectorAll('#formTutup input, #formTutup select, #formTutup button').forEach(el => { if (el.id !== 'tTgl') el.disabled = kunci })
+    pasangAng(); hitung()
+  }
+
+  function dataCo() {
+    const per = {}
+    let tunai = 0
+    // Kunci sama dengan pilihan rekening (rek@nomor / qris@nama) supaya laporan per rekening tidak dobel
+    bayarHari.forEach(p => { const j = Number(p.jumlah) || 0; if (grupMetode(p.metode) === 'tunai') { tunai += j; return }
+      const v = grupMetode(p.metode) === 'qris' ? (p.rekeningNo ? 'qris@' + p.rekeningNo : 'qris') : (p.rekeningNo ? 'rek@' + p.rekeningNo : labelRekening(p))
+      const r = per[v] = per[v] || { v, label: opsiRekening().find(o => o.v === v)?.l || labelRekening(p), jumlah: 0 }; r.jumlah += j })
+    return { tunai, non: Object.values(per), n: bayarHari.length, total: bayarHari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0) }
+  }
+  const kasLaciHari = tgl => kasList.filter(k => k.tgl === tgl && k.via === 'laci' && k.status !== 'ditolak')
+
+  window.hitung = function hitung() {
+    const tgl = document.getElementById('tTgl').value
+    const modal = ang(document.getElementById('tModal').value), oTunai = ang(document.getElementById('oTunai').value), oRetur = ang(document.getElementById('oRetur').value)
+    const oTotal = ang(document.getElementById('oTotal').value), oKmk = angTanda(document.getElementById('oKmk').value)
+    const non = [...document.querySelectorAll('#oNon .rw')].map(r => ({ v: r.querySelector('.nonV').value, jumlah: ang(r.querySelector('.nonJ').value) })).filter(x => x.jumlah)
+    const setor = [...document.querySelectorAll('#setoran .rw')].map(r => ({ v: r.querySelector('.setV').value, jumlah: ang(r.querySelector('.setJ').value) })).filter(x => x.jumlah)
+    const co = dataCo(), kl = kasLaciHari(tgl)
+    const kasNet = kl.reduce((t, k) => t + (k.jenis === 'masuk' ? 1 : -1) * (Number(k.jumlah) || 0), 0)
+    const tSetor = setor.reduce((t, x) => t + x.jumlah, 0), tNon = non.reduce((t, x) => t + x.jumlah, 0)
+    // Cek struk Olsera: tunai + non tunai = total penjualan
+    const cekO = document.getElementById('cekOlsera')
+    cekO.innerHTML = oTotal ? (Math.abs(oTunai + tNon - oTotal) < 1 ? `<div class="cek ok">✓ Tunai + QRIS/transfer = total penjualan ${rp(oTotal)}</div>` : `<div class="cek warn">⚠ Tunai ${rp(oTunai)} + QRIS/transfer ${rp(tNon)} = ${rp(oTunai + tNon)}, beda ${rp(oTunai + tNon - oTotal)} dari total ${rp(oTotal)} di struk</div>`) : ''
+    document.getElementById('coRingkas').innerHTML = co.n ? `<div>${co.n} pembayaran · total <b>${rp(co.total)}</b></div><div>💵 Tunai <b>${rp(co.tunai)}</b>${co.non.map(x => ` · ${esc(x.label)} <b>${rp(x.jumlah)}</b>`).join('')}</div>` : '<span style="color:rgba(3,69,67,.45)">Belum ada pembayaran custom order di cabang ini pada tanggal ini.</span>'
+    document.getElementById('kasLaci').innerHTML = kl.length ? kl.map(k => `<div>${k.jenis === 'masuk' ? '➕' : '➖'} ${esc(k.kategori)} — ${esc(k.ket || '')} <b>${rp(k.jumlah)}</b>${k.status === 'menunggu' ? ' <span class="st st-menunggu">menunggu</span>' : ''}</div>`).join('') + `<div style="margin-top:4px">Bersih: <b>${rp(kasNet)}</b></div>` : '<span style="color:rgba(3,69,67,.45)">Tidak ada kas laci hari ini.</span>'
+    const bedaKmk = document.getElementById('oKmk').value.trim() !== '' && Math.abs(kasNet - oKmk) >= 1
+    document.getElementById('cekKmk').innerHTML = document.getElementById('oKmk').value.trim() === '' ? '' : bedaKmk ? `<div class="cek warn">⚠ Struk Olsera ${rp(oKmk)}, dicatat di aplikasi ${rp(kasNet)} — beda ${rp(kasNet - oKmk)}</div>` : '<div class="cek ok">✓ Sama dengan struk Olsera</div>'
+    document.getElementById('wAlasanKmk').style.display = bedaKmk ? '' : 'none'
+    const seharusnya = modal + oTunai - oRetur + co.tunai + kasNet - tSetor
+    const fisikStr = document.getElementById('tFisik').value.trim(), fisik = ang(fisikStr)
+    const selisih = fisikStr ? fisik - seharusnya : 0
+    document.getElementById('hitung').innerHTML = [
+      ['Modal awal laci', modal], ['+ Tunai Olsera', oTunai], ['− Retur tunai Olsera', -oRetur], ['+ Tunai Custom Order', co.tunai], ['± Kas laci', kasNet], ['− Disetor ke rekening', -tSetor],
+    ].map(([l, v]) => `<tr><td>${l}</td><td>${rp(v)}</td></tr>`).join('') + `<tr class="t"><td>Seharusnya di laci</td><td>${rp(seharusnya)}</td></tr>` + (fisikStr ? `<tr><td>Uang fisik</td><td>${rp(fisik)}</td></tr><tr class="t"><td>Selisih</td><td style="color:${Math.abs(selisih) < 1 ? '#047857' : '#b91c1c'}">${Math.abs(selisih) < 1 ? '✓ pas' : rp(selisih)}</td></tr>` : '')
+    const lebih = (fisikStr ? fisik : seharusnya) - modal
+    document.getElementById('cekLaci').innerHTML = lebih > aturan.toleransi ? `<div class="cek bad">⚠ Tunai di laci ${rp(lebih)} lebih dari modal kembalian — setor ke rekening cabang (tambah "Setoran" + foto bukti).</div>` : '<div class="cek ok">✓ Laci hanya berisi modal kembalian</div>'
+    const butuhAlasan = fisikStr && Math.abs(selisih) >= 1
+    document.getElementById('wAlasanSelisih').style.display = butuhAlasan ? '' : 'none'
+    window._tk = { modal, olsera: { resi: ang(document.getElementById('oResi').value), total: oTotal, tunai: oTunai, retur: oRetur, non, kmk: oKmk }, co, kasNet, setor, seharusnya, fisik: fisikStr ? fisik : null, selisih, bedaKmk, butuhAlasan, lebih }
+  }
+
+  async function unggah(file, folder) {
+    const f = await compressImage(file); const r = sRef(storage, `${folder}/${Date.now()}_${(f.name || 'foto.jpg').replace(/[^\w.-]/g, '_')}`)
+    await uploadBytes(r, f); return getDownloadURL(r)
+  }
+  window.simpanTutup = async () => {
+    hitung(); const t = window._tk, info2 = document.getElementById('infoTutup')
+    if (t.fisik == null) { alert('Isi uang fisik di laci'); return }
+    if (t.bedaKmk && !document.getElementById('tAlasanKmk').value.trim()) { alert('Isi alasan Kas Masuk-Keluar beda dengan struk'); return }
+    if (t.butuhAlasan && !document.getElementById('tAlasanSelisih').value.trim()) { alert('Isi alasan selisih laci'); return }
+    const btn = document.getElementById('btnSimpanTutup'); btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      const rows = [...document.querySelectorAll('#setoran .rw')]
+      const setoran = []
+      for (const r of rows) { const j = ang(r.querySelector('.setJ').value); if (!j) continue; const f = r.querySelector('.setB').files[0]; setoran.push({ v: r.querySelector('.setV').value, label: r.querySelector('.setV').selectedOptions[0]?.textContent || '', jumlah: j, bukti: f ? await unggah(f, 'kas_cabang') : (r.querySelector('.setB').dataset.lama || '') }) }
+      if (t.lebih > aturan.toleransi && !confirm(`Masih ada tunai ${rp(t.lebih)} di atas modal kembalian yang belum disetor. Tetap simpan?`)) { btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang'; return }
+      const f = document.getElementById('tFoto').files[0]
+      const lama = editId ? (await getDoc(doc(db, 'tutup_kasir_cabang', editId))).data() : null
+      const tgl = document.getElementById('tTgl').value, lok = lokasiId()
+      const data = { lokasiId: lok, lokasiNama: lokasiNama(), tgl, modal: t.modal, olsera: { ...t.olsera, non: t.olsera.non.map(x => ({ ...x, label: opsiRekening().find(o => o.v === x.v)?.l || x.v })) },
+        co: t.co, kasLaci: t.kasNet, setoran, seharusnya: t.seharusnya, fisik: t.fisik, selisih: t.selisih,
+        alasanKmk: t.bedaKmk ? document.getElementById('tAlasanKmk').value.trim() : '', alasanSelisih: t.butuhAlasan ? document.getElementById('tAlasanSelisih').value.trim() : '',
+        foto: f ? await unggah(f, 'kas_cabang') : (lama?.foto || ''), status: 'menunggu',
+        dibuatOlehUid: lama?.dibuatOlehUid || profile.id, dibuatOleh: lama?.dibuatOleh || profile.name, diubahAt: Timestamp.now(), ...(lama ? {} : { dibuatAt: Timestamp.now() }) }
+      await setDoc(doc(db, 'tutup_kasir_cabang', `${lok}_${tgl}`), data)
+      info2.innerHTML = '<div class="cek ok">✓ Tersimpan & dikirim ke Kepala Cabang / pemilik cabang</div>'
+      await muatTutup(); muatMenunggu()
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) } finally { btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang' }
+  }
+
+  // ── Menunggu diterima / disetujui (Kepala Cabang, pemilik cabang, Owner) ──
+  async function muatMenunggu() {
+    const lok = lokasiId(), el = document.getElementById('menunggu')
+    if (!bolehTerima(lok)) { el.innerHTML = ''; return }
+    const [tS, kS] = await Promise.all([
+      getDocs(query(collection(db, 'tutup_kasir_cabang'), where('lokasiId', '==', lok), where('status', '==', 'menunggu'))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'kas_cabang'), where('lokasiId', '==', lok), where('status', '==', 'menunggu'))).catch(() => ({ docs: [] })),
+    ])
+    const tk = tS.docs.map(d => ({ id: d.id, ...d.data() })), ks = kS.docs.map(d => ({ id: d.id, ...d.data() }))
+    if (!tk.length && !ks.length) { el.innerHTML = ''; return }
+    el.innerHTML = `<div class="blok" style="border-color:#fde68a;background:#fffbeb"><h3 style="color:#b45309">⏳ Perlu diperiksa (${tk.length + ks.length})</h3>
+      ${tk.map(t => `<div style="padding:8px 0;border-top:1px solid #fde68a;font-size:13px"><b>Tutup kasir ${esc(t.tgl)}</b> oleh ${esc(t.dibuatOleh)} · Olsera ${rp(t.olsera?.total)} · Custom Order ${rp(t.co?.total)} · setor ${rp((t.setoran || []).reduce((s, x) => s + x.jumlah, 0))} · laci ${rp(t.fisik)} ${Math.abs(t.selisih || 0) >= 1 ? `<b style="color:#b91c1c">selisih ${rp(t.selisih)}</b> (${esc(t.alasanSelisih)})` : '✓ pas'}
+        ${t.foto ? ` · <a href="${esc(t.foto)}" target="_blank">struk</a>` : ''}${(t.setoran || []).filter(x => x.bukti).map(x => ` · <a href="${esc(x.bukti)}" target="_blank">bukti setor</a>`).join('')}
+        <div style="margin-top:6px;display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="putusTutup('${t.id}','diterima')">✓ Terima</button><button class="btn btn-ghost btn-sm" onclick="putusTutup('${t.id}','dikembalikan')">↩ Kembalikan</button><button class="btn btn-ghost btn-sm" onclick="lihatTutup('${esc(t.tgl)}')">Lihat</button></div></div>`).join('')}
+      ${ks.map(k => `<div style="padding:8px 0;border-top:1px solid #fde68a;font-size:13px"><b>Kas keluar ${esc(k.tgl)}</b> ${esc(k.kategori)} — ${esc(k.ket)} <b>${rp(k.jumlah)}</b> (${esc(k.viaLabel || k.via)}) oleh ${esc(k.olehNama)}${k.bukti ? ` · <a href="${esc(k.bukti)}" target="_blank">bukti</a>` : ''}
+        <div style="margin-top:6px;display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="putusKas('${k.id}','ok')">✓ Setujui</button><button class="btn btn-ghost btn-sm" onclick="putusKas('${k.id}','ditolak')">✕ Tolak</button></div></div>`).join('')}</div>`
+  }
+  window.lihatTutup = tgl => { pilihTab('tutup'); document.getElementById('tTgl').value = tgl; muatTutup() }
+  window.putusTutup = async (id, status) => {
+    let catatan = ''
+    if (status === 'dikembalikan') { catatan = prompt('Apa yang perlu diperbaiki?'); if (!catatan) return }
+    await updateDoc(doc(db, 'tutup_kasir_cabang', id), { status, catatanKembali: catatan, diterimaNama: profile.name, diterimaUid: profile.id, diterimaAt: Timestamp.now() })
+    muatMenunggu(); muatTutup()
+  }
+  window.putusKas = async (id, status) => {
+    await updateDoc(doc(db, 'kas_cabang', id), { status, disetujuiNama: profile.name, disetujuiUid: profile.id, disetujuiAt: Timestamp.now() })
+    muatMenunggu(); muatKas()
+  }
+
+  // ── KAS KELUAR / MASUK ──
+  async function muatKas() {
+    const lok = lokasiId(), bln = document.getElementById('kBulan').value
+    const s = await getDocs(query(collection(db, 'kas_cabang'), where('lokasiId', '==', lok))).catch(() => ({ docs: [] }))
+    kasList = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.tgl.localeCompare(a.tgl))
+    const l = kasList.filter(k => k.tgl.startsWith(bln))
+    const tot = j => l.filter(k => k.jenis === j && k.status !== 'ditolak').reduce((t, k) => t + (Number(k.jumlah) || 0), 0)
+    document.getElementById('daftarKas').innerHTML = l.length ? `<table class="kc"><thead><tr><th>Tgl</th><th>Kategori · keterangan</th><th>Dari/ke</th><th class="r">Masuk</th><th class="r">Keluar</th><th>Status</th><th></th></tr></thead><tbody>
+      ${l.map(k => `<tr><td>${esc(k.tgl)}</td><td>${esc(k.kategori)}<div style="font-size:11px;color:rgba(3,69,67,.55)">${esc(k.ket)} · ${esc(k.olehNama)}${k.bukti ? ` · <a href="${esc(k.bukti)}" target="_blank">bukti</a>` : ''}</div></td><td style="font-size:12px">${esc(k.viaLabel || k.via)}</td>
+        <td class="r" style="color:#047857">${k.jenis === 'masuk' ? rp(k.jumlah) : ''}</td><td class="r" style="color:#b91c1c">${k.jenis === 'keluar' ? rp(k.jumlah) : ''}</td>
+        <td><span class="st st-${k.status === 'ok' ? 'diterima' : k.status === 'ditolak' ? 'dikembalikan' : 'menunggu'}">${k.status === 'ok' ? 'ok' : k.status}</span></td>
+        <td>${(profile.role === 'owner' || (k.olehUid === profile.id && k.status === 'menunggu')) ? `<button class="btn btn-ghost btn-sm" style="padding:1px 8px" onclick="hapusKas('${k.id}')">✕</button>` : ''}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">Total</td><td class="r">${rp(tot('masuk'))}</td><td class="r">${rp(tot('keluar'))}</td><td colspan="2"></td></tr></tfoot></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">Belum ada kas bulan ini.</p>'
+    hitung()
+  }
+  window.simpanKas = async () => {
+    const jumlah = ang(document.getElementById('kJumlah').value), ket = document.getElementById('kKet').value.trim()
+    if (!jumlah || !ket) { alert('Isi jumlah & keterangan'); return }
+    const jenis = document.getElementById('kJenis').value, via = document.getElementById('kVia').value
+    const f = document.getElementById('kBukti').files[0]
+    if (jenis === 'keluar' && !f && !confirm('Belum ada foto nota/bukti. Tetap simpan?')) return
+    try {
+      const perlu = jenis === 'keluar' && jumlah >= aturan.batasApproval && !bolehTerima(lokasiId())
+      await addDoc(collection(db, 'kas_cabang'), { lokasiId: lokasiId(), lokasiNama: lokasiNama(), tgl: document.getElementById('kTgl').value, jenis, kategori: document.getElementById('kKat').value, ket, jumlah,
+        via, viaLabel: document.getElementById('kVia').selectedOptions[0]?.textContent || via, bukti: f ? await unggah(f, 'kas_cabang') : '', status: perlu ? 'menunggu' : 'ok',
+        olehUid: profile.id, olehNama: profile.name, at: Timestamp.now() })
+      ;['kJumlah', 'kKet', 'kBukti'].forEach(id => { document.getElementById(id).value = '' }); document.getElementById('kInfoBatas').textContent = ''
+      muatKas(); muatMenunggu()
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
+  }
+  window.hapusKas = async id => { if (!confirm('Hapus catatan kas ini?')) return; await deleteDoc(doc(db, 'kas_cabang', id)); muatKas() }
+
+  // ── LAPORAN ──
+  let lap = null
+  async function muatLaporan() {
+    const lok = lokasiId(), bln = document.getElementById('lBulan').value
+    const [tS, kS] = await Promise.all([
+      getDocs(query(collection(db, 'tutup_kasir_cabang'), where('lokasiId', '==', lok))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'kas_cabang'), where('lokasiId', '==', lok))).catch(() => ({ docs: [] })),
+    ])
+    const tk = tS.docs.map(d => d.data()).filter(t => t.tgl.startsWith(bln)).sort((a, b) => a.tgl.localeCompare(b.tgl))
+    const ks = kS.docs.map(d => d.data()).filter(k => k.tgl.startsWith(bln) && k.status !== 'ditolak')
+    const sum = (a, f) => a.reduce((t, x) => t + (Number(f(x)) || 0), 0)
+    const nonO = t => sum(t.olsera?.non || [], x => x.jumlah), nonC = t => sum(t.co?.non || [], x => x.jumlah), setor = t => sum(t.setoran || [], x => x.jumlah)
+    const kasKeluar = ks.filter(k => k.jenis === 'keluar')
+    lap = { tk, ks, bln }
+    const kartu = (l, v, c = '') => `<div class="blok" style="margin:0"><div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.5);text-transform:uppercase">${l}</div><div style="font-size:18px;font-weight:800;${c}">${v}</div></div>`
+    document.getElementById('lapRingkas').innerHTML = [
+      kartu('Penjualan Olsera', rp(sum(tk, t => t.olsera?.total))), kartu('Custom Order masuk', rp(sum(tk, t => t.co?.total))), kartu('Kas keluar', rp(sum(kasKeluar, k => k.jumlah)), 'color:#b91c1c'),
+      kartu('Disetor ke rekening', rp(sum(tk, setor))), kartu('Total selisih laci', rp(sum(tk, t => t.selisih)), sum(tk, t => t.selisih) ? 'color:#b91c1c' : 'color:#047857'),
+      kartu('Belum diterima', tk.filter(t => t.status !== 'diterima').length + ' hari', tk.some(t => t.status !== 'diterima') ? 'color:#b45309' : ''),
+    ].join('')
+    document.getElementById('lapHarian').innerHTML = tk.length ? `<table class="kc"><thead><tr><th>Tgl</th><th class="r">Olsera</th><th class="r">Olsera tunai</th><th class="r">Olsera QRIS/TF</th><th class="r">CO tunai</th><th class="r">CO QRIS/TF</th><th class="r">Kas laci</th><th class="r">Setor</th><th class="r">Laci</th><th class="r">Selisih</th><th>Status</th></tr></thead><tbody>
+      ${tk.map(t => `<tr><td><a href="#" onclick="lihatTutup('${esc(t.tgl)}');return false" style="color:var(--green);font-weight:700">${esc(t.tgl)}</a><div style="font-size:10px;color:rgba(3,69,67,.5)">${esc(t.dibuatOleh)}</div></td><td class="r">${rp(t.olsera?.total)}</td><td class="r">${rp(t.olsera?.tunai)}</td><td class="r">${rp(nonO(t))}</td><td class="r">${rp(t.co?.tunai)}</td><td class="r">${rp(nonC(t))}</td><td class="r">${rp(t.kasLaci)}</td><td class="r">${rp(setor(t))}</td><td class="r">${rp(t.fisik)}</td>
+        <td class="r" style="color:${Math.abs(t.selisih || 0) >= 1 ? '#b91c1c' : '#047857'}">${Math.abs(t.selisih || 0) >= 1 ? rp(t.selisih) : '✓'}</td><td><span class="st st-${t.status}">${t.status}</span>${t.diterimaNama ? `<div style="font-size:10px;color:rgba(3,69,67,.5)">${esc(t.diterimaNama)}</div>` : ''}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="r">${rp(sum(tk, t => t.olsera?.total))}</td><td class="r">${rp(sum(tk, t => t.olsera?.tunai))}</td><td class="r">${rp(sum(tk, nonO))}</td><td class="r">${rp(sum(tk, t => t.co?.tunai))}</td><td class="r">${rp(sum(tk, nonC))}</td><td class="r">${rp(sum(tk, t => t.kasLaci))}</td><td class="r">${rp(sum(tk, setor))}</td><td></td><td class="r">${rp(sum(tk, t => t.selisih))}</td><td></td></tr></tfoot></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">Belum ada tutup kasir bulan ini.</p>'
+    // Per rekening: QRIS/transfer Olsera + Custom Order + setoran tunai − kas keluar dari rekening
+    const per = {}
+    const label = {}
+    const add = (x, kol, v) => { const k = x.v || x.label; if (x.label && !label[k]) label[k] = x.label; const r = per[k] = per[k] || { olsera: 0, co: 0, setor: 0, keluar: 0, masuk: 0 }; r[kol] += Number(v) || 0 }
+    tk.forEach(t => { (t.olsera?.non || []).forEach(x => add(x, 'olsera', x.jumlah)); (t.co?.non || []).forEach(x => add(x, 'co', x.jumlah)); (t.setoran || []).forEach(x => add(x, 'setor', x.jumlah)) })
+    ks.filter(k => k.via !== 'laci').forEach(k => add({ v: k.via, label: k.viaLabel }, k.jenis === 'keluar' ? 'keluar' : 'masuk', k.jumlah))
+    opsiRekening().forEach(o => { label[o.v] = o.l })
+    lap.label = label
+    lap.per = per
+    const rows = Object.entries(per).sort((a, b) => a[0].localeCompare(b[0]))
+    document.getElementById('lapRekening').innerHTML = rows.length ? `<table class="kc"><thead><tr><th>Rekening / QRIS</th><th class="r">Olsera</th><th class="r">Custom Order</th><th class="r">Setor tunai</th><th class="r">Kas masuk</th><th class="r">Kas keluar</th><th class="r">Bersih</th></tr></thead><tbody>
+      ${rows.map(([k, r]) => `<tr><td>${esc(label[k] || k)}</td><td class="r">${rp(r.olsera)}</td><td class="r">${rp(r.co)}</td><td class="r">${rp(r.setor)}</td><td class="r">${rp(r.masuk)}</td><td class="r" style="color:#b91c1c">${rp(r.keluar)}</td><td class="r" style="font-weight:800">${rp(r.olsera + r.co + r.setor + r.masuk - r.keluar)}</td></tr>`).join('')}</tbody></table>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Cocokkan angka "Bersih" dengan mutasi rekening lewat menu 🔎 Cocokkan Mutasi.</p>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">—</p>'
+  }
+
+  window.unduhExcel = () => {
+    if (!lap) return
+    const fmtRp = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+    const sheet = rows => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); Object.keys(ws).forEach(a => { if (a[0] !== '!' && typeof ws[a].v === 'number' && Math.abs(ws[a].v) >= 100) ws[a].z = fmtRp }); return ws }
+    const s = (a, f) => a.reduce((t, x) => t + (Number(f(x)) || 0), 0)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, sheet(lap.tk.map(t => ({ Tanggal: t.tgl, Resi: t.olsera?.resi || '', 'Olsera total': t.olsera?.total || 0, 'Olsera tunai': t.olsera?.tunai || 0, 'Olsera QRIS/TF': s(t.olsera?.non || [], x => x.jumlah), 'Retur tunai': t.olsera?.retur || 0,
+      'CO total': t.co?.total || 0, 'CO tunai': t.co?.tunai || 0, 'Kas laci': t.kasLaci || 0, Setor: s(t.setoran || [], x => x.jumlah), 'Modal awal': t.modal || 0, Seharusnya: t.seharusnya || 0, 'Uang fisik': t.fisik || 0, Selisih: t.selisih || 0,
+      'Alasan selisih': t.alasanSelisih || '', 'Ditutup oleh': t.dibuatOleh || '', Status: t.status, 'Diterima oleh': t.diterimaNama || '' }))), 'Tutup Kasir')
+    XLSX.utils.book_append_sheet(wb, sheet(Object.entries(lap.per || {}).map(([k, r]) => ({ 'Rekening / QRIS': lap.label?.[k] || k, Olsera: r.olsera, 'Custom Order': r.co, 'Setor tunai': r.setor, 'Kas masuk': r.masuk, 'Kas keluar': r.keluar, Bersih: r.olsera + r.co + r.setor + r.masuk - r.keluar }))), 'Per Rekening')
+    XLSX.utils.book_append_sheet(wb, sheet(lap.ks.map(k => ({ Tanggal: k.tgl, Jenis: k.jenis, Kategori: k.kategori, Keterangan: k.ket, Jumlah: k.jumlah, 'Dari/ke': k.viaLabel || k.via, Status: k.status, Oleh: k.olehNama, Bukti: k.bukti || '' }))), 'Kas Keluar-Masuk')
+    XLSX.utils.book_append_sheet(wb, sheet(lap.tk.flatMap(t => [...(t.olsera?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Olsera', Rekening: x.label || x.v, Jumlah: x.jumlah })), ...(t.co?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Custom Order', Rekening: x.label, Jumlah: x.jumlah })), ...(t.setoran || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Setor tunai', Rekening: x.label || x.v, Jumlah: x.jumlah }))])), 'Uang ke Rekening')
+    XLSX.writeFile(wb, `Kas_Cabang_${lokasiNama().replace(/\s+/g, '_')}_${lap.bln}.xlsx`)
+  }
+
+  window.aturKas = async () => {
+    const m = prompt('Modal kembalian di laci (Rp):', aturan.modalKembalian); if (m === null) return
+    const b = prompt('Kas keluar perlu persetujuan bila ≥ (Rp):', aturan.batasApproval); if (b === null) return
+    aturan = { ...aturan, modalKembalian: ang(m), batasApproval: ang(b) }
+    await setDoc(doc(db, 'settings', 'kas_cabang'), aturan); muatTutup()
+  }
+</script>
+<script type="module" src="js/tempel-file.js"></script>
+</body>
+</html>

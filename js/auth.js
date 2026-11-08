@@ -407,6 +407,10 @@ export function renderSidebar(profile) {
     ${profile.role === 'owner' || isDivisi || ['manager', 'cs'].includes(profile.role) ? `
     <div class="sidebar-section">
       <div class="sidebar-label">KEUANGAN</div>
+      ${['owner', 'manager', 'cs'].includes(profile.role) || isDivisi ? `
+      <a href="kas-cabang.html" class="sidebar-link ${page==='kas-cabang.html'?'active':''}">
+        <span class="icon">🧾</span>Kas Cabang
+      </a>` : ''}
       ${['owner', 'manager', 'cs'].includes(profile.role) ? `
       <a href="laporan-harian.html" class="sidebar-link ${page==='laporan-harian.html'?'active':''}">
         <span class="icon">🧾</span>Laporan Harian
