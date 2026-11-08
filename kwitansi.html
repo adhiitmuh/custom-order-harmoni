@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <meta name="theme-color" content="#034543">
+  <title>Kwitansi — Harmoni</title>
+  <style>
+    :root { --g:#034543; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f3f6f4; color:#1f2a2a; }
+    .bar { position:sticky; top:0; background:#fff; border-bottom:1px solid rgba(3,69,67,.1); padding:10px 16px; display:flex; gap:8px; flex-wrap:wrap; z-index:5; }
+    .bar button, .bar a { border:1.5px solid rgba(3,69,67,.2); background:#fff; color:var(--g); border-radius:999px; padding:7px 14px; font-weight:700; font-size:13px; cursor:pointer; text-decoration:none; }
+    .bar .utama { background:var(--g); color:#fff; border-color:var(--g); }
+    .kw { max-width:720px; margin:20px auto; background:#fff; border-radius:14px; padding:32px 36px; position:relative; box-shadow:0 2px 14px rgba(0,0,0,.06); overflow:hidden; }
+    .kw h1 { font-size:22px; letter-spacing:.3em; margin:0; color:var(--g); }
+    .kop { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid var(--g); padding-bottom:12px; margin-bottom:18px; gap:12px; }
+    .kop img { height:38px; }
+    .baris { display:grid; grid-template-columns:150px 1fr; gap:6px; margin:8px 0; font-size:14px; }
+    .baris .l { color:rgba(3,69,67,.6); }
+    .terbilang { background:rgba(3,69,67,.05); border-radius:8px; padding:8px 12px; font-style:italic; }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; }
+    th { text-align:left; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:rgba(3,69,67,.55); border-bottom:1px solid rgba(3,69,67,.15); padding:6px; }
+    td { padding:6px; border-bottom:1px solid rgba(3,69,67,.06); }
+    td.r, th.r { text-align:right; }
+    .jumlah { font-size:24px; font-weight:800; color:var(--g); border:2px solid var(--g); border-radius:10px; padding:8px 16px; display:inline-block; }
+    .cap { position:absolute; right:40px; top:140px; transform:rotate(-14deg); border:4px solid #059669; color:#059669; font-weight:900; font-size:34px; letter-spacing:.12em; padding:4px 18px; border-radius:10px; opacity:.75; }
+    .ttd { display:flex; justify-content:flex-end; margin-top:30px; text-align:center; font-size:13px; }
+    @media print { .bar { display:none; } body { background:#fff; } .kw { box-shadow:none; margin:0; max-width:none; } }
+    @media (max-width:600px) { .kw { padding:20px 16px; margin:10px; } .baris { grid-template-columns:110px 1fr; } .cap { font-size:24px; right:16px; top:110px; } }
+  </style>
+</head>
+<body>
+<div class="bar">
+  <a href="javascript:history.back()">← Kembali</a>
+  <select id="pilih" style="border:1.5px solid rgba(3,69,67,.2);border-radius:999px;padding:6px 10px;font-size:13px"></select>
+  <button class="utama" onclick="window.print()">🖨️ Cetak / Simpan PDF</button>
+  <button onclick="kirimWa()">📱 Kirim teks ke WA</button>
+</div>
+<div class="kw" id="kw"><p>Memuat…</p></div>
+
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { doc, getDoc, getDocs, collection, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META, fmtCurrency } from './js/utils.js'
+  import { labelRekening } from './js/pembayaran.js?v=20261108a'
+
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const SATUAN = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas']
+  function terbilang(n) {
+    n = Math.floor(Math.abs(n))
+    if (n < 12) return SATUAN[n]
+    if (n < 20) return terbilang(n - 10) + ' belas'
+    if (n < 100) return terbilang(Math.floor(n / 10)) + ' puluh ' + terbilang(n % 10)
+    if (n < 200) return 'seratus ' + terbilang(n - 100)
+    if (n < 1000) return terbilang(Math.floor(n / 100)) + ' ratus ' + terbilang(n % 100)
+    if (n < 2000) return 'seribu ' + terbilang(n - 1000)
+    if (n < 1e6) return terbilang(Math.floor(n / 1000)) + ' ribu ' + terbilang(n % 1000)
+    if (n < 1e9) return terbilang(Math.floor(n / 1e6)) + ' juta ' + terbilang(n % 1e6)
+    return terbilang(Math.floor(n / 1e9)) + ' miliar ' + terbilang(n % 1e9)
+  }
+  const rapih = s => s.replace(/\s+/g, ' ').trim().replace(/^./, c => c.toUpperCase())
+  const tglPanjang = t => t ? new Date(t + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+  const id = new URLSearchParams(location.search).get('id')
+  let order, bayar = [], profile
+
+  requireAuth(async p => {
+    profile = p
+    await dataAuthReady
+    const s = await getDoc(doc(db, 'orders', id))
+    if (!s.exists()) { document.getElementById('kw').innerHTML = '<p>Order tidak ditemukan</p>'; return }
+    order = s.data()
+    const b = await getDocs(query(collection(db, 'pembayaran'), where('orderId', '==', id))).catch(() => ({ docs: [] }))
+    bayar = b.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => Number(x.jumlah) > 0).sort((a, c) => (a.tgl || '').localeCompare(c.tgl || ''))
+    const sel = document.getElementById('pilih')
+    sel.innerHTML = `<option value="semua">Kwitansi total (${fmtCurrency(order.depositPaid || 0)})</option>` + bayar.map((x, i) => `<option value="${i}">Pembayaran ${esc(x.tgl)} — ${fmtCurrency(x.jumlah)}</option>`).join('')
+    sel.onchange = render
+    render()
+  })
+
+  function data() {
+    const v = document.getElementById('pilih').value
+    if (v === 'semua') return { jumlah: Number(order.depositPaid) || 0, tgl: bayar.length ? bayar[bayar.length - 1].tgl : '', untuk: 'Pembayaran', no: order.orderNumber, rincian: bayar }
+    const x = bayar[+v]
+    return { jumlah: Number(x.jumlah), tgl: x.tgl, untuk: { dp: 'DP', cicilan: 'Cicilan', pelunasan: 'Pelunasan', lunas: 'Pelunasan' }[x.jenis] || 'Pembayaran', no: `${order.orderNumber}-${+v + 1}`, rincian: [x] }
+  }
+
+  function render() {
+    const d = data(), sisa = (Number(order.totalPrice) || 0) - (Number(order.depositPaid) || 0), lunas = sisa <= 0 && (order.totalPrice || 0) > 0
+    const items = (order.orderItems || []).filter(i => i.name)
+    document.getElementById('kw').innerHTML = `
+      <div class="kop">
+        <div><img src="img/logo-green.png" alt="Harmoni" onerror="this.outerHTML='<b style=&quot;font-size:20px;color:#034543&quot;>HARMONI</b>'"><div style="font-size:11px;color:rgba(3,69,67,.6);margin-top:4px">${esc(order.lokasiNama || 'Harmoni Indonesia')} · ${esc(DIVISION_META[order.division]?.label || '')}</div></div>
+        <div style="text-align:right"><h1>KWITANSI</h1><div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:4px">No. ${esc(d.no)}</div></div>
+      </div>
+      ${lunas ? '<div class="cap">LUNAS</div>' : ''}
+      <div class="baris"><span class="l">Telah terima dari</span><b>${esc(order.customerName)}</b></div>
+      <div class="baris"><span class="l">Uang sejumlah</span><span class="terbilang">${esc(rapih(terbilang(d.jumlah) + ' rupiah'))}</span></div>
+      <div class="baris"><span class="l">Untuk pembayaran</span><span>${esc(d.untuk)} pesanan <b>${esc(order.orderNumber)}</b>${items.length ? ': ' + esc(items.map(i => `${i.name}${i.varian ? ' (' + i.varian + ')' : ''} ${i.qty || ''} pcs`).join(', ')) : ''}</span></div>
+      <table><thead><tr><th>Tanggal</th><th>Metode</th><th class="r">Jumlah</th></tr></thead><tbody>
+        ${d.rincian.map(x => `<tr><td>${esc(tglPanjang(x.tgl))}</td><td>${esc(labelRekening(x))}</td><td class="r">${fmtCurrency(x.jumlah)}</td></tr>`).join('') || `<tr><td colspan="3" style="color:rgba(3,69,67,.5)">—</td></tr>`}
+      </tbody></table>
+      <table style="margin-top:4px"><tbody>
+        <tr><td>Total pesanan</td><td class="r">${fmtCurrency(order.totalPrice || 0)}</td></tr>
+        <tr><td>Sudah dibayar</td><td class="r">${fmtCurrency(order.depositPaid || 0)}</td></tr>
+        <tr><td><b>${lunas ? 'Status' : 'Sisa pembayaran'}</b></td><td class="r"><b style="color:${lunas ? '#059669' : '#b91c1c'}">${lunas ? 'LUNAS' : fmtCurrency(sisa)}</b></td></tr>
+      </tbody></table>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:22px;gap:12px;flex-wrap:wrap">
+        <div class="jumlah">${fmtCurrency(d.jumlah)}</div>
+        <div class="ttd"><div>${esc(order.lokasiNama || 'Makassar')}, ${esc(tglPanjang(d.tgl))}<br>Penerima,<div style="height:56px"></div><b>${esc(profile?.name || 'Harmoni')}</b></div></div>
+      </div>`
+  }
+
+  window.kirimWa = () => {
+    const d = data(), sisa = (Number(order.totalPrice) || 0) - (Number(order.depositPaid) || 0)
+    const teks = [`*KWITANSI HARMONI*`, `No. ${d.no}`, ``, `Telah terima dari: *${order.customerName}*`, `Sejumlah: *${fmtCurrency(d.jumlah)}*`, `(${rapih(terbilang(d.jumlah) + ' rupiah')})`, `Untuk: ${d.untuk} pesanan ${order.orderNumber}`, ``,
+      ...d.rincian.map(x => `• ${tglPanjang(x.tgl)} — ${labelRekening(x)} — ${fmtCurrency(x.jumlah)}`), ``,
+      `Total pesanan: ${fmtCurrency(order.totalPrice || 0)}`, `Sudah dibayar: ${fmtCurrency(order.depositPaid || 0)}`, sisa <= 0 ? `✅ *LUNAS*` : `Sisa: *${fmtCurrency(sisa)}*`, ``, `Terima kasih 🙏 — Harmoni`].join('\n')
+    const no = String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
+    window.open(no.startsWith('62') ? `https://wa.me/${no}?text=${encodeURIComponent(teks)}` : `https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank')
+  }
+</script>
+</body>
+</html>
