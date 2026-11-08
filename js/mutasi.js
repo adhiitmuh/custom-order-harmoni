@@ -53,7 +53,10 @@ export function barisDariTeks(lines, tahun) {
       else if (nom.length >= 3) { debit = nom[nom.length - 3].v; kredit = nom[nom.length - 2].v }
       else kredit = nom[0].v
       const ket = sisa.slice(0, nom[0].idx).replace(/\s{2,}/g, ' ').trim()
-      cur = { tgl: t.tgl, ket, kredit, debit }
+      // Saldo: nominal terakhir tanpa tanda, bila ada ≥2 nominal (BRI tiap baris, BCA akhir hari)
+      const akhir = nom[nom.length - 1]
+      const saldo = nom.length >= 2 && !akhir.tanda ? akhir.v : null
+      cur = { tgl: t.tgl, ket, kredit, debit, saldo }
       hasil.push(cur)
     } else if (cur && line.trim().length < 80 && !/halaman|page \d|^\s*(tanggal|transaction|keterangan|uraian|saldo|total)/i.test(line)) {
       cur.ket = (cur.ket + ' ' + line.replace(/\s{2,}/g, ' ').trim()).trim()
