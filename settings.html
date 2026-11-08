@@ -96,6 +96,17 @@
       </div>
     </div>
 
+    <!-- Cek hasil pengaturan -->
+    <div class="card" style="margin-bottom:20px;border-left:3px solid var(--green)">
+      <h2 style="font-size:15px;font-weight:700;margin-bottom:6px">🔍 Cek: rekening yang muncul</h2>
+      <p style="font-size:12px;color:rgba(3,69,67,.5);margin-bottom:10px">Pilih lokasi & divisi order — lihat rekening/QRIS yang tampil di invoice & pilihan bayar customer, dan rekening tujuan bayar modal ke pemilik divisi.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <select id="cekLok" onchange="cekRekening()" style="width:auto;font-size:13px"></select>
+        <select id="cekDiv" onchange="cekRekening()" style="width:auto;font-size:13px"></select>
+      </div>
+      <div id="cekHasil" style="font-size:13px"></div>
+    </div>
+
     <!-- QRIS -->
     <div class="card" style="margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -237,6 +248,7 @@
   import { requireAuth } from './js/auth.js'
   import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
+  import { banksCustomer, qrisCustomer, banksPemilikDivisi } from './js/pembayaran.js?v=20261107a'
 
   const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
 
@@ -365,7 +377,7 @@
     renderBankList()
     loadPaymentInfo()
     loadCloudBackupList()
-    loadLokasiList().then(() => { populateBankLokasiChecks(); populateQrisLokasiChecks(); renderBankList(); renderQrisList() })
+    loadLokasiList().then(() => { populateBankLokasiChecks(); populateQrisLokasiChecks(); renderBankList(); renderQrisList(); cekRekening() })
   })
 
   async function loadPaymentInfo() {
@@ -461,6 +473,24 @@
   function tampilkanForm(id) {
     const el = document.getElementById(id)
     setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.style.boxShadow = '0 0 0 3px rgba(3,69,67,.25)'; el.style.borderRadius = '12px'; setTimeout(() => { el.style.boxShadow = '' }, 1600) }, 50)
+  }
+
+  window.cekRekening = function() {
+    const lokSel = document.getElementById('cekLok'), divSel = document.getElementById('cekDiv')
+    if (!lokSel.options.length) {
+      lokSel.innerHTML = _lokasiList.map(l => `<option value="${l.id}">${l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏪' : '📍'} ${l.nama}</option>`).join('')
+      divSel.innerHTML = DIVISIONS.map(d => `<option value="${d}">${DIVISION_META[d].icon} ${DIVISION_META[d].label}</option>`).join('')
+    }
+    const lokasiId = lokSel.value, division = divSel.value
+    const bk = banksCustomer(paymentInfo, { lokasiId, division }), qr = qrisCustomer(paymentInfo, { lokasiId, division })
+    const pm = banksPemilikDivisi(paymentInfo, division)
+    const baris = b => `<div style="padding:4px 0">🏦 <b>${b.bankName}</b> <span style="font-family:monospace">${b.accountNumber}</span> <span style="color:rgba(3,69,67,.5)">a.n. ${b.accountHolder || '-'}</span></div>`
+    document.getElementById('cekHasil').innerHTML = `
+      <div style="font-weight:700;color:var(--green);margin-bottom:4px">🧾 Customer membayar ke:</div>
+      ${bk.length ? bk.map(baris).join('') : '<div style="color:#b45309">⚠ Tidak ada rekening — customer hanya melihat tunai/QRIS</div>'}
+      ${qr.map(q => `<div style="padding:4px 0">📱 QRIS ${q.nama || ''}</div>`).join('')}
+      <div style="font-weight:700;color:#7c3aed;margin:10px 0 4px">👤 Modal divisi ini dibayar ke:</div>
+      ${pm.length ? pm.map(baris).join('') : '<div style="color:rgba(3,69,67,.45)">— belum diatur (centang "Rekening Pemilik Divisi" + divisinya)</div>'}`
   }
 
   window.closeBankForm = function() {
@@ -597,6 +627,7 @@
 
   async function savePaymentInfo() {
     await setDoc(doc(db, 'settings', 'payment_info'), paymentInfo, { merge: true })
+    try { cekRekening() } catch {}
   }
 
   function showQrisPreview(url) {
