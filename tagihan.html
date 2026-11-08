@@ -53,6 +53,7 @@
       <button class="tab-st aktif" data-tab="perlu" onclick="pilihTab('perlu')">🔔 Perlu follow up</button>
       <button class="tab-st" data-tab="tunda" onclick="pilihTab('tunda')">⏳ Menunggu / janji bayar</button>
       <button class="tab-st" data-tab="semua" onclick="pilihTab('semua')">Semua belum lunas</button>
+      <button class="tab-st" data-tab="customer" onclick="pilihTab('customer')">👤 Per customer (total)</button>
     </div>
     <div class="tg-bar">
       <input type="search" id="cari" placeholder="🔍 Cari no. order / customer" style="min-width:200px;flex:1">
@@ -68,7 +69,7 @@
   import { requireAuth, dataAuthReady, ordersQuery, canSeeOrder } from './js/auth.js'
   import { getDocs, getDoc, doc, updateDoc, collection, Timestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL } from './js/utils.js'
-  import { statusTagihan, pesanTagihan, linkWaCustomer, HASIL_TAGIH, ULANG_HARI } from './js/tagihan.js?v=20261106'
+  import { statusTagihan, pesanTagihan, pesanTagihanGabung, linkWaCustomer, HASIL_TAGIH, ULANG_HARI } from './js/tagihan.js?v=20261108a'
   import { tglLokal, banksCustomer } from './js/pembayaran.js?v=20261108a'
 
   const APP = 'https://adhiitmuh.github.io/custom-order-harmoni/'
@@ -147,6 +148,7 @@
     ].join('')
     const fd = document.getElementById('fDivisi').value
     renderPerDivisi(fd ? tersaring(true) : semua)
+    if (tab === 'customer') { renderPerCustomer(semua); return }
     const list = (tab === 'perlu' ? perlu : tab === 'tunda' ? tunda : lain)
       .sort((a, b) => a.s.level - b.s.level || b.s.lewat - a.s.lewat || b.s.umur - a.s.umur)
     const el = document.getElementById('daftar')
@@ -174,6 +176,44 @@
         </div>
       </div>`
     }).join('')
+  }
+
+  // ── Per customer: semua nota belum lunas dengan nomor WA yang sama + total ──
+  const kunciCust = o => { const d = String(o.customerContact || '').replace(/\D/g, '').replace(/^0/, '62').replace(/^8/, '628'); return d.length >= 9 ? d : 'nama:' + String(o.customerName || '').toUpperCase().trim() }
+  function grupCustomer(semua) {
+    const m = new Map()
+    semua.forEach(x => { const k = kunciCust(x.o); (m.get(k) || m.set(k, []).get(k)).push(x) })
+    return [...m.entries()].map(([k, xs]) => ({ k, xs: xs.sort((a, b) => String(a.o.orderNumber).localeCompare(String(b.o.orderNumber))), sisa: xs.reduce((t, x) => t + x.s.sisa, 0) }))
+      .sort((a, b) => b.xs.length - a.xs.length || b.sisa - a.sisa)
+  }
+  function renderPerCustomer(semua) {
+    const el = document.getElementById('daftar'), g = grupCustomer(semua)
+    window._grupCust = g
+    el.innerHTML = g.length ? g.map((c, i) => { const o = c.xs[0].o
+      return `<div class="tg-card l${Math.min(...c.xs.map(x => x.s.level))}">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div><b style="font-size:14px">${esc(o.customerName || '')}</b>${o.customerContact ? ` <span style="font-size:12px;color:rgba(3,69,67,.5)">📞 ${esc(o.customerContact)}</span>` : ''}
+            <div style="font-size:11px;color:rgba(3,69,67,.5)">${c.xs.length} nota belum lunas</div></div>
+          <div style="text-align:right"><div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.5)">TOTAL SISA</div><b style="font-size:18px;color:#b91c1c">${rp(c.sisa)}</b></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">${c.xs.map(({ o, s }) => `<tr style="border-top:1px solid rgba(3,69,67,.06)">
+          <td style="padding:5px 4px"><a href="order.html?id=${o.id}" style="color:var(--green);font-weight:700">${esc(o.orderNumber || '')}</a><div style="font-size:10px;color:rgba(3,69,67,.5)">${esc(DIVISION_META[o.division]?.label || '')} · ${esc(s.alasan)}</div></td>
+          <td style="padding:5px 4px;text-align:right;white-space:nowrap">${rp(s.total)}</td><td style="padding:5px 4px;text-align:right;white-space:nowrap;color:#059669">${rp(s.bayar)}</td><td style="padding:5px 4px;text-align:right;white-space:nowrap;font-weight:800;color:#b91c1c">${rp(s.sisa)}</td></tr>`).join('')}
+          <tr style="border-top:1.5px solid rgba(3,69,67,.15);font-weight:800"><td style="padding:5px 4px">Total</td><td style="padding:5px 4px;text-align:right">${rp(c.xs.reduce((t, x) => t + x.s.total, 0))}</td><td style="padding:5px 4px;text-align:right;color:#059669">${rp(c.xs.reduce((t, x) => t + x.s.bayar, 0))}</td><td style="padding:5px 4px;text-align:right;color:#b91c1c">${rp(c.sisa)}</td></tr></table>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-sm" style="background:#25d366;color:#fff" onclick="waGabung(${i})">📲 WA rincian + total</button></div>
+      </div>` }).join('') : '<div class="empty"><p>Tidak ada data</p></div>'
+  }
+  window.waGabung = async function(i) {
+    const c = window._grupCust[i]; if (!c) return
+    const list = c.xs.map(x => x.o)
+    const rek = [...new Set(list.flatMap(o => rekeningUntuk(o).split('\n')).filter(Boolean))].join('\n')
+    window.open(linkWaCustomer(list[0].customerContact, pesanTagihanGabung(list, { rekening: rek })), '_blank')
+    // Catat "sudah dihubungi" di semua nota customer ini
+    const entri = { at: Timestamp.now(), oleh: profile.name || '', olehUid: profile.id || '', hasil: 'dihubungi', janjiTgl: null, catatan: `WA gabungan ${list.length} nota` }
+    await Promise.all(c.xs.map(x => updateDoc(doc(db, 'orders', x.o.id), { tagih: entri, tagihRiwayat: arrayUnion(entri), updatedAt: Timestamp.now() })
+      .then(() => { x.o.tagih = entri; x.o.tagihRiwayat = [...(x.o.tagihRiwayat || []), entri]; x.s = statusTagihan(x.o, tglLokal()) }).catch(() => {})))
+    try { sessionStorage.removeItem('tagihan_badge_' + profile.id) } catch {}
+    render()
   }
 
   function rekeningUntuk(o) {

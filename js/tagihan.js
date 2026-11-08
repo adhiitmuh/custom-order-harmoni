@@ -53,3 +53,15 @@ export function linkWaCustomer(kontak, pesan) {
   const no = String(kontak || '').replace(/\D/g, '').replace(/^0/, '62')
   return no.startsWith('62') && no.length >= 9 ? `https://wa.me/${no}?text=${encodeURIComponent(pesan)}` : `https://wa.me/?text=${encodeURIComponent(pesan)}`
 }
+
+// Satu pesan untuk semua nota belum lunas milik satu customer (nomor WA sama)
+export function pesanTagihanGabung(list, { rekening = '' } = {}) {
+  const rp = n => 'Rp' + Math.round(Number(n) || 0).toLocaleString('id-ID')
+  const sisa = o => (Number(o.totalPrice) || 0) - (Number(o.depositPaid) || 0)
+  const total = list.reduce((t, o) => t + sisa(o), 0)
+  const baris = list.map((o, i) => {
+    const item = (o.orderItems || []).map(x => x.name).filter(Boolean).slice(0, 2).join(', ')
+    return `${i + 1}. *${o.orderNumber || ''}*${item ? ' — ' + item : ''}\n   Total ${rp(o.totalPrice)} · dibayar ${rp(o.depositPaid)} · *sisa ${rp(sisa(o))}*`
+  }).join('\n')
+  return `Halo Kak *${list[0]?.customerName || ''}* 🙏\n\nKami dari *Harmoni* ingin konfirmasi pembayaran ${list.length} pesanan Kakak yang belum lunas:\n\n${baris}\n\n*TOTAL SISA: ${rp(total)}*\n\nBila sudah transfer, mohon kirimkan bukti transfernya ya Kak supaya kami cek.${rekening ? `\n\nPembayaran bisa ke:\n${rekening}` : ''}\n\nTerima kasih 🙏\n_Harmoni · Makassar_`
+}

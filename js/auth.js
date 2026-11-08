@@ -800,7 +800,7 @@ export async function perbaruiBadgeTagihan(profile, paksa = false) {
   if (n === null) {
     try {
       await dataAuthReady
-      const { statusTagihan } = await import('./tagihan.js?v=20261106')
+      const { statusTagihan } = await import('./tagihan.js?v=20261108a')
       const sn = await getDocs(ordersQuery(profile))
       n = sn.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => canSeeOrder(o, profile)).filter(o => statusTagihan(o)?.perlu).length
       sessionStorage.setItem(kunci, JSON.stringify({ n, t: Date.now() }))
