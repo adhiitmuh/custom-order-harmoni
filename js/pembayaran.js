@@ -49,7 +49,10 @@ export function qrisCustomer(info, { lokasiId = '', division = '' } = {}) {
     : (info?.qrisImageUrl ? [{ imageUrl: info.qrisImageUrl, isActive: info.qrisActive !== false }] : [])
   return list.filter(q => {
     if (q.isActive === false) return false
-    if (Array.isArray(q.lokasiIds)) return !q.lokasiIds.length || !lokasiId || q.lokasiIds.includes(lokasiId)
+    if (Array.isArray(q.lokasiIds)) {
+      const d = Array.isArray(q.divisiCustomer) ? q.divisiCustomer : []
+      return (!q.lokasiIds.length || !lokasiId || q.lokasiIds.includes(lokasiId)) && (!d.length || !division || d.includes(division))
+    }
     return !q.division || !division || q.division === division // data lama
   })
 }

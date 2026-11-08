@@ -127,6 +127,9 @@
             <div id="qrisLokasiChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px"></div>
           </div>
           <p class="form-hint">QRIS tiap cabang beda — centang cabang pemilik QRIS ini</p>
+          <label style="margin-top:12px;display:block">Khusus order divisi <span style="font-weight:500;color:rgba(3,69,67,.5)">(kosong = semua divisi)</span></label>
+          <div id="qrisDivChecks" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-top:8px"></div>
+          <p class="form-hint">Mis. QRIS HQ hanya untuk order Bordir & Papan Nama → centang dua divisi itu.</p>
         </div>
         <div class="form-group" style="margin-bottom:12px">
           <label>Nama QRIS</label>
@@ -316,6 +319,12 @@
   }
 
   function populateDivisionSelects() {
+    const qd = document.getElementById('qrisDivChecks')
+    if (qd) qd.innerHTML = DIVISIONS.map(d => `
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+          <input type="checkbox" class="qrisDivCheck" value="${d}" style="width:14px;height:14px;accent-color:var(--green)">
+          ${DIVISION_META[d].icon} ${DIVISION_META[d].label}
+        </label>`).join('')
     const cd = document.getElementById('bankCustDivChecks')
     if (cd) cd.innerHTML = DIVISIONS.map(d => `
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
@@ -533,7 +542,7 @@
         ${q.imageUrl ? `<img src="${q.imageUrl}" alt="QRIS" style="width:48px;height:48px;border-radius:10px;border:1px solid rgba(3,69,67,.1);object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`
           : `<div style="width:48px;height:48px;border-radius:10px;border:1.5px dashed rgba(3,69,67,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📱</div>`}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${q.nama ? q.nama.replace(/</g, '&lt;') : 'QRIS'}${Array.isArray(q.lokasiIds) ? (q.lokasiIds.length ? ' · 📍 ' + namaLokasi(q.lokasiIds) : ' · 📍 Semua Lokasi') : (q.division ? ` · ${DIVISION_META[q.division]?.icon||''} ${DIVISION_META[q.division]?.label||q.division} <span style="color:#b45309;font-weight:500">(format lama — Edit untuk atur cabang)</span>` : ' · 📍 Semua Lokasi')}</div>
+          <div style="font-weight:700;font-size:14px">${q.nama ? q.nama.replace(/</g, '&lt;') : 'QRIS'}${Array.isArray(q.lokasiIds) ? (q.lokasiIds.length ? ' · 📍 ' + namaLokasi(q.lokasiIds) : ' · 📍 Semua Lokasi') + (q.divisiCustomer?.length ? ' · khusus ' + q.divisiCustomer.map(d => `${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(', ') : ' · semua divisi') : (q.division ? ` · ${DIVISION_META[q.division]?.icon||''} ${DIVISION_META[q.division]?.label||q.division} <span style="color:#b45309;font-weight:500">(format lama — Edit untuk atur cabang)</span>` : ' · 📍 Semua Lokasi')}</div>
           <div style="font-size:11px;color:${q.imageUrl ? 'rgba(3,69,67,.45)' : '#b45309'};margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.imageUrl ? '✓ Foto QRIS tersimpan' : '⚠ Foto QRIS belum diupload — klik Edit untuk menambahkan'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -548,6 +557,7 @@
     document.getElementById('editQrisIndex').value = '-1'
     document.getElementById('qrisFormTitle').textContent = 'Tambah QRIS'
     setQrisLokasiUI([])
+    document.querySelectorAll('.qrisDivCheck').forEach(c => { c.checked = false })
     document.getElementById('qrisImageUrl').value = ''
     document.getElementById('qrisNama').value = ''
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
@@ -562,6 +572,8 @@
     document.getElementById('editQrisIndex').value = i
     document.getElementById('qrisFormTitle').textContent = 'Edit QRIS'
     setQrisLokasiUI(Array.isArray(q.lokasiIds) ? q.lokasiIds : [])
+    const qDiv = Array.isArray(q.divisiCustomer) ? q.divisiCustomer : (q.division ? [q.division] : [])
+    document.querySelectorAll('.qrisDivCheck').forEach(c => { c.checked = qDiv.includes(c.value) })
     document.getElementById('qrisImageUrl').value = q.imageUrl || ''
     document.getElementById('qrisNama').value = q.nama || ''
     document.getElementById('qrisFileTeks').textContent = 'Ketuk untuk pilih foto / screenshot QRIS'
@@ -609,7 +621,8 @@
     const lain = (paymentInfo.qris || []).filter((_, i) => i !== parseInt(document.getElementById('editQrisIndex').value))
     if (lain.length && !nama) { showAlert('Isi Nama QRIS supaya bisa dibedakan (cth: QRIS Cabang Sudiang)', 'error'); return }
     if (nama && lain.some(q => (q.nama || '').toLowerCase() === nama.toLowerCase())) { showAlert('Nama QRIS sudah dipakai', 'error'); return }
-    const entry = { imageUrl: imageUrl || '', nama, lokasiIds, division: '', isActive }
+    const divisiCustomer = [...document.querySelectorAll('.qrisDivCheck:checked')].map(c => c.value)
+    const entry = { imageUrl: imageUrl || '', nama, lokasiIds, divisiCustomer, division: '', isActive }
     if (!paymentInfo.qris) paymentInfo.qris = []
     const idx = parseInt(document.getElementById('editQrisIndex').value)
     if (idx >= 0) { paymentInfo.qris[idx] = entry } else { paymentInfo.qris.push(entry) }
