@@ -21,6 +21,20 @@
     .price-table td { padding:9px 6px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; white-space:nowrap; overflow:hidden; }
     .price-table td:first-child { white-space:normal; padding-left:10px; }
     .price-table tr:last-child td { border-bottom:none; }
+    /* HP: tiap baris jadi kartu — semua kolom terlihat dengan labelnya */
+    @media (max-width:640px) {
+      .price-table { width:100% !important; table-layout:auto; }
+      .price-table thead { display:none; }
+      .price-table, .price-table tbody { display:block; }
+      .price-table tr { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px 8px; padding:10px 8px; border-bottom:1px solid rgba(3,69,67,.1); }
+      .price-table td { display:block; padding:0 !important; border:none !important; white-space:normal; overflow:visible; min-width:0; width:auto !important; }
+      .price-table td[data-label]::before { content:attr(data-label); display:block; font-size:9px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); margin-bottom:2px; }
+      .price-table td.kol-nama, .price-table td.kol-lebar, .price-table td[colspan] { grid-column:1 / -1; }
+      .price-table td:empty { display:none; }
+      .price-table td input { width:100% !important; max-width:none !important; font-size:15px; }
+      .price-table td.kol-aksi { grid-column:1 / -1; text-align:right; }
+      .price-table tr[style*="border-bottom:none"] { border-bottom:none; padding-bottom:0; }
+    }
     .price-table tr:hover td { background:rgba(3,69,67,.02); }
     .col-resize { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:2; background:transparent; border-radius:3px; transition:background .15s; }
     .col-resize:hover, .col-resize.active { background:rgba(3,69,67,.25); }
@@ -787,8 +801,27 @@
     if (!el) return
     el.innerHTML = renderInlinePriceTable(division)
     const tbl = el.querySelector('.price-table')
+    labelKolom(tbl)
     initResizableTable(tbl)
     initDragSort(tbl, division)
+  }
+
+  // Label kolom di tiap sel (dipakai tampilan kartu di HP)
+  function labelKolom(tbl) {
+    if (!tbl) return
+    const judul = [...tbl.querySelectorAll('thead th')].map(th => th.textContent.trim())
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      let kol = 0
+      ;[...tr.children].forEach(td => {
+        const span = Number(td.getAttribute('colspan') || 1)
+        const j = judul[kol] || ''
+        if (span === 1 && j && td.textContent.trim() !== '' || (span === 1 && j && td.querySelector('input'))) td.dataset.label = j
+        if (kol === 0) td.classList.add('kol-nama')
+        if (/KETERANGAN/i.test(j)) td.classList.add('kol-lebar')
+        if (kol === judul.length - 1 && !j) td.classList.add('kol-aksi')
+        kol += span
+      })
+    })
   }
 
   function initDragSort(tbl, division) {
