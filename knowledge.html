@@ -299,7 +299,10 @@
             <div class="card" style="margin-bottom:12px;border-left:3px solid var(--green)">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
                 <h3 style="font-size:14px;font-weight:700;color:var(--green)">💰 Daftar Harga</h3>
-                ${bolehKelolaHarga(profile, d) ? `<button onclick="openSingleItemEdit('${d}',-1)" class="btn btn-ghost btn-sm">＋ Tambah Item</button>` : ''}
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                  ${profile.role === 'owner' ? `<button onclick="bukaIzinHarga()" class="btn btn-ghost btn-sm" title="Atur siapa yang boleh mengisi daftar harga">👥 Izin</button>` : ''}
+                  ${bolehKelolaHarga(profile, d) ? `<button onclick="openSingleItemEdit('${d}',-1)" class="btn btn-ghost btn-sm">＋ Tambah Item</button>` : ''}
+                </div>
               </div>
               <div style="display:flex;gap:8px;margin-bottom:10px;font-size:11px;flex-wrap:wrap">
                 <span class="tier-badge tb-normal">● Normal — Staff langsung pakai</span>
