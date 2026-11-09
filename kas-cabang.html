@@ -137,7 +137,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { requireAuth, dataAuthReady, divisiSaya } from './js/auth.js'
   import { collection, getDocs, getDoc, doc, setDoc, addDoc, updateDoc, deleteDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { compressImage } from './js/image.js'
@@ -156,7 +156,7 @@
   const lokasiId = () => document.getElementById('lokasi').value
   const lokasiNama = () => lokasiList.find(l => l.id === lokasiId())?.nama || ''
   const bolehTerima = lokId => profile.role === 'owner' || (profile.role === 'manager' && profile.lokasiId === lokId)
-    || (profile.role === 'divisi' && lokasiList.find(l => l.id === lokId)?.divisiPemilik === profile.divisi)
+    || (profile.role === 'divisi' && divisiSaya(profile).includes(lokasiList.find(l => l.id === lokId)?.divisiPemilik))
   const bolehInput = () => ['owner', 'manager', 'cs'].includes(profile.role)
 
   requireAuth(async p => {
@@ -168,7 +168,7 @@
     info = iS.exists() ? iS.data() : {}
     if (aS?.exists?.()) aturan = { ...aturan, ...aS.data() }
     let boleh = lokasiList
-    if (p.role === 'divisi') boleh = lokasiList.filter(l => l.divisiPemilik === p.divisi)
+    if (p.role === 'divisi') boleh = lokasiList.filter(l => divisiSaya(p).includes(l.divisiPemilik))
     else if (p.role !== 'owner' && p.lokasiId) boleh = lokasiList.filter(l => l.id === p.lokasiId)
     const sel = document.getElementById('lokasi')
     sel.innerHTML = boleh.map(l => `<option value="${esc(l.id)}">${esc(l.nama)}</option>`).join('')

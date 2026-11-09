@@ -11,23 +11,29 @@ service cloud.firestore {
     function isData() { return isStaffAuth() && role() == 'data'; }
     function isDivisiOwner() { return isStaffAuth() && role() == 'divisi'; }
     function userDivisi() { return request.auth.token.get('divisi', ''); }
-    function isDivisiOwnerOf(div) { return isDivisiOwner() && userDivisi() == div; }
+    // Pemilik Divisi bisa memegang beberapa divisi (klaim `divs`, diatur Owner di Portal); `divisi` = cadangan data lama
+    function divisiSaya() {
+      return request.auth.token.get('divs', []).size() > 0 ? request.auth.token.get('divs', []) : [userDivisi()];
+    }
+    function isDivisiOwnerOf(div) { return isDivisiOwner() && div in divisiSaya(); }
     // Pemilik Divisi (role 'divisi') hanya boleh menyentuh order divisinya sendiri;
     // role lain tidak terpengaruh. Query order Pemilik Divisi wajib where('division', '==', divisinya).
-    function bolehOrderData(d) { return !isDivisiOwner() || d.get('division', '') == userDivisi(); }
+    function bolehOrderData(d) { return !isDivisiOwner() || d.get('division', '') in divisiSaya(); }
     function bolehOrderId(orderId) {
       return !isDivisiOwner()
-        || get(/databases/$(database)/documents/orders/$(orderId)).data.get('division', '') == userDivisi();
+        || get(/databases/$(database)/documents/orders/$(orderId)).data.get('division', '') in divisiSaya();
     }
     // ── Approval harga order ──
     // Promo disetujui Kepala Cabang (manager) / Owner; Admin hanya Owner. Staf lain hanya boleh
     // menurunkan status ke 'pending' (minta approval), tidak bisa menyetujui sendiri.
     function kunciApproval() { return ['priceApprovalStatus', 'priceApprovalBy', 'priceApprovalByName', 'priceApprovalAt', 'priceApprovalTier']; }
-    function bolehSetujuiTier(t) { return isOwner() || (isStaffAuth() && role() == 'manager' && t == 'promo'); }
+    // Pemilik Divisi boleh menyetujui harga Promo & Admin untuk order divisinya
+    function bolehSetujuiTierDiv(t, div) { return isOwner() || (isStaffAuth() && role() == 'manager' && t == 'promo')
+      || (isDivisiOwnerOf(div) && t in ['promo', 'admin']); }
     function approvalSahBaru(d) {
       return d.get('priceApprovalStatus', 'approved') != 'approved'
         || d.get('priceApprovalTier', null) == null
-        || (bolehSetujuiTier(d.get('priceApprovalTier', null)) && d.get('priceApprovalBy', '') == request.auth.uid);
+        || (bolehSetujuiTierDiv(d.get('priceApprovalTier', null), d.get('division', '')) && d.get('priceApprovalBy', '') == request.auth.uid);
     }
     function approvalSahUbah() {
       let n = request.resource.data;
@@ -37,13 +43,14 @@ service cloud.firestore {
       let menunggu = o.get('priceApprovalStatus', '') == 'pending' || n.get('priceApprovalStatus', '') == 'pending';
       let tierLama = o.get('priceApprovalTier', null);
       let tierBaru = n.get('priceApprovalTier', tierLama);
+      let dv = o.get('division', '');
       return (!ubahApproval
-          || (bolehSetujuiTier(tierBaru) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTier(tierLama)))
+          || (bolehSetujuiTierDiv(tierBaru, dv) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTierDiv(tierLama, dv)))
           || (n.get('priceApprovalStatus', '') == 'pending' && n.get('priceApprovalBy', null) == null))
         // Order yang menunggu approval harga belum boleh masuk produksi
         && (!ubahStatus || !menunggu
           || n.get('status', '') in ['pending-approval', 'cancelled', 'draft']
-          || (bolehSetujuiTier(tierBaru) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTier(tierLama))));
+          || (bolehSetujuiTierDiv(tierBaru, dv) && (tierLama == null || tierLama == 'normal' || bolehSetujuiTierDiv(tierLama, dv))));
     }
     // Kolom yang hanya boleh diatur owner (users.html)
     function kolomOwner() { return ['lokasiId', 'lokasiNama', 'lokasiTipe', 'pin', 'divisions']; }
@@ -118,8 +125,12 @@ service cloud.firestore {
     }
     // Usulan perubahan harga dari pengisi daftar harga (dibuat Worker) — Owner menyetujui/menolak
     match /price_list_usulan/{id} {
-      allow read: if isOwner() || (isStaffAuth() && resource.data.olehUid == request.auth.uid);
-      allow update, delete: if isOwner();
+      allow read: if isOwner() || (isStaffAuth() && resource.data.olehUid == request.auth.uid)
+        || isDivisiOwnerOf(resource.data.get('division', ''));
+      allow update: if isOwner() || (isDivisiOwnerOf(resource.data.get('division', ''))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'diputusOleh', 'diputusAt'])
+        && request.resource.data.status in ['disetujui', 'ditolak']);
+      allow delete: if isOwner();
     }
     // Salinan untuk customer (chat.html): hanya harga jual — ditulis Owner / Worker
     match /price_list_public/{div} {
@@ -185,7 +196,7 @@ service cloud.firestore {
     function penerimaCabang(lokId) {
       return isOwner()
         || (isStaffAuth() && role() == 'manager' && lokasiSaya() == lokId)
-        || (isDivisiOwner() && lokasiData(lokId).get('divisiPemilik', '') == userDivisi());
+        || (isDivisiOwner() && lokasiData(lokId).get('divisiPemilik', '') in divisiSaya());
     }
     function bacaCabang(lokId) { return (isStaffAuth() && !isDivisiOwner()) || penerimaCabang(lokId); }
     function kunciTerima() { return ['status', 'diterimaNama', 'diterimaUid', 'diterimaAt', 'catatanKembali']; }
@@ -315,7 +326,7 @@ service cloud.firestore {
     match /notifications/{notifId} {
       // Pemilik Divisi: hanya notifikasi divisinya + mention untuk dirinya
       allow read: if isStaffAuth() && (!isDivisiOwner()
-        || resource.data.get('division', '') == userDivisi()
+        || resource.data.get('division', '') in divisiSaya()
         || resource.data.get('targetUid', '') == request.auth.uid);
       allow create: if isStaffAuth();
       allow delete: if isOwner();

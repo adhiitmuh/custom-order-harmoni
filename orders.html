@@ -80,7 +80,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, ordersQuery, csRangkapDivisi } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, ordersQuery, csRangkapDivisi, divisiSaya } from './js/auth.js'
   import { collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, daysDiff, paymentStatus } from './js/utils.js'
   import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
@@ -123,12 +123,19 @@
       }
     }
 
-    if (profile.role === 'divisi' && profile.divisi) {
-      lockedDivision = profile.divisi
-      const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
-      document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
-      document.getElementById('divLockBadge').style.display = 'inline-flex'
-      document.getElementById('divFilter').style.display = 'none'
+    if (profile.role === 'divisi' && divisiSaya(profile).length) {
+      const dd = divisiSaya(profile)
+      if (dd.length === 1) {
+        lockedDivision = dd[0]
+        const meta = activeDivs.find(x=>x.key===lockedDivision) || DIVISION_META[lockedDivision] || {}
+        document.getElementById('divLockBadge').innerHTML = `${meta.icon||''} ${meta.label||lockedDivision}`
+        document.getElementById('divLockBadge').style.display = 'inline-flex'
+        document.getElementById('divFilter').style.display = 'none'
+      } else {
+        // Beberapa divisi: dikunci ke divisinya, tapi tetap bisa memilih salah satu
+        lockedDivisions = dd
+        ;[...divSel.options].forEach(o => { if (o.value && !dd.includes(o.value)) o.remove() })
+      }
     }
 
     // CS di pusat dengan divisi yang di-assign → hanya lihat divisi itu dari semua lokasi
@@ -319,7 +326,7 @@
       if (search && !o.customerName?.toLowerCase().includes(search) && !o.orderNumber?.toLowerCase().includes(search)) return false
       if (lockedDivision && o.division !== lockedDivision) return false
       if (lockedDivisions && !lockedDivisions.includes(o.division)) return false
-      if (!lockedDivision && !lockedDivisions && div && o.division !== div) return false
+      if (!lockedDivision && div && o.division !== div) return false
       if (lockedLokasiId && o.lokasiId !== lockedLokasiId) return false
       const branchCheck = lockedBranch || branch
       if (branchCheck && o.branch !== branchCheck) return false

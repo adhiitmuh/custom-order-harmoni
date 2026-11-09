@@ -118,7 +118,8 @@
     const teks = [`*KWITANSI HARMONI*`, `No. ${d.no}`, ``, `Telah terima dari: *${order.customerName}*`, `Sejumlah: *${fmtCurrency(d.jumlah)}*`, `(${rapih(terbilang(d.jumlah) + ' rupiah')})`, `Untuk: ${d.untuk} pesanan ${order.orderNumber}`, ``,
       ...d.rincian.map(x => `• ${tglPanjang(x.tgl)} — ${labelRekening(x)} — ${fmtCurrency(x.jumlah)}`), ``,
       `Total pesanan: ${fmtCurrency(order.totalPrice || 0)}`, `Sudah dibayar: ${fmtCurrency(order.depositPaid || 0)}`, sisa <= 0 ? `✅ *LUNAS*` : `Sisa: *${fmtCurrency(sisa)}*`, ``, `Terima kasih 🙏 — Harmoni`].join('\n')
-    const no = String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
+    // Kontak customer disembunyikan dari Pemilik Divisi
+    const no = profile?.role === 'divisi' ? '' : String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
     window.open(no.startsWith('62') ? `https://wa.me/${no}?text=${encodeURIComponent(teks)}` : `https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank')
   }
 </script>

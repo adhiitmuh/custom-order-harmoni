@@ -116,10 +116,10 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, divisiSaya } from './js/auth.js'
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
-  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik } from './js/hargaList.js?v=20261109b'
+  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik, bolehSetujuiHargaDivisi, divisiMilik } from './js/hargaList.js?v=20261110a'
 
   // Kunci kolom harga sesuai role (aturan sama dengan Worker /price-list-save)
   const _prof = () => getProfile()
@@ -127,10 +127,10 @@
   const kunci = (k, lama, baru) => bolehIsiHarga(_prof(), k, lama, baru, _divKonteks) ? '' : ` disabled title="Diisi ${k === 'priceAdmin' ? 'Owner' : k === 'pricePromo' ? 'Kepala Cabang / Owner' : k === 'priceModal' ? 'Owner / Pemilik Divisi' : 'Kepala Cabang / Owner (harga sudah terisi)'}"`
   const kunciTeks = (it, k) => (_prof()?.role === 'cs' && it?._tersimpan && it[k] && !it.baru) ? ' disabled title="Diubah Kepala Cabang / Owner"' : ''
   // Ganti nama: Owner selalu; pengisi daftar harga (izin divisi) hanya untuk item/varian yang masih 🆕 BARU
-  const kunciNamaItem = (it, induk) => (!bolehHapusItem(_prof()) && it && it._tersimpan
-    && !(roleHarga(_prof(), _divKonteks) === 'pengisi' && (it.baru || induk?.baru))) ? ' disabled title="Ganti nama item hanya Owner (atau pengisi selama item masih BARU)"' : ''
+  const kunciNamaItem = (it, induk) => (!bolehHapusItem(_prof()) && it && it._tersimpan && roleHarga(_prof(), _divKonteks) !== 'pemilik'
+    && !(roleHarga(_prof(), _divKonteks) === 'pengisi' && (it.baru || induk?.baru))) ? ' disabled title="Ganti nama item hanya Owner / Pemilik Divisi (atau pengisi selama item masih BARU)"' : ''
   const tandai = items => (items || []).forEach(it => { it._tersimpan = true; (it.variants || []).forEach(v => { v._tersimpan = true }) })
-  const lencanaBaru = (d, i, it) => it?.baru ? `<span title="Item baru dari ${String(it.dibuatOleh || 'staf').replace(/"/g, '')} — belum dicek Owner" style="font-size:9px;font-weight:800;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 5px;margin-left:4px;white-space:nowrap">🆕 BARU</span>${_prof()?.role === 'owner' ? `<button onclick="verifikasiItem('${d}',${i})" title="Tandai sudah dicek" style="border:none;background:none;cursor:pointer;font-size:11px;color:#059669;font-weight:800">✓ cek</button>` : ''}` : ''
+  const lencanaBaru = (d, i, it) => it?.baru ? `<span title="Item baru dari ${String(it.dibuatOleh || 'staf').replace(/"/g, '')} — belum dicek Owner" style="font-size:9px;font-weight:800;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 5px;margin-left:4px;white-space:nowrap">🆕 BARU</span>${bolehSetujuiHargaDivisi(_prof(), d) ? `<button onclick="verifikasiItem('${d}',${i})" title="Tandai sudah dicek" style="border:none;background:none;cursor:pointer;font-size:11px;color:#059669;font-weight:800">✓ cek</button>` : ''}` : ''
   function tampilkanDitolak(ditolak) {
     if (!ditolak?.length) return
     showSavedToast(`⚠ ${ditolak.length} perubahan tidak disimpan: ${ditolak[0]}${ditolak.length > 1 ? ' …' : ''}`, '#d97706')
@@ -170,13 +170,16 @@
   async function muatUsulan() {
     const prof = getProfile(), el = document.getElementById('usulanPanel'); if (!el || !prof) return
     try {
+      // Owner: semua usulan. Pemilik Divisi: usulan di divisinya (bisa menyetujui). Lainnya: usulan miliknya.
+      const dd = divisiMilik(prof)
       const q = prof.role === 'owner' ? query(collection(db, 'price_list_usulan'), where('status', '==', 'menunggu'))
+        : dd.length ? query(collection(db, 'price_list_usulan'), where('division', 'in', dd.slice(0, 10)))
         : query(collection(db, 'price_list_usulan'), where('olehUid', '==', prof.id))
       const snap = await getDocs(q)
-      _usulan = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => prof.role === 'owner' || u.status === 'menunggu')
+      _usulan = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status === 'menunggu')
     } catch { _usulan = [] }
     if (!_usulan.length) { el.innerHTML = ''; return }
-    const isOwner = prof.role === 'owner'
+    const isOwner = prof.role === 'owner' || divisiMilik(prof).length > 0
     el.innerHTML = `<div style="margin-top:12px;border:1.5px solid #fde68a;background:#fffbeb;border-radius:12px;padding:12px 14px">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
         <b style="color:#b45309">⏳ ${isOwner ? 'Usulan perubahan harga menunggu persetujuan Anda' : 'Usulan Anda menunggu persetujuan Owner'} (${_usulan.length})</b>
@@ -207,6 +210,7 @@
             if (target) target[u.kolom] = u.kolom.startsWith('price') ? Number(u.ke) || 0 : u.ke
           })
           const hasil = await simpanDaftarHarga(getProfile(), div, items)
+          if (hasil.ditolak?.length || hasil.usulan) throw new Error('Perubahan tidak bisa diterapkan: ' + (hasil.ditolak || []).join('; '))
           if (priceDataStore[div]) { tandai(hasil.items); priceDataStore[div].items = hasil.items; rerenderPriceWrap(div) }
         }
       }
@@ -705,7 +709,7 @@
     _divKonteks = d
     const profile = getProfile()
     const canEdit = bolehKelolaHarga(profile, d)
-    const canEditModal = profile?.role === 'owner' || profile?.role === 'data' || (profile?.role === 'divisi' && profile.divisi === d) || roleHarga(profile, d) === 'pengisi'
+    const canEditModal = profile?.role === 'owner' || profile?.role === 'data' || (profile?.role === 'divisi' && divisiSaya(profile).includes(d)) || roleHarga(profile, d) === 'pengisi'
     const bisaHapus = bolehHapusItem(profile)
     const items = priceDataStore[d]?.items || []
 

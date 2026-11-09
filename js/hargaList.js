@@ -9,7 +9,11 @@ const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
 export const HARGA_KOLOM = ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal']
 export const LABEL_HARGA = { priceNormal: 'Normal', priceCabang: 'Cabang', pricePromo: 'Promo', priceAdmin: 'Admin', priceModal: 'Modal' }
 
+// Divisi milik Pemilik Divisi (bisa beberapa; diatur Owner di Portal)
+export const divisiMilik = p => p?.role !== 'divisi' ? [] : ((p.divisions || []).filter(Boolean).length ? p.divisions.filter(Boolean) : (p.divisi ? [p.divisi] : []))
 const IZIN = {
+  // Pemilik Divisi di divisinya sendiri: semua kolom, ganti nama, ✓ cek item baru & setujui usulan
+  pemilik: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal'] },
   // Pengisi daftar harga (izin khusus dari Owner per divisi): Normal, Cabang, Promo & Modal. Admin tetap Owner.
   pengisi: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceModal'] },
   cs:      { isiKosong: ['priceNormal', 'priceCabang'], ubah: [] },
@@ -21,12 +25,16 @@ const IZIN = {
 // Boleh menambah item / mengubah daftar harga divisi ini?
 // Izin khusus per orang per divisi (settings/izin_harga) — dimuat halaman ke profile.izinHarga
 export const roleHarga = (profile, division) =>
-  profile?.role !== 'owner' && division && (profile?.izinHarga || []).includes(division) ? 'pengisi' : profile?.role
+  profile?.role === 'owner' ? 'owner'
+  : profile?.role === 'divisi' && division && divisiMilik(profile).includes(division) ? 'pemilik'
+  : division && (profile?.izinHarga || []).includes(division) ? 'pengisi' : profile?.role
+// Boleh menyetujui (✓ cek item baru, usulan harga) di divisi ini? Owner, atau Pemilik Divisi di divisinya
+export const bolehSetujuiHargaDivisi = (profile, division) => ['owner', 'pemilik'].includes(roleHarga(profile, division))
 export function bolehKelolaHarga(profile, division) {
-  if (roleHarga(profile, division) === 'pengisi') return true
+  const rh = roleHarga(profile, division)
+  if (rh === 'pengisi' || rh === 'pemilik' || rh === 'owner') return true
   const r = profile?.role
-  if (r === 'owner') return true
-  if (r === 'divisi') return profile.divisi === division
+  if (r === 'divisi') return false
   return !!IZIN[r]
 }
 // Boleh mengisi kolom harga `k` yang saat ini bernilai `lama` (0 = kosong / item baru)?
@@ -38,7 +46,7 @@ export function bolehIsiHarga(profile, k, lama = 0, baru = false, division = '')
   return iz.ubah.includes(k) || (iz.isiKosong.includes(k) && (!(Number(lama) > 0) || baru === true))
 }
 export const bolehHapusItem = profile => profile?.role === 'owner'
-export const keteranganIzin = (profile, division = '') => roleHarga(profile, division) === 'pengisi' ? 'Izin pengisi daftar harga divisi ini: bisa mengisi Normal, Cabang, Promo & Modal. Harga Admin diisi Owner.' : ({
+export const keteranganIzin = (profile, division = '') => roleHarga(profile, division) === 'pemilik' ? 'Pemilik Divisi: semua kolom harga divisi ini bisa diubah, termasuk ganti nama, ✓ cek item baru & menyetujui usulan harga.' : roleHarga(profile, division) === 'pengisi' ? 'Izin pengisi daftar harga divisi ini: bisa mengisi Normal, Cabang, Promo & Modal. Harga Admin diisi Owner.' : ({
   owner: 'Owner: semua kolom bisa diubah.',
   manager: 'Kepala Cabang: bisa mengisi Normal, Cabang & Promo. Admin & Modal diisi Owner.',
   cs: 'CS: bisa menambah item baru & mengisi harga Normal/Cabang yang masih kosong. Mengubah harga yang sudah ada → Kepala Cabang/Owner.',
@@ -166,4 +174,5 @@ export function nilaiTierOrder(items, daftar, { diCabang = false, totalPrice = n
   return { tier, rincian, itemBaru, dibawahModal, diskonPersen: Math.round((1 - faktor) * 100) }
 }
 // Siapa boleh menyetujui tier ini
-export const bolehSetujui = (profile, tier) => profile?.role === 'owner' || (profile?.role === 'manager' && tier === 'promo')
+export const bolehSetujui = (profile, tier, division = '') => profile?.role === 'owner' || (profile?.role === 'manager' && tier === 'promo')
+  || (['promo', 'admin'].includes(tier) && !!division && divisiMilik(profile).includes(division))

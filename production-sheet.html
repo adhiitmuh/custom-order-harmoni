@@ -117,7 +117,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi, divisiSaya } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
@@ -241,7 +241,7 @@
     try {
       if (activeComposite) {
         // Pemilik Divisi hanya boleh membaca order divisinya sendiri (dikunci di Firestore Rules)
-        const bolehDiv = d => _profile?.role !== 'divisi' || d === _profile.divisi
+        const bolehDiv = d => _profile?.role !== 'divisi' || divisiSaya(_profile).includes(d)
         const snaps = await Promise.all(activeComposite.map(({ queryDiv }) =>
           bolehDiv(queryDiv) ? getDocs(query(collection(db, 'orders'), where('division', '==', queryDiv))) : Promise.resolve({ docs: [] })
         ))
@@ -262,7 +262,7 @@
           })
         })
       } else {
-        const snap = (_profile?.role !== 'divisi' || divKey === _profile.divisi)
+        const snap = (_profile?.role !== 'divisi' || divisiSaya(_profile).includes(divKey))
           ? await getDocs(query(collection(db, 'orders'), where('division', '==', divKey)))
           : { docs: [] }
         allOrders = snap.docs

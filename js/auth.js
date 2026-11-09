@@ -114,8 +114,15 @@ export function isDivisiOwner(profile) {
   return profile?.role === 'divisi'
 }
 
+// Daftar divisi milik Pemilik Divisi (bisa lebih dari satu; diatur Owner di Portal)
+export function divisiSaya(profile) {
+  if (profile?.role !== 'divisi') return []
+  const dd = (profile.divisions || []).filter(Boolean)
+  return dd.length ? dd : (profile.divisi ? [profile.divisi] : [])
+}
+
 export function isDivisiOwnerOf(profile, division) {
-  return profile?.role === 'divisi' && !!division && profile?.divisi === division
+  return profile?.role === 'divisi' && !!division && divisiSaya(profile).includes(division)
 }
 
 export function canAccessDivisi(profile, division) {
@@ -136,7 +143,8 @@ export function canAccessDivisi(profile, division) {
 // Query koleksi orders sesuai role. Pemilik Divisi wajib memfilter divisinya sendiri —
 // Firestore Rules menolak query order tanpa filter itu (lihat firestore.rules).
 export function ordersQuery(profile, ...constraints) {
-  const filterDivisi = profile?.role === 'divisi' ? [where('division', '==', profile.divisi || '-')] : []
+  const dd = divisiSaya(profile)
+  const filterDivisi = profile?.role === 'divisi' ? [dd.length > 1 ? where('division', 'in', dd) : where('division', '==', dd[0] || '-')] : []
   return query(collection(db, 'orders'), ...filterDivisi, ...constraints)
 }
 
@@ -155,7 +163,8 @@ export function canSeeOrder(o, profile) {
     return !profile.divisions?.length || profile.divisions.includes(o.division)
   }
   if (profile.role === 'divisi') {
-    return !profile.divisi || o.division === profile.divisi
+    const dd = divisiSaya(profile)
+    return !dd.length || dd.includes(o.division)
   }
   if (profile.role === 'cs') {
     // CS HQ (pusat): semua order — kecuali yang merangkap produksi, hanya order divisinya.
@@ -314,8 +323,9 @@ export function renderSidebar(profile) {
   const activeDivs = _divisions || _staticDivisions()
 
   // For divisi role: only show their own division in sidebar
-  const sidebarDivs = isDivisi && profile.divisi
-    ? activeDivs.filter(d => d.key === profile.divisi)
+  const divSaya = divisiSaya(profile)
+  const sidebarDivs = isDivisi && divSaya.length
+    ? activeDivs.filter(d => divSaya.includes(d.key))
     : activeDivs
 
   const divLinks = sidebarDivs.map(d => `
@@ -341,8 +351,8 @@ export function renderSidebar(profile) {
 
     <div class="sidebar-section">
       <div class="sidebar-label">PESANAN</div>
-      ${isDivisi && profile.divisi ? `
-      <a href="orders.html?div=${profile.divisi}" class="sidebar-link ${page==='orders.html'?'active':''}">
+      ${isDivisi && divSaya.length ? `
+      <a href="orders.html${divSaya.length === 1 ? '?div=' + divSaya[0] : ''}" class="sidebar-link ${page==='orders.html'?'active':''}">
         <span class="icon">📋</span>Order Divisi Saya
       </a>` : `
       <a href="orders.html" class="sidebar-link ${page==='orders.html'?'active':''}">
@@ -359,7 +369,7 @@ export function renderSidebar(profile) {
       <a href="new-order.html" class="sidebar-link ${page==='new-order.html'?'active':''}">
         <span class="icon">＋</span>Order Baru
       </a>` : ''}
-      ${(profile.role==='manager'||profile.role==='owner') ? `
+      ${(profile.role==='manager'||profile.role==='owner'||profile.role==='divisi') ? `
       <a href="orders.html?approval=promo" class="sidebar-link">
         <span class="icon">🔑</span>Approval Harga
       </a>` : ''}
@@ -380,7 +390,7 @@ export function renderSidebar(profile) {
       <a href="kalender.html" class="sidebar-link ${page==='kalender.html'?'active':''}">
         <span class="icon">📅</span>Kalender Produksi
       </a>
-      ${!isDivisi || profile.divisi === 'bordir' || profile.divisi === 'papan-nama' ? `
+      ${!isDivisi || divSaya.includes('bordir') || divSaya.includes('papan-nama') ? `
       <a href="production-sheet.html" class="sidebar-link ${page==='production-sheet.html'?'active':''}">
         <span class="icon">🗂️</span>Papan Nama Sheet
       </a>` : ''}
@@ -740,7 +750,7 @@ function initNotifications(profile) {
     // (dikunci di Firestore Rules), jadi pakai dua query lalu digabung.
     const isDivisiRole = profile.role === 'divisi'
     const qList = isDivisiRole
-      ? [query(collection(db, 'notifications'), where('division', '==', profile.divisi || '-'), orderBy('createdAt', 'desc'), limit(30)),
+      ? [...divisiSaya(profile).concat(divisiSaya(profile).length ? [] : ['-']).map(dv => query(collection(db, 'notifications'), where('division', '==', dv), orderBy('createdAt', 'desc'), limit(30))),
          query(collection(db, 'notifications'), where('targetUid', '==', profile.id), limit(30))]
       : [query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(30))]
     const hasilNotif = qList.map(() => [])
@@ -765,6 +775,7 @@ function initNotifications(profile) {
           // Hanya yang bisa approve yang dapat notif — owner semua tier, manager promo saja
           if (profile.role === 'owner') return canSee
           if (profile.role === 'manager' && n.priceApprovalTier === 'promo') return canSee
+          if (profile.role === 'divisi' && ['promo', 'admin'].includes(n.priceApprovalTier)) return canSee
           return false
         }
         return canSee

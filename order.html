@@ -83,7 +83,7 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, hasProductionAccess } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, hasProductionAccess, divisiSaya } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
@@ -91,7 +91,7 @@
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
-  import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER } from './js/hargaList.js?v=20261109b'
+  import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER } from './js/hargaList.js?v=20261110a'
   import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261108a'
 
   const params = new URLSearchParams(location.search)
@@ -266,7 +266,7 @@
 
   function renderPage(profile) {
     const meta = DIVISION_META[order.division] || {}
-    const isDivisiOwner  = profile.role === 'divisi' && profile.divisi === order.division
+    const isDivisiOwner  = profile.role === 'divisi' && divisiSaya(profile).includes(order.division)
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
     const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
@@ -319,11 +319,10 @@
               Alasan diskon: <em>${order.priceApprovalReason||'—'}</em>
             </div>
             <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">
-              ${order.priceApprovalTier==='admin'?'Hanya Owner yang dapat menyetujui harga ini':'Hanya Kepala Cabang atau Owner yang dapat menyetujui'}
+              ${order.priceApprovalTier==='admin'?'Hanya Owner / Pemilik Divisi yang dapat menyetujui harga ini':'Hanya Kepala Cabang, Pemilik Divisi atau Owner yang dapat menyetujui'}
             </div>
           </div>
-          ${(order.priceApprovalTier==='promo' && (profile.role==='manager'||profile.role==='owner')) ||
-            (order.priceApprovalTier==='admin' && profile.role==='owner') ? `
+          ${bolehSetujui(profile, order.priceApprovalTier, order.division) ? `
           <div style="display:flex;gap:8px;flex-shrink:0">
             <button onclick="rejectPrice()" class="btn btn-danger btn-sm">✕ Tolak</button>
             <button onclick="approvePrice()" class="btn btn-green btn-sm" id="approvePriceBtn">✓ Setujui Harga</button>
@@ -2464,7 +2463,7 @@
     const alasan = prompt(`Harga ini termasuk ${LABEL_TIER[tier]}. Tulis alasan / justifikasi:`)
     if (alasan === null || !alasan.trim()) throw new Error('Dibatalkan — alasan wajib diisi untuk harga di bawah normal')
     const now = Timestamp.now()
-    if (bolehSetujui(prof, tier)) {
+    if (bolehSetujui(prof, tier, order.division)) {
       return { priceApprovalStatus: 'approved', priceApprovalTier: tier, priceApprovalReason: alasan.trim(), priceApprovalBy: prof.id, priceApprovalByName: prof.name, priceApprovalAt: now }
     }
     addDoc(collection(db, 'notifications'), { type: 'price_approval', orderId, orderNumber: order.orderNumber, division: order.division, lokasiId: order.lokasiId || '',

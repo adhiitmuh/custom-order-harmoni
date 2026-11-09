@@ -1686,6 +1686,8 @@ async function handleQrisImg(url) {
 // Item baru boleh ditambah CS/Kepala Cabang/Data/Pemilik Divisi; menghapus & mengganti nama item hanya Owner.
 const HARGA_KOLOM = ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal']
 const HARGA_IZIN = {
+  // Pemilik Divisi di divisinya sendiri: semua kolom, ganti nama, ✓ cek item baru (tanpa usulan)
+  pemilik: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal'] },
   pengisi: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceModal'] },
   cs:      { isiKosong: ['priceNormal', 'priceCabang'], ubah: [] },
   manager: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo'] },
@@ -1704,6 +1706,8 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
   const pakaiHarga = (lama, baru, label, ref = {}, indukBaru = false) => {
     const out = { ...lama }
     const perluSetuju = role === 'pengisi' && lama?.baru !== true && !indukBaru
+    // Pemilik Divisi menandai item/varian baru sudah dicek (✓ cek)
+    if (role === 'pemilik' && lama?.baru === true && baru?.baru === false) { delete out.baru; out.dicekOleh = nama }
     for (const k of HARGA_KOLOM) {
       const nb = Number(baru?.[k]) || 0, nl = Number(lama?.[k]) || 0
       if (nb === nl) continue
@@ -1732,7 +1736,7 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
   const dipakai = new Set()
   const hasil = []
   // Ganti nama oleh pengisi: hanya item yang masih 'baru' (belum dicek Owner) & nama baru belum dipakai
-  const bolehGanti = l => role === 'pengisi' && l?.baru === true
+  const bolehGanti = l => role === 'pemilik' || (role === 'pengisi' && l?.baru === true)
   for (const b of baruItems || []) {
     const key = kunciNama(b?.name)
     if (!key) continue
@@ -1740,7 +1744,7 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
     if (idx === undefined && b.namaLama) {
       const iLama = peta.get(kunciNama(b.namaLama))
       if (iLama !== undefined && bolehGanti(lamaItems[iLama]) && !dipakai.has(iLama)) { idx = iLama; lamaItems[iLama] = { ...lamaItems[iLama], name: String(b.name).trim().toUpperCase() } }
-      else if (iLama !== undefined) { ditolak.push(`Item "${b.namaLama}" sudah dicek Owner — ganti nama hanya oleh Owner`); continue }
+      else if (iLama !== undefined) { ditolak.push(`Item "${b.namaLama}" sudah dicek Owner — ganti nama hanya oleh Owner / Pemilik Divisi`); continue }
     }
     if (idx !== undefined) {
       if (dipakai.has(idx)) continue
@@ -1756,7 +1760,7 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
         let vi = vPeta.get(vk)
         if (vi === undefined && bv.namaLama) {
           const viL = vPeta.get(kunciNama(bv.namaLama))
-          if (viL !== undefined && role === 'pengisi' && (vLama[viL].baru === true || lama.baru === true) && !vPakai.has(viL)) { vi = viL; vLama[viL] = { ...vLama[viL], name: String(bv.name).trim().toUpperCase() } }
+          if (viL !== undefined && (role === 'pemilik' || (role === 'pengisi' && (vLama[viL].baru === true || lama.baru === true))) && !vPakai.has(viL)) { vi = viL; vLama[viL] = { ...vLama[viL], name: String(bv.name).trim().toUpperCase() } }
         }
         if (vi !== undefined) { if (vPakai.has(vi)) continue; vPakai.add(vi); vHasil.push(pakaiHarga(vLama[vi], bv, `${lama.name} – ${vLama[vi].name}`, { item: lama.name, varian: vLama[vi].name }, lama.baru === true)) }
         else vHasil.push({ name: String(bv.name).trim().toUpperCase(), ...hargaBaru(bv, `${lama.name} – ${bv.name}`), baru: true, dibuatOleh: nama })
@@ -1810,13 +1814,15 @@ async function handlePriceListSave(request, env) {
   const token = await getFirebaseToken(env)
   // Izin khusus pengisi daftar harga (diatur Owner per orang per divisi di settings/izin_harga)
   let role = staff.role
-  if (role !== 'owner') {
+  const divisiStaff = (Array.isArray(staff.divisions) && staff.divisions.length) ? staff.divisions : (staff.divisi ? [staff.divisi] : [])
+  if (role === 'divisi' && divisiStaff.includes(division)) role = 'pemilik'
+  else if (role !== 'owner') {
     const iz = await firestoreGet(projectId, token, 'settings/izin_harga').catch(() => null)
     const map = iz?.fields ? parseFields(iz.fields).map || {} : {}
     if ((map[staff.uid]?.divisions || []).includes(division)) role = 'pengisi'
   }
   if (role !== 'owner' && !HARGA_IZIN[role]) return json({ error: 'Akun ini tidak bisa mengubah daftar harga' }, 403)
-  if (role === 'divisi' && staff.divisi !== division) return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
+  if (role === 'divisi') return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
   const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`
   for (let coba = 0; coba < 3; coba++) {
     const cur = await firestoreGet(projectId, token, `price_list/${division}`)
