@@ -1686,6 +1686,7 @@ async function handleQrisImg(url) {
 // Item baru boleh ditambah CS/Kepala Cabang/Data/Pemilik Divisi; menghapus & mengganti nama item hanya Owner.
 const HARGA_KOLOM = ['priceNormal', 'priceCabang', 'pricePromo', 'priceAdmin', 'priceModal']
 const HARGA_IZIN = {
+  pengisi: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceModal'] },
   cs:      { isiKosong: ['priceNormal', 'priceCabang'], ubah: [] },
   manager: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo'] },
   data:    { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'priceModal'] },
@@ -1786,12 +1787,19 @@ async function handlePriceListSave(request, env) {
   const body = await request.json().catch(() => null)
   const division = String(body?.division || '')
   if (!VALID_DIVISIONS.includes(division) || !Array.isArray(body?.items)) return json({ error: 'Data tidak valid' }, 400)
-  if (staff.role !== 'owner' && !HARGA_IZIN[staff.role]) return json({ error: 'Akun ini tidak bisa mengubah daftar harga' }, 403)
-  if (staff.role === 'divisi' && staff.divisi !== division) return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
   if (body.items.length > 500) return json({ error: 'Terlalu banyak item' }, 400)
 
   const projectId = env.FIREBASE_PROJECT_ID
   const token = await getFirebaseToken(env)
+  // Izin khusus pengisi daftar harga (diatur Owner per orang per divisi di settings/izin_harga)
+  let role = staff.role
+  if (role !== 'owner') {
+    const iz = await firestoreGet(projectId, token, 'settings/izin_harga').catch(() => null)
+    const map = iz?.fields ? parseFields(iz.fields).map || {} : {}
+    if ((map[staff.uid]?.divisions || []).includes(division)) role = 'pengisi'
+  }
+  if (role !== 'owner' && !HARGA_IZIN[role]) return json({ error: 'Akun ini tidak bisa mengubah daftar harga' }, 403)
+  if (role === 'divisi' && staff.divisi !== division) return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
   const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`
   for (let coba = 0; coba < 3; coba++) {
     const cur = await firestoreGet(projectId, token, `price_list/${division}`)
@@ -1808,9 +1816,9 @@ async function handlePriceListSave(request, env) {
           if (kunciNama(v?.name) && !l.variants.some(x => kunciNama(x.name) === kunciNama(v.name))) l.variants.push(v)
       }
     }
-    const { items, ditolak } = staff.role === 'owner'
+    const { items, ditolak } = role === 'owner'
       ? { items: masukan.filter(b => kunciNama(b?.name)), ditolak: [] }
-      : gabungHarga(lamaItems, masukan, staff.role, staff.nama || staff.email)
+      : gabungHarga(lamaItems, masukan, role, staff.nama || staff.email)
     const now = new Date().toISOString()
     const fields = { division: keFs(division), items: keFs(items), updatedAt: { timestampValue: now }, updatedBy: keFs(staff.nama || staff.email || '') }
     const pre = cur?.updateTime ? `?currentDocument.updateTime=${encodeURIComponent(cur.updateTime)}` : '?currentDocument.exists=false'

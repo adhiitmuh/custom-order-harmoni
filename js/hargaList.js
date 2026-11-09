@@ -10,6 +10,8 @@ export const HARGA_KOLOM = ['priceNormal', 'priceCabang', 'pricePromo', 'priceAd
 export const LABEL_HARGA = { priceNormal: 'Normal', priceCabang: 'Cabang', pricePromo: 'Promo', priceAdmin: 'Admin', priceModal: 'Modal' }
 
 const IZIN = {
+  // Pengisi daftar harga (izin khusus dari Owner per divisi): Normal, Cabang, Promo & Modal. Admin tetap Owner.
+  pengisi: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo', 'priceModal'] },
   cs:      { isiKosong: ['priceNormal', 'priceCabang'], ubah: [] },
   manager: { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'pricePromo'] },
   data:    { isiKosong: [], ubah: ['priceNormal', 'priceCabang', 'priceModal'] },
@@ -17,7 +19,11 @@ const IZIN = {
 }
 
 // Boleh menambah item / mengubah daftar harga divisi ini?
+// Izin khusus per orang per divisi (settings/izin_harga) — dimuat halaman ke profile.izinHarga
+export const roleHarga = (profile, division) =>
+  profile?.role !== 'owner' && division && (profile?.izinHarga || []).includes(division) ? 'pengisi' : profile?.role
 export function bolehKelolaHarga(profile, division) {
+  if (roleHarga(profile, division) === 'pengisi') return true
   const r = profile?.role
   if (r === 'owner') return true
   if (r === 'divisi') return profile.divisi === division
@@ -25,14 +31,14 @@ export function bolehKelolaHarga(profile, division) {
 }
 // Boleh mengisi kolom harga `k` yang saat ini bernilai `lama` (0 = kosong / item baru)?
 // `baru` = item/varian masih berstatus baru (belum dicek Owner) → CS masih boleh memperbaiki.
-export function bolehIsiHarga(profile, k, lama = 0, baru = false) {
-  const r = profile?.role
+export function bolehIsiHarga(profile, k, lama = 0, baru = false, division = '') {
+  const r = roleHarga(profile, division)
   if (r === 'owner') return true
   const iz = IZIN[r]; if (!iz) return false
   return iz.ubah.includes(k) || (iz.isiKosong.includes(k) && (!(Number(lama) > 0) || baru === true))
 }
 export const bolehHapusItem = profile => profile?.role === 'owner'
-export const keteranganIzin = profile => ({
+export const keteranganIzin = (profile, division = '') => roleHarga(profile, division) === 'pengisi' ? 'Izin pengisi daftar harga divisi ini: bisa mengisi Normal, Cabang, Promo & Modal. Harga Admin diisi Owner.' : ({
   owner: 'Owner: semua kolom bisa diubah.',
   manager: 'Kepala Cabang: bisa mengisi Normal, Cabang & Promo. Admin & Modal diisi Owner.',
   cs: 'CS: bisa menambah item baru & mengisi harga Normal/Cabang yang masih kosong. Mengubah harga yang sudah ada → Kepala Cabang/Owner.',

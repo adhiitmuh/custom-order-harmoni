@@ -104,11 +104,12 @@
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
-  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, cariMirip, kunciNama, rapikanItem, hargaPublik } from './js/hargaList.js?v=20261108a'
+  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik } from './js/hargaList.js?v=20261109a'
 
   // Kunci kolom harga sesuai role (aturan sama dengan Worker /price-list-save)
   const _prof = () => getProfile()
-  const kunci = (k, lama, baru) => bolehIsiHarga(_prof(), k, lama, baru) ? '' : ` disabled title="Diisi ${k === 'priceAdmin' ? 'Owner' : k === 'pricePromo' ? 'Kepala Cabang / Owner' : k === 'priceModal' ? 'Owner / Pemilik Divisi' : 'Kepala Cabang / Owner (harga sudah terisi)'}"`
+  let _divKonteks = ''  // divisi daftar harga yang sedang dirender/diedit (untuk izin pengisi per divisi)
+  const kunci = (k, lama, baru) => bolehIsiHarga(_prof(), k, lama, baru, _divKonteks) ? '' : ` disabled title="Diisi ${k === 'priceAdmin' ? 'Owner' : k === 'pricePromo' ? 'Kepala Cabang / Owner' : k === 'priceModal' ? 'Owner / Pemilik Divisi' : 'Kepala Cabang / Owner (harga sudah terisi)'}"`
   const kunciTeks = (it, k) => (_prof()?.role === 'cs' && it?._tersimpan && it[k] && !it.baru) ? ' disabled title="Diubah Kepala Cabang / Owner"' : ''
   const kunciNamaItem = it => (!bolehHapusItem(_prof()) && it && it._tersimpan) ? ' disabled title="Ganti nama item hanya Owner"' : ''
   const tandai = items => (items || []).forEach(it => { it._tersimpan = true; (it.variants || []).forEach(v => { v._tersimpan = true }) })
@@ -130,9 +131,48 @@
   let _inlineSaveTimers = {}
   let _savedToast = null
   requireAuth(async (profile) => {
+    // Izin khusus pengisi daftar harga (diatur Owner per orang per divisi)
+    try {
+      await dataAuthReady
+      const iz = await getDoc(doc(db, 'settings', 'izin_harga'))
+      window._izinHarga = iz.exists() ? (iz.data().map || {}) : {}
+      profile.izinHarga = window._izinHarga[profile.id]?.divisions || []
+    } catch { profile.izinHarga = [] }
+    if (profile.role === 'owner') {
+      document.getElementById('pageTitle').insertAdjacentHTML('afterend', `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="bukaIzinHarga()">👥 Izin isi daftar harga</button>`)
+    }
     await renderTabs(profile)
     loadContent(profile)
   })
+
+  window.bukaIzinHarga = async function() {
+    const { loadStaff } = await import('./js/mentions.js')
+    const staf = (await loadStaff()).filter(u => u.role !== 'owner')
+    const map = window._izinHarga || {}
+    const divs = (await getActiveDivisions()).map(d => d.key ? d : { key: d })
+    document.getElementById('izinModal')?.remove()
+    const m = document.createElement('div'); m.id = 'izinModal'
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
+    m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px;max-height:88vh;overflow:auto">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px">👥 Izin isi daftar harga</div>
+      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Orang yang dicentang bisa menambah item & mengisi harga <b>Normal, Cabang, Promo, Modal</b> di divisi itu. Harga Admin, hapus & ganti nama item tetap hanya Owner.</p>
+      <input type="search" id="izCari" placeholder="Cari nama…" style="margin-bottom:8px">
+      <div id="izList">${staf.map(u => `<div class="izRow" data-nama="${escAttr(u.name.toLowerCase())}" style="border-top:1px solid rgba(3,69,67,.08);padding:8px 0">
+        <div style="font-weight:700;font-size:13px">${escAttr(u.name)} <span style="font-weight:400;color:rgba(3,69,67,.45);font-size:11px">${escAttr(u.role || '')}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px">${divs.map(d => `<label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" data-uid="${escAttr(u.id)}" data-nama="${escAttr(u.name)}" value="${escAttr(d.key)}" ${(map[u.id]?.divisions || []).includes(d.key) ? 'checked' : ''}>${escAttr((DIVISION_META[d.key]?.icon || '') + ' ' + (DIVISION_META[d.key]?.label || d.label || d.key))}</label>`).join('')}</div></div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('izinModal').remove()">Batal</button><button class="btn btn-primary" style="flex:1" onclick="simpanIzinHarga()">Simpan</button></div></div>`
+    document.body.appendChild(m)
+    m.querySelector('#izCari').oninput = e => { const q = e.target.value.toLowerCase(); m.querySelectorAll('.izRow').forEach(r => { r.style.display = r.dataset.nama.includes(q) ? '' : 'none' }) }
+  }
+  window.simpanIzinHarga = async function() {
+    const map = {}
+    document.querySelectorAll('#izinModal input[type=checkbox]:checked').forEach(c => { (map[c.dataset.uid] = map[c.dataset.uid] || { nama: c.dataset.nama, divisions: [] }).divisions.push(c.value) })
+    try {
+      await setDoc(doc(db, 'settings', 'izin_harga'), { map, updatedAt: Timestamp.now() })
+      window._izinHarga = map; document.getElementById('izinModal').remove()
+      showSavedToast(`✓ Izin disimpan (${Object.keys(map).length} orang)`)
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
+  }
 
   async function renderTabs(profile) {
     const el = document.getElementById('divTabs')
@@ -167,7 +207,7 @@
       el.innerHTML = '<div class="loading">Memuat…</div>'
     }
     const canEdit = DIVISIONS.some(d => bolehKelolaHarga(profile, d))
-    const canEditModal = profile.role === 'owner' || profile.role === 'data' || profile.role === 'divisi'
+    const canEditModal = profile.role === 'owner' || profile.role === 'data' || profile.role === 'divisi' || (profile.izinHarga || []).length > 0
 
     try {
       await dataAuthReady
@@ -355,9 +395,10 @@
 
   function renderPriceRows(items) {
     const role = getProfile()?.role
-    const canModal = role === 'owner' || role === 'data' || role === 'divisi'
+    _divKonteks = editingPriceDiv || ''
+    const canModal = role === 'owner' || role === 'data' || role === 'divisi' || roleHarga(getProfile(), editingPriceDiv) === 'pengisi'
     document.getElementById('priceRows').innerHTML = `
-      <p style="font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:8px;padding:6px 10px;margin-bottom:8px">🔐 ${keteranganIzin(getProfile())}</p>
+      <p style="font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:8px;padding:6px 10px;margin-bottom:8px">🔐 ${keteranganIzin(getProfile(), editingPriceDiv)}</p>
       <div style="display:grid;grid-template-columns:repeat(${canModal?5:4},1fr);gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(3,69,67,.04);border-radius:8px;font-size:11px;font-weight:700">
         <span class="tier-normal">● Harga Normal<br><span style="font-weight:400;font-size:10px">Staff bisa langsung pakai</span></span>
         <span class="tier-cabang">● Harga Cabang<br><span style="font-weight:400;font-size:10px">Dipakai otomatis di cabang/titik (normal + ongkos cabang)</span></span>
@@ -587,9 +628,10 @@
   }
 
   function renderInlinePriceTable(d) {
+    _divKonteks = d
     const profile = getProfile()
     const canEdit = bolehKelolaHarga(profile, d)
-    const canEditModal = profile?.role === 'owner' || profile?.role === 'data' || (profile?.role === 'divisi' && profile.divisi === d)
+    const canEditModal = profile?.role === 'owner' || profile?.role === 'data' || (profile?.role === 'divisi' && profile.divisi === d) || roleHarga(profile, d) === 'pengisi'
     const bisaHapus = bolehHapusItem(profile)
     const items = priceDataStore[d]?.items || []
 
