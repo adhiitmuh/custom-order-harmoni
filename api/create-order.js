@@ -1696,19 +1696,24 @@ const kunciNama = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ')
 
 function gabungHarga(lamaItems, baruItems, role, nama) {
   const izin = HARGA_IZIN[role]
-  const ditolak = []
+  const ditolak = [], usulan = []
   // CS boleh mengisi yang kosong, atau memperbaiki item/varian yang masih 'baru' (belum dicek Owner)
   const boleh = (k, lamaV, lama) => izin.ubah.includes(k) || (izin.isiKosong.includes(k) && (!(Number(lamaV) > 0) || lama?.baru === true))
-  const pakaiHarga = (lama, baru, label) => {
+  // Pengisi (izin khusus): item/varian yang SUDAH dicek Owner tidak langsung berubah → jadi usulan, menunggu persetujuan Owner.
+  // Item/varian yang masih BARU langsung berubah (Owner menyetujuinya sekaligus lewat ✓ cek).
+  const pakaiHarga = (lama, baru, label, ref = {}, indukBaru = false) => {
     const out = { ...lama }
+    const perluSetuju = role === 'pengisi' && lama?.baru !== true && !indukBaru
     for (const k of HARGA_KOLOM) {
       const nb = Number(baru?.[k]) || 0, nl = Number(lama?.[k]) || 0
       if (nb === nl) continue
-      if (boleh(k, nl, lama)) out[k] = nb
-      else ditolak.push(`${label}: ${k.replace('price', 'Harga ')} tidak boleh diubah oleh akun ini`)
+      if (!boleh(k, nl, lama)) { ditolak.push(`${label}: ${k.replace('price', 'Harga ')} tidak boleh diubah oleh akun ini`); continue }
+      if (perluSetuju) usulan.push({ ...ref, label, kolom: k, dari: nl, ke: nb })
+      else out[k] = nb
     }
     for (const k of ['unit', 'note']) if (baru?.[k] !== undefined && String(baru[k]).trim() !== String(lama?.[k] || '')) {
       if (role === 'cs' && lama?.[k]) ditolak.push(`${label}: ${k === 'unit' ? 'satuan' : 'keterangan'} hanya bisa diubah Kepala Cabang/Owner`)
+      else if (perluSetuju) usulan.push({ ...ref, label, kolom: k, dari: String(lama?.[k] || ''), ke: String(baru[k]).trim() })
       else out[k] = String(baru[k]).trim()
     }
     return out
@@ -1726,23 +1731,34 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
   const peta = new Map(lamaItems.map((it, i) => [kunciNama(it.name), i]))
   const dipakai = new Set()
   const hasil = []
+  // Ganti nama oleh pengisi: hanya item yang masih 'baru' (belum dicek Owner) & nama baru belum dipakai
+  const bolehGanti = l => role === 'pengisi' && l?.baru === true
   for (const b of baruItems || []) {
     const key = kunciNama(b?.name)
     if (!key) continue
-    const idx = peta.get(key)
+    let idx = peta.get(key)
+    if (idx === undefined && b.namaLama) {
+      const iLama = peta.get(kunciNama(b.namaLama))
+      if (iLama !== undefined && bolehGanti(lamaItems[iLama]) && !dipakai.has(iLama)) { idx = iLama; lamaItems[iLama] = { ...lamaItems[iLama], name: String(b.name).trim().toUpperCase() } }
+      else if (iLama !== undefined) { ditolak.push(`Item "${b.namaLama}" sudah dicek Owner — ganti nama hanya oleh Owner`); continue }
+    }
     if (idx !== undefined) {
       if (dipakai.has(idx)) continue
       dipakai.add(idx)
       const lama = lamaItems[idx]
-      const it = pakaiHarga(lama, b, lama.name)
+      const it = pakaiHarga(lama, b, lama.name, { item: lama.name })
       // varian
       const vLama = Array.isArray(lama.variants) ? lama.variants : []
       const vPeta = new Map(vLama.map((v, i) => [kunciNama(v.name), i]))
       const vPakai = new Set(), vHasil = []
       for (const bv of (Array.isArray(b.variants) ? b.variants : [])) {
         const vk = kunciNama(bv?.name); if (!vk) continue
-        const vi = vPeta.get(vk)
-        if (vi !== undefined) { if (vPakai.has(vi)) continue; vPakai.add(vi); vHasil.push(pakaiHarga(vLama[vi], bv, `${lama.name} – ${vLama[vi].name}`)) }
+        let vi = vPeta.get(vk)
+        if (vi === undefined && bv.namaLama) {
+          const viL = vPeta.get(kunciNama(bv.namaLama))
+          if (viL !== undefined && role === 'pengisi' && (vLama[viL].baru === true || lama.baru === true) && !vPakai.has(viL)) { vi = viL; vLama[viL] = { ...vLama[viL], name: String(bv.name).trim().toUpperCase() } }
+        }
+        if (vi !== undefined) { if (vPakai.has(vi)) continue; vPakai.add(vi); vHasil.push(pakaiHarga(vLama[vi], bv, `${lama.name} – ${vLama[vi].name}`, { item: lama.name, varian: vLama[vi].name }, lama.baru === true)) }
         else vHasil.push({ name: String(bv.name).trim().toUpperCase(), ...hargaBaru(bv, `${lama.name} – ${bv.name}`), baru: true, dibuatOleh: nama })
       }
       vLama.forEach((v, i) => { if (!vPakai.has(i)) { vHasil.push(v); ditolak.push(`Varian "${lama.name} – ${v.name}" hanya bisa dihapus Owner`) } })
@@ -1759,7 +1775,8 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
     }
   }
   lamaItems.forEach((it, i) => { if (!dipakai.has(i)) { hasil.push(it); ditolak.push(`Item "${it.name}" hanya bisa dihapus / diganti nama oleh Owner`) } })
-  return { items: hasil, ditolak: [...new Set(ditolak)] }
+  hasil.forEach(it => { delete it.namaLama; (it.variants || []).forEach(v => { delete v.namaLama }) })
+  return { items: hasil, ditolak: [...new Set(ditolak)], usulan }
 }
 
 function keFs(v) {
@@ -1816,7 +1833,7 @@ async function handlePriceListSave(request, env) {
           if (kunciNama(v?.name) && !l.variants.some(x => kunciNama(x.name) === kunciNama(v.name))) l.variants.push(v)
       }
     }
-    const { items, ditolak } = role === 'owner'
+    const { items, ditolak, usulan = [] } = role === 'owner'
       ? { items: masukan.filter(b => kunciNama(b?.name)), ditolak: [] }
       : gabungHarga(lamaItems, masukan, role, staff.nama || staff.email)
     const now = new Date().toISOString()
@@ -1831,7 +1848,15 @@ async function handlePriceListSave(request, env) {
     await firestoreSet(projectId, token, `price_list_public/${division}`, {
       division: keFs(division), items: keFs(hargaPublikW(items)), updatedAt: { timestampValue: now },
     }).catch(() => {})
-    return json({ success: true, items, ditolak })
+    // Usulan perubahan item yang sudah dicek Owner → antrean persetujuan
+    for (const u of usulan.slice(0, 100)) {
+      const id = `${division}_${kunciNama(u.item).replace(/ /g, '-')}_${kunciNama(u.varian || '').replace(/ /g, '-')}_${u.kolom}`.slice(0, 140)
+      await firestoreSet(projectId, token, `price_list_usulan/${id}`, {
+        division: keFs(division), item: keFs(u.item), varian: keFs(u.varian || ''), label: keFs(u.label), kolom: keFs(u.kolom),
+        dari: keFs(u.dari), ke: keFs(u.ke), status: keFs('menunggu'), olehUid: keFs(staff.uid), oleh: keFs(staff.nama || staff.email || ''), at: { timestampValue: now },
+      }).catch(() => {})
+    }
+    return json({ success: true, items, ditolak, usulan: usulan.length })
   }
   return json({ error: 'Daftar harga sedang diubah orang lain — coba lagi' }, 409)
 }

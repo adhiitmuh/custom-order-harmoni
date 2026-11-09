@@ -101,6 +101,7 @@ export const hargaPublik = items => (items || []).map(it => { const x = _pub(it)
 export async function simpanDaftarHarga(profile, division, items, mode = 'ganti') {
   const rapi = (items || []).map(rapikanItem).filter(it => it.name)
   if (profile?.role === 'owner' && mode !== 'tambah') {
+    rapi.forEach(it => { delete it.namaLama; (it.variants || []).forEach(v => { delete v.namaLama }) })
     await setDoc(doc(db, 'price_list', division), { division, items: rapi, updatedAt: Timestamp.now() })
     await setDoc(doc(db, 'price_list_public', division), { division, items: hargaPublik(rapi), updatedAt: Timestamp.now() }).catch(() => {})
     return { items: rapi, ditolak: [] }
@@ -114,7 +115,7 @@ export async function simpanDaftarHarga(profile, division, items, mode = 'ganti'
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Gagal menyimpan (${res.status})`)
-  return { items: data.items || rapi, ditolak: data.ditolak || [] }
+  return { items: data.items || rapi, ditolak: data.ditolak || [], usulan: data.usulan || 0 }
 }
 
 // ── Tingkat harga order (approval) ───────────────────────────────────────────

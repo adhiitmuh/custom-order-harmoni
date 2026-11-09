@@ -116,6 +116,11 @@ service cloud.firestore {
       allow read: if isStaffAuth();
       allow write: if isOwner();
     }
+    // Usulan perubahan harga dari pengisi daftar harga (dibuat Worker) — Owner menyetujui/menolak
+    match /price_list_usulan/{id} {
+      allow read: if isOwner() || (isStaffAuth() && resource.data.olehUid == request.auth.uid);
+      allow update, delete: if isOwner();
+    }
     // Salinan untuk customer (chat.html): hanya harga jual — ditulis Owner / Worker
     match /price_list_public/{div} {
       allow read: if isAuth();

@@ -75,6 +75,7 @@
     <div style="margin-bottom:20px">
       <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">REFERENSI</p>
       <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)" id="pageTitle">Product Knowledge</h1>
+      <div id="usulanPanel"></div>
     </div>
 
     <!-- Division tabs -->
@@ -116,16 +117,18 @@
 <script type="module">
   import { db } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
-  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik } from './js/hargaList.js?v=20261109a'
+  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik } from './js/hargaList.js?v=20261109b'
 
   // Kunci kolom harga sesuai role (aturan sama dengan Worker /price-list-save)
   const _prof = () => getProfile()
   let _divKonteks = ''  // divisi daftar harga yang sedang dirender/diedit (untuk izin pengisi per divisi)
   const kunci = (k, lama, baru) => bolehIsiHarga(_prof(), k, lama, baru, _divKonteks) ? '' : ` disabled title="Diisi ${k === 'priceAdmin' ? 'Owner' : k === 'pricePromo' ? 'Kepala Cabang / Owner' : k === 'priceModal' ? 'Owner / Pemilik Divisi' : 'Kepala Cabang / Owner (harga sudah terisi)'}"`
   const kunciTeks = (it, k) => (_prof()?.role === 'cs' && it?._tersimpan && it[k] && !it.baru) ? ' disabled title="Diubah Kepala Cabang / Owner"' : ''
-  const kunciNamaItem = it => (!bolehHapusItem(_prof()) && it && it._tersimpan) ? ' disabled title="Ganti nama item hanya Owner"' : ''
+  // Ganti nama: Owner selalu; pengisi daftar harga (izin divisi) hanya untuk item/varian yang masih 🆕 BARU
+  const kunciNamaItem = (it, induk) => (!bolehHapusItem(_prof()) && it && it._tersimpan
+    && !(roleHarga(_prof(), _divKonteks) === 'pengisi' && (it.baru || induk?.baru))) ? ' disabled title="Ganti nama item hanya Owner (atau pengisi selama item masih BARU)"' : ''
   const tandai = items => (items || []).forEach(it => { it._tersimpan = true; (it.variants || []).forEach(v => { v._tersimpan = true }) })
   const lencanaBaru = (d, i, it) => it?.baru ? `<span title="Item baru dari ${String(it.dibuatOleh || 'staf').replace(/"/g, '')} — belum dicek Owner" style="font-size:9px;font-weight:800;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 5px;margin-left:4px;white-space:nowrap">🆕 BARU</span>${_prof()?.role === 'owner' ? `<button onclick="verifikasiItem('${d}',${i})" title="Tandai sudah dicek" style="border:none;background:none;cursor:pointer;font-size:11px;color:#059669;font-weight:800">✓ cek</button>` : ''}` : ''
   function tampilkanDitolak(ditolak) {
@@ -157,7 +160,61 @@
     }
     await renderTabs(profile)
     loadContent(profile)
+    muatUsulan()
   })
+
+  // ── Usulan perubahan harga dari pengisi daftar harga → disetujui/ditolak Owner ──
+  const LABEL_KOLOM = { priceNormal: 'Normal', priceCabang: 'Cabang', pricePromo: 'Promo', priceAdmin: 'Admin', priceModal: 'Modal', unit: 'Satuan', note: 'Keterangan' }
+  const fmtNilai = (k, v) => k.startsWith('price') ? 'Rp' + (Number(v) || 0).toLocaleString('id-ID') : (v || '—')
+  let _usulan = []
+  async function muatUsulan() {
+    const prof = getProfile(), el = document.getElementById('usulanPanel'); if (!el || !prof) return
+    try {
+      const q = prof.role === 'owner' ? query(collection(db, 'price_list_usulan'), where('status', '==', 'menunggu'))
+        : query(collection(db, 'price_list_usulan'), where('olehUid', '==', prof.id))
+      const snap = await getDocs(q)
+      _usulan = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => prof.role === 'owner' || u.status === 'menunggu')
+    } catch { _usulan = [] }
+    if (!_usulan.length) { el.innerHTML = ''; return }
+    const isOwner = prof.role === 'owner'
+    el.innerHTML = `<div style="margin-top:12px;border:1.5px solid #fde68a;background:#fffbeb;border-radius:12px;padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+        <b style="color:#b45309">⏳ ${isOwner ? 'Usulan perubahan harga menunggu persetujuan Anda' : 'Usulan Anda menunggu persetujuan Owner'} (${_usulan.length})</b>
+        ${isOwner ? `<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="putusUsulan('semua','setuju')">✓ Setujui semua</button></div>` : ''}
+      </div>
+      ${_usulan.map(u => `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border-top:1px solid #fde68a;padding:7px 0;font-size:13px">
+        <div><b>${escAttr(u.label)}</b> <span style="color:rgba(3,69,67,.5);font-size:11px">${escAttr(DIVISION_META[u.division]?.label || u.division)}</span><br>
+          ${LABEL_KOLOM[u.kolom] || u.kolom}: <s style="color:rgba(3,69,67,.45)">${escAttr(fmtNilai(u.kolom, u.dari))}</s> → <b>${escAttr(fmtNilai(u.kolom, u.ke))}</b>
+          <span style="font-size:11px;color:rgba(3,69,67,.5)"> · ${escAttr(u.oleh || '')}</span></div>
+        ${isOwner ? `<div style="display:flex;gap:6px;align-items:center"><button class="btn btn-primary btn-sm" onclick="putusUsulan('${u.id}','setuju')">✓ Setujui</button><button class="btn btn-ghost btn-sm" onclick="putusUsulan('${u.id}','tolak')">✕ Tolak</button></div>` : '<span style="font-size:11px;color:#b45309">menunggu</span>'}
+      </div>`).join('')}</div>`
+  }
+  window.putusUsulan = async function(id, aksi) {
+    const daftar = id === 'semua' ? _usulan : _usulan.filter(u => u.id === id)
+    if (!daftar.length) return
+    if (id === 'semua' && !confirm(`Setujui ${daftar.length} perubahan harga?`)) return
+    try {
+      if (aksi === 'setuju') {
+        // Terapkan per divisi ke daftar harga terbaru, lalu simpan sebagai Owner
+        const perDiv = {}
+        daftar.forEach(u => { (perDiv[u.division] = perDiv[u.division] || []).push(u) })
+        for (const [div, us] of Object.entries(perDiv)) {
+          const snap = await getDoc(doc(db, 'price_list', div))
+          const items = snap.exists() ? (snap.data().items || []) : []
+          us.forEach(u => {
+            const it = items.find(x => kunciNama(x.name) === kunciNama(u.item)); if (!it) return
+            const target = u.varian ? (it.variants || []).find(v => kunciNama(v.name) === kunciNama(u.varian)) : it
+            if (target) target[u.kolom] = u.kolom.startsWith('price') ? Number(u.ke) || 0 : u.ke
+          })
+          const hasil = await simpanDaftarHarga(getProfile(), div, items)
+          if (priceDataStore[div]) { tandai(hasil.items); priceDataStore[div].items = hasil.items; rerenderPriceWrap(div) }
+        }
+      }
+      for (const u of daftar) await updateDoc(doc(db, 'price_list_usulan', u.id), { status: aksi === 'setuju' ? 'disetujui' : 'ditolak', diputusOleh: getProfile()?.name || 'Owner', diputusAt: Timestamp.now() })
+      showSavedToast(aksi === 'setuju' ? `✓ ${daftar.length} perubahan disetujui & berlaku` : 'Usulan ditolak')
+      muatUsulan()
+    } catch (e) { alert('Gagal: ' + e.message) }
+  }
 
   window.bukaIzinHarga = async function() {
     const { loadStaff } = await import('./js/mentions.js')
@@ -715,7 +772,7 @@
 
       const variantRows = p.variants.map((v, vi) => canEdit ? `<tr style="background:rgba(3,69,67,.012)">
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
-        <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(v.name||'')}"${kunciNamaItem(v)} onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500;white-space:normal"></td>
+        <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(v.name||'')}"${kunciNamaItem(v, p)} onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500;white-space:normal"></td>
         <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}"${kunci('priceNormal', v.priceNormal, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-cabang" type="text" inputmode="numeric" value="${fmtPrice(v.priceCabang)}"${kunci('priceCabang', v.priceCabang, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceCabang',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(v.pricePromo)}"${kunci('pricePromo', v.pricePromo, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
@@ -911,6 +968,8 @@
       }
       if (mirip.length && !confirm(`"${value}" mirip dengan:\n${mirip.slice(0, 3).map(m => '• ' + m.it.name).join('\n')}\n\nKalau barangnya sama, batalkan dan pakai item itu (atau tambahkan varian). Tetap buat item baru?`)) { rerenderPriceWrap(division); return }
     }
+    // Ganti nama item tersimpan → kirim nama asal supaya server mengganti (bukan membuat item baru)
+    if (field === 'name' && item._tersimpan && !item.namaLama && item.name !== value) item.namaLama = item.name
     item[field] = _priceFields.includes(field) ? Number(String(value).replace(/\./g,''))||0 : value
     scheduleInlineSave(division)
   }
@@ -940,8 +999,8 @@
       delete contentCache[division]
       delete contentCache['__all__']
       // Pakai versi yang benar-benar tersimpan (kolom yang tidak diizinkan dikembalikan)
-      if (hasil.ditolak.length) {
-        // Ada yang ditolak → tampilkan versi tersimpan, tapi baris/varian yang belum bernama tetap dipertahankan
+      if (hasil.ditolak.length || hasil.usulan) {
+        // Ada yang ditolak / jadi usulan → tampilkan versi tersimpan, tapi baris/varian yang belum bernama tetap dipertahankan
         const kosong = (priceDataStore[division].items || []).filter(it => !String(it.name || '').trim())
         const lokal = new Map((priceDataStore[division].items || []).map(it => [kunciNama(it.name), it]))
         hasil.items.forEach(it => { const l = lokal.get(kunciNama(it.name)); const vKosong = (l?.variants || []).filter(v => !String(v.name || '').trim()); if (vKosong.length) it.variants = [...(it.variants || []), ...vKosong] })
@@ -949,9 +1008,10 @@
       } else {
         // Tersimpan semua → jangan bangun ulang tabel (kolom yang sedang diisi tidak terputus)
         const baru = new Map(hasil.items.map(it => [kunciNama(it.name), it]))
-        ;(priceDataStore[division].items || []).forEach(it => { const b = baru.get(kunciNama(it.name)); if (b && it.name) { it._tersimpan = true; if (b.baru) { it.baru = true; it.dibuatOleh = b.dibuatOleh } } })
+        ;(priceDataStore[division].items || []).forEach(it => { const b = baru.get(kunciNama(it.name)); if (b && it.name) { it._tersimpan = true; delete it.namaLama; (it.variants || []).forEach(v => { delete v.namaLama; if (v.name) v._tersimpan = true }); if (b.baru) { it.baru = true; it.dibuatOleh = b.dibuatOleh } } })
       }
-      if (hasil.ditolak.length) tampilkanDitolak(hasil.ditolak); else showSavedToast()
+      if (hasil.usulan) { showSavedToast(`⏳ ${hasil.usulan} perubahan dikirim ke Owner — berlaku setelah disetujui`, '#b45309'); muatUsulan() }
+      else if (hasil.ditolak.length) tampilkanDitolak(hasil.ditolak); else showSavedToast()
     } catch(err) { console.error('Gagal simpan harga:', err); showSavedToast('⚠ Gagal menyimpan: ' + err.message, '#b91c1c') }
   }
 
@@ -975,6 +1035,8 @@
   window.updateInlineVariant = function(division, itemIdx, varIdx, field, value) {
     const item = priceDataStore[division]?.items?.[itemIdx]
     if (!item?.variants?.[varIdx]) return
+    const v = item.variants[varIdx]
+    if (field === 'name' && v._tersimpan && !v.namaLama && v.name !== value) v.namaLama = v.name
     item.variants[varIdx][field] = _priceFields.includes(field) ? Number(String(value).replace(/\./g,''))||0 : value
     scheduleInlineSave(division)
   }
