@@ -2867,7 +2867,7 @@
 
   // ===== INTERNAL CHAT =====
   const ROLE_COLOR = {
-    owner:      { bg: '#034543', text: '#FFFBD5', label: 'Owner' },
+    owner:      { bg: '#034543', text: '#FFFBD5', label: '' },
     manager:    { bg: '#6d28d9', text: '#ede9fe', label: 'Kepala Cabang' },
     cs:         { bg: '#0d9488', text: '#ccfbf1', label: 'CS' },
     production: { bg: '#1d4ed8', text: '#dbeafe', label: 'Tim Produksi' },
@@ -2911,7 +2911,7 @@
         return `
           <div style="display:flex;flex-direction:column;align-items:${align}">
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
-              <span style="font-size:10px;font-weight:700;background:${rc.bg};color:${rc.text};padding:1px 6px;border-radius:999px">${rc.label}</span>
+              ${rc.label ? `<span style="font-size:10px;font-weight:700;background:${rc.bg};color:${rc.text};padding:1px 6px;border-radius:999px">${rc.label}</span>` : ''}
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>${tombolHapus}
             </div>

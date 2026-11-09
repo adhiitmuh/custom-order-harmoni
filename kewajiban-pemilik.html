@@ -78,7 +78,7 @@
 
   const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  const norm = s => String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim()
+  const norm = s => String(s || '').replace(/\s*\(owner\)/i, '').toLowerCase().replace(/[^a-z]+/g, ' ').trim()
   const namaDiv = d => DIVISION_META[d] ? `${DIVISION_META[d].icon} ${DIVISION_META[d].label}` : (d || 'Tanpa divisi')
   let profile, info = {}, lokasi = {}, pemilik = {}, baris = [], transfer = [], pasangan = {}
 
@@ -93,7 +93,7 @@
     info = iS.exists() ? iS.data() : {}
     lS.docs.forEach(d => { lokasi[d.id] = { id: d.id, ...d.data() } })
     const simpanan = pS?.exists?.() ? pS.data() : {}
-    DIVISIONS.forEach(d => { pemilik[d] = simpanan[d] || banksPemilikDivisi(info, d)[0]?.accountHolder || 'Adi (Owner)' })
+    DIVISIONS.forEach(d => { pemilik[d] = String(simpanan[d] || '').replace(/\s*\(owner\)/i, '') || banksPemilikDivisi(info, d)[0]?.accountHolder || 'Adi' })
     muat()
   })
 
@@ -112,7 +112,7 @@
     // Tunai / tanpa nomor rekening: milik pemilik lokasi; HQ (tanpa pemilik) → pemilik divisi order itu
     const l = lokasi[p.lokasiId]
     if (l?.divisiPemilik) return { nama: pemilik[l.divisiPemilik], lewat: `${labelRekening(p)} · ${l.nama}` }
-    return { nama: pemilik[p.division] || 'Adi (Owner)', lewat: `${labelRekening(p)} · ${l?.nama || 'HQ'}` }
+    return { nama: pemilik[p.division] || 'Adi', lewat: `${labelRekening(p)} · ${l?.nama || 'HQ'}` }
   }
 
   // Semua pembayaran s.d. akhir bulan terpilih → saldo berjalan (tunggakan bulan-bulan sebelumnya ikut terbawa)
@@ -130,7 +130,7 @@
     transfer = semuaTf.filter(t => (t.tgl || '').startsWith(bln))
     const semuaBaris = []
     bayar.forEach(p => {
-      const ke = pemilik[p.division] || 'Adi (Owner)'
+      const ke = pemilik[p.division] || 'Adi'
       const dari = penerima(p)
       if (norm(dari.nama) === norm(ke)) return
       const o = _orders[p.orderId] || {}
@@ -230,7 +230,7 @@
   }
   window.simpanPemilik = async () => {
     const data = {}
-    document.querySelectorAll('#mpIsi input[data-div]').forEach(i => { data[i.dataset.div] = i.value.trim() || 'Adi (Owner)' })
+    document.querySelectorAll('#mpIsi input[data-div]').forEach(i => { data[i.dataset.div] = i.value.trim() || 'Adi' })
     await setDoc(doc(db, 'settings', 'pemilik_divisi'), data)
     pemilik = data; tutupModal('mPemilik'); muat()
   }

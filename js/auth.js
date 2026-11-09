@@ -471,7 +471,7 @@ export function renderSidebar(profile) {
       <div class="avatar">${(profile.name||'U')[0].toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="user-name">${profile.name}</div>
-        <div class="user-role">${roleLabel}${profile.branch ? ' · ' + profile.branch : ''}</div>
+        ${profile.role === 'owner' ? '' : `<div class="user-role">${roleLabel}${profile.branch ? ' · ' + profile.branch : ''}</div>`}
         ${profile.role === 'owner' && profile.sesiAman !== undefined ? `<div class="user-role" title="Sesi data Custom Order">${profile.sesiAman ? '🔐 Sesi aman' : '⚠️ Sesi lama'}</div>` : ''}
       </div>
       <button id="notifBell" onclick="window.toggleNotifPanel()" title="Notifikasi" style="position:relative;background:none;border:none;cursor:pointer;color:#FFFBD5;font-size:15px;padding:4px;line-height:1;opacity:.6;flex-shrink:0">🔔<span id="notifBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ef4444;color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:0 3px;min-width:13px;text-align:center;line-height:1.6">0</span></button>
