@@ -922,6 +922,13 @@
 
   async function flushInlineSave(division) {
     delete _inlineSaveTimers[division]
+    // Masih mengetik di tabel ini → tunda; simpan setelah keluar dari kolom
+    const wrap = document.getElementById(`price-wrap-${division}`)
+    if (wrap && wrap.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
+      const el = document.activeElement
+      el.addEventListener('blur', () => scheduleInlineSave(division), { once: true })
+      return
+    }
     const items = (priceDataStore[division]?.items || []).map(rapikanItem).filter(item => item.name)
     const names = items.map(it => it.name.toLowerCase())
     if (names.some((n, i) => names.indexOf(n) !== i)) {
@@ -933,9 +940,17 @@
       delete contentCache[division]
       delete contentCache['__all__']
       // Pakai versi yang benar-benar tersimpan (kolom yang tidak diizinkan dikembalikan)
-      if (hasil.ditolak.length || getProfile()?.role !== 'owner') {
-        tandai(hasil.items); priceDataStore[division].items = hasil.items; rerenderPriceWrap(division)
-      } else tandai(priceDataStore[division].items)
+      if (hasil.ditolak.length) {
+        // Ada yang ditolak → tampilkan versi tersimpan, tapi baris/varian yang belum bernama tetap dipertahankan
+        const kosong = (priceDataStore[division].items || []).filter(it => !String(it.name || '').trim())
+        const lokal = new Map((priceDataStore[division].items || []).map(it => [kunciNama(it.name), it]))
+        hasil.items.forEach(it => { const l = lokal.get(kunciNama(it.name)); const vKosong = (l?.variants || []).filter(v => !String(v.name || '').trim()); if (vKosong.length) it.variants = [...(it.variants || []), ...vKosong] })
+        tandai(hasil.items); priceDataStore[division].items = [...hasil.items, ...kosong]; rerenderPriceWrap(division)
+      } else {
+        // Tersimpan semua → jangan bangun ulang tabel (kolom yang sedang diisi tidak terputus)
+        const baru = new Map(hasil.items.map(it => [kunciNama(it.name), it]))
+        ;(priceDataStore[division].items || []).forEach(it => { const b = baru.get(kunciNama(it.name)); if (b && it.name) { it._tersimpan = true; if (b.baru) { it.baru = true; it.dibuatOleh = b.dibuatOleh } } })
+      }
       if (hasil.ditolak.length) tampilkanDitolak(hasil.ditolak); else showSavedToast()
     } catch(err) { console.error('Gagal simpan harga:', err); showSavedToast('⚠ Gagal menyimpan: ' + err.message, '#b91c1c') }
   }
@@ -978,7 +993,8 @@
     if (!item.variants) item.variants = []
     item.variants.push({ name: '', priceNormal: 0, priceCabang: 0, pricePromo: 0, priceAdmin: 0, priceModal: 0 })
     rerenderPriceWrap(division)
-    scheduleInlineSave(division)
+    // Fokus ke nama varian baru; disimpan setelah namanya diisi (tidak langsung)
+    setTimeout(() => { const ins = document.querySelectorAll(`#price-wrap-${division} input[placeholder="Nama varian"]`); [...ins].reverse().find(x => !x.value)?.focus() }, 50)
   }
 
   function showSavedToast(msg = '✓ Harga tersimpan', color = '#059669') {
