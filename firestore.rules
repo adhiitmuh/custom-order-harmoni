@@ -86,6 +86,11 @@ service cloud.firestore {
     match /orders/{orderId}/internal_chat/{msgId} {
       allow read: if isStaffAuth() && bolehOrderId(orderId);
       allow create: if isStaffAuth() && bolehOrderId(orderId);
+      // Gambar boleh dihapus pengirimnya (pesan tetap ada: "Gambar dihapus oleh …"); teks hanya Owner
+      allow update: if isOwner() || (isStaffAuth() && resource.data.senderId == request.auth.uid
+        && resource.data.get('imageUrl', null) != null && request.resource.data.imageUrl == null
+        && request.resource.data.gambarDihapus == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['imageUrl', 'gambarDihapus', 'dihapusOleh', 'dihapusAt']));
       allow delete: if isOwner();
     }
     match /orders/{orderId}/supplier_chat/{msgId} {

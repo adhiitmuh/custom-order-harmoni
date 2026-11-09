@@ -2899,7 +2899,13 @@
         const escaped = (m.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
         const rendered = highlightMentions(escaped, staffList, profile?.id)
         const isMentioned = staffList.some(s => s.id === profile?.id && (m.content||'').includes('@'+s.name))
-        const bubbleContent = m.imageUrl
+        const isOwner = profile?.role === 'owner'
+        // Gambar boleh dihapus pengirimnya / Owner (jejak tetap terlihat); teks hanya Owner yang bisa menghapus
+        const tombolHapus = (m.imageUrl && (isMe || isOwner) ? `<button onclick="hapusGambarChat('${d.id}')" title="Hapus gambar" style="border:none;background:none;cursor:pointer;font-size:11px;color:#b91c1c;padding:0 4px">🗑 gambar</button>` : '')
+          + (isOwner ? `<button onclick="hapusPesanChat('${d.id}')" title="Hapus pesan (hanya Owner)" style="border:none;background:none;cursor:pointer;font-size:11px;color:rgba(3,69,67,.4);padding:0 4px">✕</button>` : '')
+        const bubbleContent = m.gambarDihapus
+          ? `<span style="font-size:12px;font-style:italic;opacity:.7">🗑 Gambar dihapus oleh ${esc(m.dihapusOleh || '')}</span>${m.content ? `<div style="margin-top:6px;font-size:12px">${escaped}</div>` : ''}`
+          : m.imageUrl
           ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:200px;border-radius:8px;display:block;object-fit:cover"></a>${m.content ? `<div style="margin-top:6px;font-size:12px">${escaped}</div>` : ''}`
           : rendered
         return `
@@ -2907,7 +2913,7 @@
             <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;${isMe ? 'flex-direction:row-reverse' : ''}">
               <span style="font-size:10px;font-weight:700;background:${rc.bg};color:${rc.text};padding:1px 6px;border-radius:999px">${rc.label}</span>
               <span style="font-size:11px;font-weight:600;color:var(--black)">${m.senderName || '—'}</span>
-              <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>
+              <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(m.createdAt)}</span>${tombolHapus}
             </div>
             <div class="${isMentioned ? 'bubble-mentioned' : ''}" style="background:${bubbleBg};color:${bubbleColor};border:${bubbleBorder};padding:${m.imageUrl ? '6px' : '9px 13px'};border-radius:${isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%;box-shadow:0 1px 3px rgba(0,0,0,.05)">
               ${bubbleContent}
@@ -2919,6 +2925,25 @@
   }
 
   let _internalPhotoFile = null
+
+  window.hapusGambarChat = async function(id) {
+    if (!confirm('Hapus gambar ini? Di chat akan tertulis "Gambar dihapus oleh ' + (getProfile()?.name || '') + '".')) return
+    try {
+      const snap = await getDoc(doc(db, 'orders', orderId, 'internal_chat', id))
+      const url = snap.data()?.imageUrl
+      await updateDoc(doc(db, 'orders', orderId, 'internal_chat', id), { imageUrl: null, gambarDihapus: true, dihapusOleh: getProfile()?.name || '', dihapusAt: Timestamp.now() })
+      if (url) deleteObject(ref(storage, url)).catch(() => {})
+    } catch (e) { alert('Gagal menghapus: ' + e.message) }
+  }
+  window.hapusPesanChat = async function(id) {
+    if (!confirm('Hapus pesan ini sepenuhnya? (hanya Owner)')) return
+    try {
+      const snap = await getDoc(doc(db, 'orders', orderId, 'internal_chat', id))
+      const url = snap.data()?.imageUrl
+      await deleteDoc(doc(db, 'orders', orderId, 'internal_chat', id))
+      if (url) deleteObject(ref(storage, url)).catch(() => {})
+    } catch (e) { alert('Gagal menghapus: ' + e.message) }
+  }
 
   window.selectInternalPhoto = function(input) {
     const file = input.files[0]
