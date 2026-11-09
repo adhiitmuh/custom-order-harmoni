@@ -1719,7 +1719,7 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
       const v = Number(baru?.[k]) || 0
       if (!v) { out[k] = 0; continue }
       if (izin.ubah.includes(k) || izin.isiKosong.includes(k)) out[k] = v
-      else { out[k] = 0; ditolak.push(`${label}: ${k.replace('price', 'Harga ')} diisi Kepala Cabang/Owner`) }
+      else { out[k] = 0; ditolak.push(`${label}: ${k.replace('price', 'Harga ')} diisi ${k === 'priceAdmin' ? 'Owner' : 'Kepala Cabang/Owner'}`) }
     }
     return out
   }
