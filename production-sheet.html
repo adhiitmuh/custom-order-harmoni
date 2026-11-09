@@ -117,7 +117,7 @@
 
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder } from './js/auth.js'
+  import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
@@ -140,7 +140,9 @@
 
   // ── Download Excel per jenis (Bordir / US / KL): siapa yang mengunduh & apakah order berubah ──
   // Yang boleh mengunduh (dan tercatat): tim produksi, pemilik divisi, owner
+  // + CS yang merangkap produksi Bordir / Papan Nama (diatur di Kelola Pengguna)
   const bolehDownload = () => ['production', 'divisi', 'owner'].includes(_profile?.role)
+    || csRangkapDivisi(_profile).some(d => ['bordir', 'papan-nama'].includes(d))
   const JENIS_LABEL = { bordir: 'Bordir', us: 'US', kl: 'KL', lain: 'Lainnya' }
 
   // Jenis item papan nama dari nama/varian: KL (Kulit/Kaca Lapis) atau US; selain itu "lain"
