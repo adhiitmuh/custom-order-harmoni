@@ -2492,8 +2492,12 @@
     const bolehBiaya = ['owner', 'manager', 'cs'].includes(prof.role)
     const biaya = order.biayaLain || [], komp = order.komplain || []
     const tB = biaya.reduce((t, b) => t + (Number(b.jumlah) || 0), 0), tK = komp.reduce((t, k) => t + (Number(k.biaya) || 0), 0)
-    const upah = daftarPenjahit(order).reduce((t, x) => t + (Number(x.upah) || 0), 0)
-    const laba = (order.totalPrice || 0) - (order.hargaModal || 0) - upah - tB - tK
+    let upah = daftarPenjahit(order).reduce((t, x) => t + (Number(x.upah) || 0), 0)
+    // Order Konveksi: biaya aktual dari Sistem Produksi YH (sama dengan halaman Laba)
+    const y = order.yhProduksi || {}, yhUpah = (Number(y.upahGunting) || 0) + (Number(y.upahJahit) || 0)
+    const modal = Number(y.biayaKain) > 0 ? Number(y.biayaKain) : (order.hargaModal || 0), modalYH = Number(y.biayaKain) > 0
+    if (yhUpah > 0) upah = yhUpah
+    const laba = (order.totalPrice || 0) - modal - upah - tB - tK
     return `<div class="card" style="margin-bottom:14px">
       <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">Biaya Lain & Komplain</h2>
       <div style="font-size:12px;font-weight:700;color:rgba(3,69,67,.5);margin-bottom:4px">💸 Biaya lain (ongkir, bahan tambahan, dll)</div>
@@ -2507,8 +2511,8 @@
       <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="tambahKomplain()">+ Catat komplain/revisi</button>
       ${prof.role === 'owner' ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(3,69,67,.15);font-size:12px;line-height:1.7">
         <div style="display:flex;justify-content:space-between"><span>Harga jual</span><b>${fmtCurrency(order.totalPrice || 0)}</b></div>
-        <div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Modal${order.hargaModal ? '' : ' (belum diisi)'}</span><span>${fmtCurrency(order.hargaModal || 0)}</span></div>
-        ${upah ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Upah penjahit</span><span>${fmtCurrency(upah)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− ${modalYH ? 'Kain (aktual produksi YH)' : 'Modal' + (order.hargaModal ? '' : ' (belum diisi)')}</span><span>${fmtCurrency(modal)}</span></div>
+        ${upah ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Upah ${yhUpah > 0 ? 'gunting + jahit (YH)' : 'penjahit'}</span><span>${fmtCurrency(upah)}</span></div>` : ''}
         ${tB ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya lain</span><span>${fmtCurrency(tB)}</span></div>` : ''}
         ${tK ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya komplain</span><span>${fmtCurrency(tK)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;font-weight:800;color:${laba >= 0 ? '#059669' : '#b91c1c'}"><span>Laba bersih</span><span>${fmtCurrency(laba)}</span></div></div>` : ''}
