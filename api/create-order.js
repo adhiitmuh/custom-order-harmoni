@@ -131,6 +131,9 @@ export default {
     // /qris-img: ambil gambar QRIS (Firebase Storage / ImgBB) supaya bisa dibagikan
     // sebagai file lewat tombol Bagikan (Storage tidak mengizinkan fetch lintas-domain).
     // Hanya gambar dari sumber yang diizinkan, maks 5 MB.
+    // Sistem Produksi YH (konveksi): daftar order Konveksi & kirim progres produksi
+    if (request.method === 'GET' && url.pathname === '/yh/orders') return handleYhOrders(request, env)
+    if (request.method === 'POST' && url.pathname === '/yh/progress') return handleYhProgress(request, env)
     if (request.method === 'GET' && url.pathname === '/qris-img') {
       return handleQrisImg(url)
     }
@@ -1797,6 +1800,83 @@ function keFs(v) {
 }
 const _pubItem = ({ priceModal, pricePromo, priceAdmin, priceCabang, baru, dibuatOleh, dibuatAt, ...x }) => x
 const hargaPublikW = items => items.map(it => { const x = _pubItem(it); if (Array.isArray(x.variants)) x.variants = x.variants.map(_pubItem); return x })
+
+
+// ── Sistem Produksi YH (Young Harmonis Konveksi) ─────────────────────────────
+// Staf YH memilih order divisi Konveksi dari Custom Order & mengirim progres produksi.
+// Akses: akun Portal aktif yang Owner atau punya apps.yhk.akses. Kontak customer TIDAK dikirim.
+async function getYhStaff(idToken, firebaseUser) {
+  const uid = firebaseUser?.localId
+  if (!uid) return null
+  const doc = await firestoreGet(PORTAL_PROJECT_ID, idToken, `users/${uid}`)
+  if (!doc?.fields) return null
+  const p = parseFields(doc.fields)
+  if (p.aktif !== true) return null
+  if (p.role === 'owner') return { uid, role: 'admin', nama: p.nama || '' }
+  const app = p.apps?.yhk
+  if (!app?.akses) return null
+  return { uid, role: app.role === 'admin' ? 'admin' : 'staff', nama: p.nama || '' }
+}
+async function authYh(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return { err: json({ error: 'Authorization required' }, 401) }
+  const fu = await verifyFirebaseIdToken(idToken, env)
+  if (!fu) return { err: json({ error: 'Sesi login habis — muat ulang halaman' }, 401) }
+  const staff = await getYhStaff(idToken, fu)
+  if (!staff) return { err: json({ error: 'Akun tidak punya akses Sistem Produksi YH' }, 403) }
+  return { staff }
+}
+const YH_SELESAI = ['done', 'delivered', 'cancelled', 'draft']
+async function handleYhOrders(request, env) {
+  const { err } = await authYh(request, env); if (err) return err
+  const token = await getFirebaseToken(env)
+  const docs = await firestoreQuery(env.FIREBASE_PROJECT_ID, token, 'orders', [{ field: 'division', op: 'EQUAL', value: 'konveksi' }])
+  const orders = docs.map(r => {
+    const o = parseFields(r.document.fields || {})
+    const items = (Array.isArray(o.orderItems) ? o.orderItems : []).map(i => ({ name: String(i.name || ''), qty: Number(i.qty) || 0 })).filter(i => i.name)
+    return {
+      id: r.document.name.split('/').pop(), orderNumber: o.orderNumber || '', customerName: o.customerName || '',
+      status: o.status || '', dueDate: o.dueDate || '', items, totalQty: items.reduce((t, i) => t + i.qty, 0),
+      sizeBreakdown: o.sizeBreakdown && typeof o.sizeBreakdown === 'object' ? o.sizeBreakdown : null,
+      progressPercentage: Number(o.progressPercentage) || 0, priceApprovalStatus: o.priceApprovalStatus || '',
+    }
+  }).filter(o => !YH_SELESAI.includes(o.status))
+    .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')))
+  return json({ orders })
+}
+// Body: { orderId, jumlah: { kain, gunting, ambil, jahit, qc }, total }
+// Progres = pcs sudah dijahit / total pcs order (maks 95% — "Selesai" tetap ditandai CS di Custom Order).
+// Status 'pending' → 'in-progress' saat kain mulai diambil, kecuali harga masih menunggu approval.
+async function handleYhProgress(request, env) {
+  const { staff, err } = await authYh(request, env); if (err) return err
+  const body = await request.json().catch(() => null)
+  const orderId = String(body?.orderId || '')
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(orderId)) return json({ error: 'Order tidak valid' }, 400)
+  const projectId = env.FIREBASE_PROJECT_ID, token = await getFirebaseToken(env)
+  const cur = await firestoreGet(projectId, token, `orders/${orderId}`)
+  if (!cur?.fields) return json({ error: 'Order tidak ditemukan' }, 404)
+  const o = parseFields(cur.fields)
+  if (o.division !== 'konveksi') return json({ error: 'Bukan order Konveksi' }, 403)
+  const n = k => Math.max(0, Math.round(Number(body?.jumlah?.[k]) || 0))
+  const jumlah = { kain: n('kain'), gunting: n('gunting'), ambil: n('ambil'), jahit: n('jahit'), qc: n('qc') }
+  const total = (Array.isArray(o.orderItems) ? o.orderItems : []).reduce((t, i) => t + (Number(i.qty) || 0), 0) || Math.round(Number(body?.total) || 0)
+  const now = new Date().toISOString()
+  const fields = { yhProduksi: keFs({ ...jumlah, total, updatedAt: now, oleh: staff.nama || '' }), updatedAt: { timestampValue: now } }
+  const mask = ['yhProduksi', 'updatedAt']
+  if (total > 0) {
+    const pct = Math.min(95, Math.round(jumlah.jahit / total * 100))
+    if (pct > (Number(o.progressPercentage) || 0)) { fields.progressPercentage = keFs(pct); mask.push('progressPercentage') }
+  }
+  if (o.status === 'pending' && o.priceApprovalStatus !== 'pending' && (jumlah.kain > 0 || jumlah.gunting > 0)) {
+    fields.status = keFs('in-progress'); mask.push('status')
+  }
+  const qs = mask.map(m => 'updateMask.fieldPaths=' + m).join('&') + `&currentDocument.updateTime=${encodeURIComponent(cur.updateTime)}`
+  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/orders/${orderId}?${qs}`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }),
+  })
+  if (!res.ok) return json({ error: 'Gagal memperbarui order: ' + (await res.text()).slice(0, 160) }, 500)
+  return json({ success: true, progressPercentage: fields.progressPercentage ? Number(fields.progressPercentage.integerValue) : o.progressPercentage || 0, status: fields.status ? 'in-progress' : o.status })
+}
 
 async function handlePriceListSave(request, env) {
   const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
