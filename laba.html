@@ -74,11 +74,17 @@
     const [y, m] = document.getElementById('bulan').value.split('-').map(Number)
     const s = await getDocs(query(collection(db, 'orders'), where('createdAt', '>=', Timestamp.fromDate(new Date(y, m - 1, 1))), where('createdAt', '<', Timestamp.fromDate(new Date(y, m, 1))))).catch(() => ({ docs: [] }))
     semua = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => !['cancelled', 'draft'].includes(o.status)).map(o => {
-      const jual = Number(o.totalPrice) || 0, modal = Number(o.hargaModal) || 0
-      const upah = daftarPenjahit(o).reduce((t, x) => t + (Number(x.upah) || 0), 0)
+      const jual = Number(o.totalPrice) || 0
+      let modal = Number(o.hargaModal) || 0
+      let upah = daftarPenjahit(o).reduce((t, x) => t + (Number(x.upah) || 0), 0)
+      // Order Konveksi: pakai biaya aktual dari Sistem Produksi YH (kain × harga/m, upah gunting + jahit)
+      const y = o.yhProduksi || {}, yhUpah = (Number(y.upahGunting) || 0) + (Number(y.upahJahit) || 0)
+      const aktualYH = (Number(y.biayaKain) || 0) > 0 || yhUpah > 0
+      if (Number(y.biayaKain) > 0) modal = Number(y.biayaKain)
+      if (yhUpah > 0) upah = yhUpah
       const biaya = (o.biayaLain || []).reduce((t, b) => t + (Number(b.jumlah) || 0), 0)
       const komp = (o.komplain || []).reduce((t, k) => t + (Number(k.biaya) || 0), 0)
-      return { o, jual, modal, upah, biaya, komp, laba: jual - modal - upah - biaya - komp, tanpaModal: !modal && jual > 0 }
+      return { o, jual, modal, upah, biaya, komp, laba: jual - modal - upah - biaya - komp, tanpaModal: !modal && jual > 0, aktualYH, kainTanpaHarga: y.kainTanpaHarga || [] }
     })
     render()
   }
@@ -112,7 +118,7 @@
 
     document.getElementById('perOrder').innerHTML = t.length ? `<table class="lb"><thead><tr><th>Order</th><th>Divisi</th><th class="r">Jual</th><th class="r">Modal</th><th class="r">Upah</th><th class="r">Biaya</th><th class="r">Laba</th></tr></thead><tbody>
       ${[...t].sort((a, b) => a.laba - b.laba).map(x => `<tr><td><a href="order.html?id=${esc(x.o.id)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(x.o.orderNumber)}</a><div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(x.o.customerName)}</div></td><td>${esc(namaDiv(x.o.division))}</td>
-        <td class="r">${rp(x.jual)}</td><td class="r">${x.tanpaModal ? '<span style="color:#b45309">⚠</span>' : rp(x.modal)}</td><td class="r">${x.upah ? rp(x.upah) : '—'}</td><td class="r">${x.biaya + x.komp ? rp(x.biaya + x.komp) : '—'}</td><td class="r" style="font-weight:800;color:${x.laba >= 0 ? '#059669' : '#b91c1c'}">${x.tanpaModal ? '—' : rp(x.laba)}</td></tr>`).join('')}</tbody></table>` : ''
+        <td class="r">${rp(x.jual)}</td><td class="r">${x.tanpaModal ? '<span style="color:#b45309">⚠</span>' : rp(x.modal)}${x.aktualYH ? `<div style="font-size:10px;color:#059669" title="Biaya kain & upah aktual dari Sistem Produksi YH">🏭 aktual YH${x.kainTanpaHarga.length ? ' · ⚠ harga kain ' + esc(x.kainTanpaHarga.join(', ')) + ' belum diisi' : ''}</div>` : ''}</td><td class="r">${x.upah ? rp(x.upah) : '—'}</td><td class="r">${x.biaya + x.komp ? rp(x.biaya + x.komp) : '—'}</td><td class="r" style="font-weight:800;color:${x.laba >= 0 ? '#059669' : '#b91c1c'}">${x.tanpaModal ? '—' : rp(x.laba)}</td></tr>`).join('')}</tbody></table>` : ''
   }
 
   window.unduh = () => {

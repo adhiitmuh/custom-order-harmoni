@@ -1861,7 +1861,11 @@ async function handleYhProgress(request, env) {
   const jumlah = { kain: n('kain'), gunting: n('gunting'), ambil: n('ambil'), jahit: n('jahit'), qc: n('qc') }
   const total = (Array.isArray(o.orderItems) ? o.orderItems : []).reduce((t, i) => t + (Number(i.qty) || 0), 0) || Math.round(Number(body?.total) || 0)
   const now = new Date().toISOString()
-  const fields = { yhProduksi: keFs({ ...jumlah, total, updatedAt: now, oleh: staff.nama || '' }), updatedAt: { timestampValue: now } }
+  // Biaya produksi aktual dari YH (kain × harga/m, upah gunting & jahit) — dipakai halaman Laba
+  const rp = k => Math.max(0, Math.round(Number(body?.biaya?.[k]) || 0))
+  const biaya = body?.biaya ? { biayaKain: rp('kain'), upahGunting: rp('upahGunting'), upahJahit: rp('upahJahit'),
+    kainTanpaHarga: (Array.isArray(body.biaya.kainTanpaHarga) ? body.biaya.kainTanpaHarga : []).map(x => String(x).slice(0, 60)).slice(0, 10) } : {}
+  const fields = { yhProduksi: keFs({ ...jumlah, total, ...biaya, updatedAt: now, oleh: staff.nama || '' }), updatedAt: { timestampValue: now } }
   const mask = ['yhProduksi', 'updatedAt']
   if (total > 0) {
     const pct = Math.min(95, Math.round(jumlah.jahit / total * 100))

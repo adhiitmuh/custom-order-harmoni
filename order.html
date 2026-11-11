@@ -685,7 +685,12 @@
                 <div style="font-weight:700;margin-bottom:6px">🏭 Produksi Young Harmonis <span style="font-weight:500;color:rgba(3,69,67,.45);font-size:11px">· ${y.updatedAt ? new Date(y.updatedAt).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</span></div>
                 <div style="display:flex;flex-wrap:wrap;gap:6px 14px;color:rgba(3,69,67,.75)">
                   <span>Kain diambil: <b>${f(y.kain)}</b></span><span>Digunting: <b>${f(y.gunting)}</b></span><span>Di penjahit: <b>${f(y.ambil)}</b></span><span>Dijahit: <b>${f(y.jahit)}</b></span>${y.qc ? `<span>Lolos QC: <b>${f(y.qc)}</b></span>` : ''}
-                </div></div>` })() : ''}
+                </div>
+                ${profile.role === 'owner' && (y.biayaKain || y.upahGunting || y.upahJahit) ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(3,69,67,.15);display:flex;flex-wrap:wrap;gap:6px 14px;color:rgba(3,69,67,.75)">
+                  <span>Biaya kain: <b>Rp ${(y.biayaKain||0).toLocaleString('id-ID')}</b></span><span>Upah gunting: <b>Rp ${(y.upahGunting||0).toLocaleString('id-ID')}</b></span><span>Upah jahit: <b>Rp ${(y.upahJahit||0).toLocaleString('id-ID')}</b></span>
+                  <span>Total produksi: <b>Rp ${((y.biayaKain||0)+(y.upahGunting||0)+(y.upahJahit||0)).toLocaleString('id-ID')}</b></span>
+                  ${(y.kainTanpaHarga||[]).length ? `<span style="color:#b45309">⚠ Harga kain ${esc((y.kainTanpaHarga||[]).join(', '))} belum diisi di Kain Masuk</span>` : ''}</div>` : ''}
+                </div>` })() : ''}
             <div id="progressForm" style="display:none;background:var(--beige-soft);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid rgba(3,69,67,.08)">
               <label style="font-size:12px;margin-bottom:4px">Persentase (<span id="rangeLabel">${order.progressPercentage||0}</span>%)</label>
               <input type="range" id="progressRange" min="0" max="100" step="5" value="${order.progressPercentage||0}"
