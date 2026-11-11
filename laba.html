@@ -79,8 +79,9 @@
       let upah = daftarPenjahit(o).reduce((t, x) => t + (Number(x.upah) || 0), 0)
       // Order Konveksi: pakai biaya aktual dari Sistem Produksi YH (kain × harga/m, upah gunting + jahit)
       const y = o.yhProduksi || {}, yhUpah = (Number(y.upahGunting) || 0) + (Number(y.upahJahit) || 0)
-      const aktualYH = (Number(y.biayaKain) || 0) > 0 || yhUpah > 0
-      if (Number(y.biayaKain) > 0) modal = Number(y.biayaKain)
+      const yhBahan = Number(y.biayaBahan) || 0
+      const aktualYH = (Number(y.biayaKain) || 0) > 0 || yhUpah > 0 || yhBahan > 0
+      if (Number(y.biayaKain) > 0 || yhBahan > 0) modal = (Number(y.biayaKain) || 0) + yhBahan
       if (yhUpah > 0) upah = yhUpah
       const biaya = (o.biayaLain || []).reduce((t, b) => t + (Number(b.jumlah) || 0), 0)
       const komp = (o.komplain || []).reduce((t, k) => t + (Number(k.biaya) || 0), 0)

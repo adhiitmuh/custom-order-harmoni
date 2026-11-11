@@ -686,9 +686,10 @@
                 <div style="display:flex;flex-wrap:wrap;gap:6px 14px;color:rgba(3,69,67,.75)">
                   <span>Kain diambil: <b>${f(y.kain)}</b></span><span>Digunting: <b>${f(y.gunting)}</b></span><span>Di penjahit: <b>${f(y.ambil)}</b></span><span>Dijahit: <b>${f(y.jahit)}</b></span>${y.qc ? `<span>Lolos QC: <b>${f(y.qc)}</b></span>` : ''}
                 </div>
-                ${profile.role === 'owner' && (y.biayaKain || y.upahGunting || y.upahJahit) ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(3,69,67,.15);display:flex;flex-wrap:wrap;gap:6px 14px;color:rgba(3,69,67,.75)">
+                ${profile.role === 'owner' && (y.biayaKain || y.biayaBahan || y.upahGunting || y.upahJahit) ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(3,69,67,.15);display:flex;flex-wrap:wrap;gap:6px 14px;color:rgba(3,69,67,.75)">
                   <span>Biaya kain: <b>Rp ${(y.biayaKain||0).toLocaleString('id-ID')}</b></span><span>Upah gunting: <b>Rp ${(y.upahGunting||0).toLocaleString('id-ID')}</b></span><span>Upah jahit: <b>Rp ${(y.upahJahit||0).toLocaleString('id-ID')}</b></span>
-                  <span>Total produksi: <b>Rp ${((y.biayaKain||0)+(y.upahGunting||0)+(y.upahJahit||0)).toLocaleString('id-ID')}</b></span>
+                  ${y.biayaBahan ? `<span title="Aktual dari Bahan Keluar + standar per pcs (Dashboard Modal) untuk bahan yang tidak dicatat">Bahan pendukung: <b>Rp ${(y.biayaBahan||0).toLocaleString('id-ID')}</b> <span style="font-size:10px">(aktual ${(y.biayaBahanAktual||0).toLocaleString('id-ID')} + standar ${(y.biayaBahanStandar||0).toLocaleString('id-ID')})</span></span>` : ''}
+                  <span>Total produksi: <b>Rp ${((y.biayaKain||0)+(y.biayaBahan||0)+(y.upahGunting||0)+(y.upahJahit||0)).toLocaleString('id-ID')}</b></span>
                   ${(y.kainTanpaHarga||[]).length ? `<span style="color:#b45309">⚠ Harga kain ${esc((y.kainTanpaHarga||[]).join(', '))} belum diisi di Kain Masuk</span>` : ''}</div>` : ''}
                 </div>` })() : ''}
             <div id="progressForm" style="display:none;background:var(--beige-soft);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid rgba(3,69,67,.08)">
@@ -2495,7 +2496,8 @@
     let upah = daftarPenjahit(order).reduce((t, x) => t + (Number(x.upah) || 0), 0)
     // Order Konveksi: biaya aktual dari Sistem Produksi YH (sama dengan halaman Laba)
     const y = order.yhProduksi || {}, yhUpah = (Number(y.upahGunting) || 0) + (Number(y.upahJahit) || 0)
-    const modal = Number(y.biayaKain) > 0 ? Number(y.biayaKain) : (order.hargaModal || 0), modalYH = Number(y.biayaKain) > 0
+    const yhBahan = Number(y.biayaBahan) || 0, modalYH = Number(y.biayaKain) > 0 || yhBahan > 0
+    const modal = modalYH ? (Number(y.biayaKain) || 0) + yhBahan : (order.hargaModal || 0)
     if (yhUpah > 0) upah = yhUpah
     const laba = (order.totalPrice || 0) - modal - upah - tB - tK
     return `<div class="card" style="margin-bottom:14px">
@@ -2511,7 +2513,7 @@
       <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="tambahKomplain()">+ Catat komplain/revisi</button>
       ${prof.role === 'owner' ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(3,69,67,.15);font-size:12px;line-height:1.7">
         <div style="display:flex;justify-content:space-between"><span>Harga jual</span><b>${fmtCurrency(order.totalPrice || 0)}</b></div>
-        <div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− ${modalYH ? 'Kain (aktual produksi YH)' : 'Modal' + (order.hargaModal ? '' : ' (belum diisi)')}</span><span>${fmtCurrency(modal)}</span></div>
+        <div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− ${modalYH ? 'Kain + bahan (produksi YH)' : 'Modal' + (order.hargaModal ? '' : ' (belum diisi)')}</span><span>${fmtCurrency(modal)}</span></div>
         ${upah ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Upah ${yhUpah > 0 ? 'gunting + jahit (YH)' : 'penjahit'}</span><span>${fmtCurrency(upah)}</span></div>` : ''}
         ${tB ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya lain</span><span>${fmtCurrency(tB)}</span></div>` : ''}
         ${tK ? `<div style="display:flex;justify-content:space-between;color:rgba(3,69,67,.6)"><span>− Biaya komplain</span><span>${fmtCurrency(tK)}</span></div>` : ''}

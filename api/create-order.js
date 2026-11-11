@@ -1864,6 +1864,7 @@ async function handleYhProgress(request, env) {
   // Biaya produksi aktual dari YH (kain × harga/m, upah gunting & jahit) — dipakai halaman Laba
   const rp = k => Math.max(0, Math.round(Number(body?.biaya?.[k]) || 0))
   const biaya = body?.biaya ? { biayaKain: rp('kain'), upahGunting: rp('upahGunting'), upahJahit: rp('upahJahit'),
+    biayaBahanAktual: rp('bahanAktual'), biayaBahanStandar: rp('bahanStandar'), biayaBahan: rp('bahanAktual') + rp('bahanStandar'),
     kainTanpaHarga: (Array.isArray(body.biaya.kainTanpaHarga) ? body.biaya.kainTanpaHarga : []).map(x => String(x).slice(0, 60)).slice(0, 10) } : {}
   const fields = { yhProduksi: keFs({ ...jumlah, total, ...biaya, updatedAt: now, oleh: staff.nama || '' }), updatedAt: { timestampValue: now } }
   const mask = ['yhProduksi', 'updatedAt']
