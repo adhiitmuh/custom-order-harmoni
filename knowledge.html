@@ -119,7 +119,7 @@
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions, divisiSaya } from './js/auth.js'
   import { collection, query, where, getDocs, doc, setDoc, addDoc, deleteDoc, getDoc, updateDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
-  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, kunciNama, rapikanItem, hargaPublik, bolehSetujuiHargaDivisi, divisiMilik } from './js/hargaList.js?v=20261110a'
+  import { simpanDaftarHarga, bolehKelolaHarga, bolehIsiHarga, bolehHapusItem, keteranganIzin, roleHarga, cariMirip, skorMirip, kunciNama, rapikanItem, hargaPublik, bolehSetujuiHargaDivisi, divisiMilik } from './js/hargaList.js?v=20261110a'
 
   // Kunci kolom harga sesuai role (aturan sama dengan Worker /price-list-save)
   const _prof = () => getProfile()
@@ -218,6 +218,76 @@
       showSavedToast(aksi === 'setuju' ? `✓ ${daftar.length} perubahan disetujui & berlaku` : 'Usulan ditolak')
       muatUsulan()
     } catch (e) { alert('Gagal: ' + e.message) }
+  }
+
+  // ── Cek & gabungkan item dobel (Owner) ─────────────────────────────────────
+  const fmtRp = n => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID')
+  function pasanganDobel(items) {
+    const out = []
+    for (let a = 0; a < items.length; a++) for (let b = a + 1; b < items.length; b++) {
+      const A = items[a], B = items[b]
+      if ((A.bukanDobel || []).includes(kunciNama(B.name)) || (B.bukanDobel || []).includes(kunciNama(A.name))) continue
+      const sk = skorMirip(A.name, B.name)
+      if (sk >= 0.75) out.push({ a, b, sk })
+    }
+    return out.sort((x, y) => y.sk - x.sk)
+  }
+  window.cekDobel = function(div) {
+    const items = priceDataStore[div]?.items || []
+    const pas = pasanganDobel(items)
+    document.getElementById('dobelModal')?.remove()
+    const m = document.createElement('div'); m.id = 'dobelModal'
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
+    const kartu = (it, label) => `<div style="flex:1;min-width:170px;border:1px solid rgba(3,69,67,.12);border-radius:8px;padding:6px 8px">
+      <div style="font-size:10px;color:rgba(3,69,67,.45)">${label}</div><b style="font-size:13px">${escAttr(it.name)}</b>
+      <div style="font-size:11px;color:rgba(3,69,67,.6)">Normal ${fmtRp(it.priceNormal)}${it.variants?.length ? ` · ${it.variants.length} varian: ${it.variants.slice(0, 4).map(v => escAttr(v.name)).join(', ')}${it.variants.length > 4 ? '…' : ''}` : ''}</div></div>`
+    m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:680px;width:100%;padding:18px;max-height:88vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:800;font-size:15px">🧹 Item mirip / dobel — ${escAttr(DIVISION_META[div]?.label || div)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('dobelModal').remove()">Tutup</button></div>
+      <p style="font-size:12px;color:rgba(3,69,67,.55);margin:4px 0 10px">Pilih untuk tiap pasangan. <b>Gabung</b> = satu item dihapus, namanya disimpan sebagai nama lain (tetap muncul di saran saat CS mengetik). <b>Jadikan varian</b> = item kedua masuk sebagai varian item pertama.</p>
+      ${pas.length ? pas.map((x, n) => { const A = items[x.a], B = items[x.b]
+        return `<div style="border-top:1px solid rgba(3,69,67,.1);padding:10px 0">
+          <div style="font-size:11px;color:#b45309;font-weight:700;margin-bottom:4px">Kemiripan ${Math.round(x.sk * 100)}%</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${kartu(A, 'A')}${kartu(B, 'B')}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            <button class="btn btn-primary btn-sm" onclick="gabungDobel('${div}', ${x.a}, ${x.b}, 'gabung')">Gabung → pakai A</button>
+            <button class="btn btn-primary btn-sm" onclick="gabungDobel('${div}', ${x.b}, ${x.a}, 'gabung')">Gabung → pakai B</button>
+            ${!B.variants?.length ? `<button class="btn btn-ghost btn-sm" onclick="gabungDobel('${div}', ${x.a}, ${x.b}, 'varian')">B jadi varian A</button>` : ''}
+            ${!A.variants?.length ? `<button class="btn btn-ghost btn-sm" onclick="gabungDobel('${div}', ${x.b}, ${x.a}, 'varian')">A jadi varian B</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="gabungDobel('${div}', ${x.a}, ${x.b}, 'biarkan')">Bukan dobel</button>
+          </div></div>` }).join('') : '<div style="padding:20px;text-align:center;color:rgba(3,69,67,.5)">✓ Tidak ada item yang mirip</div>'}
+    </div>`
+    document.body.appendChild(m)
+  }
+  window.gabungDobel = async function(div, iPakai, iLain, aksi) {
+    const items = (priceDataStore[div]?.items || []).map(it => ({ ...it, variants: [...(it.variants || [])] }))
+    const pakai = items[iPakai], lain = items[iLain]; if (!pakai || !lain) return
+    if (aksi === 'biarkan') {
+      pakai.bukanDobel = [...new Set([...(pakai.bukanDobel || []), kunciNama(lain.name)])]
+    } else if (aksi === 'gabung') {
+      if (!confirm(`Hapus "${lain.name}" dan pakai "${pakai.name}"?\n\nNama "${lain.name}" disimpan sebagai nama lain, jadi CS yang mengetiknya tetap diarahkan ke "${pakai.name}". Harga yang dipakai: harga "${pakai.name}".`)) return
+      pakai.alias = [...new Set([...(pakai.alias || []), lain.name, ...(lain.alias || [])])]
+      for (const v of lain.variants || []) if (!pakai.variants.some(x => kunciNama(x.name) === kunciNama(v.name))) pakai.variants.push(v)
+      items.splice(iLain, 1)
+    } else if (aksi === 'varian') {
+      const kp = kunciNama(pakai.name).split(' ')
+      const sisa = String(lain.name).toUpperCase().split(/\s+/).filter(w => !kp.includes(kunciNama(w))).join(' ').trim() || lain.name
+      const nama = prompt(`"${lain.name}" dijadikan varian dari "${pakai.name}".\nNama variannya:`, sisa)
+      if (!nama || !nama.trim()) return
+      if (pakai.variants.some(x => kunciNama(x.name) === kunciNama(nama))) { alert('Varian dengan nama itu sudah ada'); return }
+      const { name, variants, alias, aliasVarian, bukanDobel, baru, dibuatOleh, dibuatAt, _tersimpan, ...harga } = lain
+      pakai.variants.push({ ...harga, name: nama.trim().toUpperCase() })
+      pakai.alias = [...new Set([...(pakai.alias || []), lain.name])]
+      pakai.aliasVarian = { ...(pakai.aliasVarian || {}), [kunciNama(lain.name)]: nama.trim().toUpperCase() }
+      items.splice(iLain, 1)
+    }
+    try {
+      const hasil = await simpanDaftarHarga(getProfile(), div, items)
+      if (hasil.ditolak?.length) throw new Error(hasil.ditolak.join('; '))
+      tandai(hasil.items); priceDataStore[div].items = hasil.items; rerenderPriceWrap(div)
+      showSavedToast(aksi === 'biarkan' ? 'Ditandai bukan dobel' : '✓ Daftar harga dirapikan')
+      cekDobel(div)
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
   }
 
   window.bukaIzinHarga = async function() {
@@ -361,7 +431,7 @@
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
                 <h3 style="font-size:14px;font-weight:700;color:var(--green)">💰 Daftar Harga</h3>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-                  ${profile.role === 'owner' ? `<button onclick="bukaIzinHarga()" class="btn btn-ghost btn-sm" title="Atur siapa yang boleh mengisi daftar harga">👥 Izin</button>` : ''}
+                  ${profile.role === 'owner' ? `<button onclick="bukaIzinHarga()" class="btn btn-ghost btn-sm" title="Atur siapa yang boleh mengisi daftar harga">👥 Izin</button><button onclick="cekDobel('${d}')" class="btn btn-ghost btn-sm" title="Cari item yang namanya mirip/dobel">🧹 Cek dobel</button>` : ''}
                   ${bolehKelolaHarga(profile, d) ? `<button onclick="openSingleItemEdit('${d}',-1)" class="btn btn-ghost btn-sm">＋ Tambah Item</button>` : ''}
                 </div>
               </div>

@@ -593,7 +593,13 @@
     // Nama sama tapi beda spasi/tanda baca/huruf besar → pakai item yang sudah ada (bukan item baru)
     if (!match) {
       match = currentPriceList.items.find(p => kunciNama(p.name) === kunciNama(nameEl.value))
-      if (match) nameEl.value = match.name.toUpperCase()
+        // Nama lain (hasil gabung item dobel) → arahkan ke item yang dipakai
+        || currentPriceList.items.find(p => (p.alias || []).some(a => kunciNama(a) === kunciNama(nameEl.value)))
+      if (match) {
+        const vAlias = match.aliasVarian?.[kunciNama(nameEl.value)], vEl = document.querySelector(`[data-field="varian"][data-row="${id}"]`)
+        if (vAlias && vEl && !vEl.value.trim()) vEl.value = vAlias
+        nameEl.value = match.name.toUpperCase()
+      }
     }
     tampilkanItemBaru(id, match ? null : nameEl.value.trim())
     if (match?.priceModal && getProfile()?.role === 'owner') {
@@ -677,9 +683,9 @@
     if (q.length < 2 || !items.length) return tutupSaran()
     const kata = q.split(/\s+/).filter(Boolean)
     const hasil = items.map((it, i) => {
-      const nm = String(it.name || '').toUpperCase(), kataNm = nm.split(/[\s\-\/.,()]+/)
+      const nm = [it.name, ...(it.alias || [])].join(' / ').toUpperCase(), kataNm = nm.split(/[\s\-\/.,()]+/)
       const cocokKata = kata.filter(k => kataNm.some(w => w.startsWith(k) || (k.length >= 3 && skorMirip(k, w) >= 0.6)) || nm.includes(k)).length / kata.length
-      return { it, i, skor: Math.max(cocokKata, skorMirip(q, nm)) + (nm.startsWith(q) ? 0.5 : 0) }
+      return { it, i, skor: Math.max(cocokKata, ...[it.name, ...(it.alias || [])].map(a => skorMirip(q, String(a).toUpperCase()))) + (nm.startsWith(q) ? 0.5 : 0) }
     }).filter(x => x.skor >= 0.6 && String(x.it.name).toUpperCase() !== q).sort((a, b) => b.skor - a.skor).slice(0, 6)
     if (!hasil.length) return tutupSaran()
     let box = document.getElementById('saranItemBox')
