@@ -86,6 +86,10 @@
           </div>
           <button type="button" onclick="addItemRow()" class="btn btn-ghost btn-sm">+ Tambah Item</button>
         </div>
+        <div id="terlarisWrap" style="display:none;margin-bottom:12px">
+          <p style="font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;margin-bottom:6px">⭐ PALING SERING DIPESAN — ketuk untuk tambahkan</p>
+          <div id="terlarisPills" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
         <!-- Product picker (muncul setelah divisi dipilih) -->
         <div id="productPicker" style="display:none;margin-bottom:14px">
           <p style="font-size:11px;font-weight:700;color:rgba(3,69,67,.45);letter-spacing:.04em;margin-bottom:6px">DARI KATALOG — klik harga untuk tambahkan ke rincian</p>
@@ -218,7 +222,7 @@
   import { hitungNama } from './js/namaPapan.js?v=20261112c'
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
-  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -357,6 +361,7 @@
       .map(([d, n]) => `<span style="background:rgba(3,69,67,.08);padding:1px 7px;border-radius:999px;font-weight:600">${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d} ×${n}</span>`)
       .join(' ')
 
+    _orderLama = Object.fromEntries(sorted.map(d => [d.id, d.data()]))
     hint.style.display = ''
     hint.innerHTML = `
       <div style="display:flex;align-items:flex-start;gap:8px">
@@ -365,9 +370,34 @@
           <div style="font-weight:700;color:var(--green);margin-bottom:3px">Customer lama — ${docs.length} order sebelumnya</div>
           <div style="color:rgba(3,69,67,.6);margin-bottom:6px">Nama tersimpan: <b>${latestName || '—'}</b></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${divTags}</div>
+          ${sorted.filter(d => d.data().orderItems?.length).slice(0, 3).map(d => { const o = d.data()
+            return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0;padding:5px 8px;background:#fff;border:1px solid rgba(3,69,67,.1);border-radius:8px">
+              <span style="flex:1;min-width:150px;font-size:11px"><b>${escHtml(o.orderNumber || '')}</b> · ${DIVISION_META[o.division]?.label || o.division || ''}<br><span style="color:rgba(3,69,67,.55)">${o.orderItems.slice(0, 3).map(i => escHtml(i.name) + ' (' + (i.qty || 0) + ')').join(', ')}${o.orderItems.length > 3 ? ` +${o.orderItems.length - 3}` : ''}</span></span>
+              <button type="button" class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px" onclick="ulangiItemOrder('${d.id}')">🔁 Ulangi item</button></div>` }).join('')}
           <a href="crm.html?contact=${encodeURIComponent(raw)}" target="_blank" style="font-size:11px;color:var(--green);font-weight:600;text-decoration:none">Lihat riwayat lengkap →</a>
         </div>
       </div>`
+  }
+
+  // Salin item dari order lama customer: divisi ikut dipilih, harga pakai daftar harga sekarang (kalau itemnya ada)
+  let _orderLama = {}
+  window.ulangiItemOrder = async function(id) {
+    const o = _orderLama[id]; if (!o) return
+    const isi = [...document.querySelectorAll('#itemRows tr')].filter(tr => tr.querySelector('[data-field="name"]')?.value.trim())
+    if (isi.length && !confirm(`Ganti ${isi.length} item yang sudah diisi dengan item dari ${o.orderNumber}?`)) return
+    if (o.division && o.division !== selectedDiv) { selectDiv(o.division) }
+    await loadPriceList(o.division || selectedDiv)
+    document.getElementById('itemRows').innerHTML = ''
+    const kat = currentPriceList?.items || []
+    for (const it of o.orderItems || []) {
+      const p = kat.find(x => kunciNama(x.name) === kunciNama(it.name))
+      const v = p && it.varian ? (p.variants || []).find(x => kunciNama(x.name) === kunciNama(it.varian)) : null
+      const hargaSkrg = v ? (hargaDasar(v) || hargaDasar(p)) : p && !p.variants?.length ? hargaDasar(p) : 0
+      addItemRow({ name: it.name, varian: it.varian || '', qty: it.qty || 1, pricePerUnit: hargaSkrg || it.pricePerUnit || it.price || 0, priceModal: v?.priceModal || p?.priceModal || 0 })
+      const rid = itemRowCount; calcRow(rid); matchItemToPrice(rid); showTierButtons(rid)
+    }
+    recalcTotal()
+    document.getElementById('itemRows').scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   document.getElementById('customerName').addEventListener('input', function() { this.dataset.otomatis = '0' })
@@ -894,6 +924,47 @@
     } catch { currentPriceList = null }
     checkPriceTierLive()
     renderProductPicker()
+    renderTerlaris(division)
+  }
+
+  // ── Item terlaris divisi (dari 150 order terakhir), hanya item yang ada di daftar harga ──
+  const _terlarisCache = {}
+  async function renderTerlaris(division) {
+    const wrap = document.getElementById('terlarisWrap'), pills = document.getElementById('terlarisPills')
+    wrap.style.display = 'none'
+    const katalog = currentPriceList?.items || []
+    if (!division || !katalog.length) return
+    if (!_terlarisCache[division]) {
+      try {
+        const snap = await getDocs(query(collection(db, 'orders'), where('division', '==', division), orderBy('createdAt', 'desc'), limit(150)))
+        const hit = {}
+        snap.docs.forEach(d => { const o = d.data(); if (o.status === 'cancelled') return
+          ;(o.orderItems || []).forEach(it => { const k = kunciNama(it.name) + '||' + kunciNama(it.varian || ''); hit[k] = (hit[k] || 0) + 1 }) })
+        _terlarisCache[division] = hit
+      } catch (e) { console.warn('terlaris', e.message); return }
+    }
+    if (selectedDiv !== division) return
+    const hit = _terlarisCache[division], daftar = []
+    katalog.forEach((p, i) => {
+      daftar.push({ i, v: -1, label: p.name, n: hit[kunciNama(p.name) + '||'] || 0, harga: hargaDasar(p) })
+      ;(p.variants || []).forEach((v, j) => daftar.push({ i, v: j, label: `${p.name} · ${v.name}`, n: hit[kunciNama(p.name) + '||' + kunciNama(v.name)] || 0, harga: hargaDasar(v) || hargaDasar(p) }))
+    })
+    const top = daftar.filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 8)
+    if (!top.length) return
+    pills.innerHTML = top.map(x => `<button type="button" onclick="tambahTerlaris(${x.i}, ${x.v})" title="Dipesan di ${x.n} order terakhir"
+      style="border:1.5px solid rgba(3,69,67,.15);background:#fff;border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer;text-align:left">
+      <b>${escHtml(x.label)}</b>${x.harga ? ` <span style="color:rgba(3,69,67,.55)">Rp ${Number(x.harga).toLocaleString('id-ID')}</span>` : ''}</button>`).join('')
+    wrap.style.display = ''
+  }
+  window.tambahTerlaris = function(i, v) {
+    const p = currentPriceList?.items?.[i]; if (!p) return
+    const va = v >= 0 ? p.variants?.[v] : null
+    // Pakai baris kosong terakhir kalau ada
+    const kosong = [...document.querySelectorAll('#itemRows tr')].find(tr => !tr.querySelector('[data-field="name"]')?.value.trim())
+    kosong?.remove()
+    addItemRow({ name: p.name, varian: va?.name || '', pricePerUnit: (va && hargaDasar(va)) || hargaDasar(p), qty: p.minQty || 1, priceModal: va?.priceModal || p.priceModal || 0 })
+    const id = itemRowCount
+    calcRow(id); matchItemToPrice(id); showTierButtons(id)
   }
 
   function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
