@@ -215,6 +215,7 @@
 </div>
 
 <script type="module">
+  import { hitungNama } from './js/namaPapan.js?v=20261112a'
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, getActiveDivisions } from './js/auth.js'
   import { collection, doc, setDoc, runTransaction, getDocs, addDoc, where, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -531,7 +532,7 @@
           onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
           onchange="showTierButtons(${id})">
         <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
-          <textarea rows="2" placeholder="Nama yang dicetak — SATU NAMA PER BARIS (bisa paste dari WA)"
+          <textarea rows="2" placeholder="Nama yang dicetak — SATU NAMA PER BARIS. Jumlah beda per nama? tulis: NAMA x2"
             data-field="namaCustom" data-row="${id}" oninput="hitungNamaPapan(${id})"
             style="width:100%;border:1.5px dashed rgba(124,58,237,.35);border-radius:6px;padding:4px 6px;font-size:11px;color:#4c1d95;outline:none;background:transparent;resize:vertical;text-transform:uppercase"
             onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='rgba(124,58,237,.35)'">${String(item.namaCustom||'').replace(/</g,'&lt;')}</textarea>
@@ -794,9 +795,8 @@
   window.hitungNamaPapan = function(rowId) {
     const ta = document.querySelector(`[data-field="namaCustom"][data-row="${rowId}"]`), el = document.getElementById(`namaCount-${rowId}`)
     if (!ta || !el) return
-    const n = ta.value.split(/\n+/).map(x => x.trim()).filter(Boolean).length
     const qty = +document.querySelector(`[data-field="qty"][data-row="${rowId}"]`)?.value || 0
-    el.textContent = !n ? '' : `${n} nama${qty ? ' · qty ' + qty + (qty % n === 0 ? ` = ${qty / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}`
+    const h = hitungNama(ta.value, qty); el.textContent = h.pesan; el.style.color = h.ok ? '#7c3aed' : '#b45309'
   }
   window.toggleNamaCustom = function(rowId) {
     const wrap = document.getElementById(`namaCustomWrap-${rowId}`)

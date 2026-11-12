@@ -92,6 +92,7 @@
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
+  import { hitungNama } from './js/namaPapan.js?v=20261112a'
   import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER } from './js/hargaList.js?v=20261110a'
   import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261108a'
 
@@ -459,7 +460,7 @@
                   <td style="padding:9px 0">
                     <div style="font-weight:500">${it.name||'-'}</div>
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
-                    ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean); const q = Number(it.qty) || 0, curiga = q > 3 && q / ns.length > 3; return `<div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px">🏷 ${ns.length > 1 ? ns.length + ' nama: ' : ''}${ns.map(esc).join(' · ')}</div>${curiga ? `<div style="font-size:10px;color:#b45309">⚠ ${ns.length} nama untuk ${q} pcs — lengkapi daftar nama</div>` : ''}` })() : ''}
+                    ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean); const q = Number(it.qty) || 0, h = hitungNama(it.namaCustom, q), curiga = !h.ok || (!h.baris.some(x => x.jml > 1 && h.perRata == null) && q > 3 && q / ns.length > 3); return `<div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px">🏷 ${ns.length > 1 ? ns.length + ' nama: ' : ''}${ns.map(esc).join(' · ')}</div>${curiga ? `<div style="font-size:10px;color:#b45309">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — lengkapi daftar nama' : esc(h.pesan)}</div>` : ''}` })() : ''}
                     ${(profile.role === 'owner' || profile.role === 'cs' || profile.role === 'manager') && (order.division === 'papan-nama' || /papan/i.test(it.name || '')) ? `<button onclick="editNamaPapan(${i})" class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:10px;margin-top:3px">✏️ Daftar nama${it.namaCustom ? '' : ' (belum diisi)'}</button>` : ''}
                   </td>
                   <td style="padding:9px 0;text-align:center">
@@ -2661,7 +2662,7 @@
     document.body.appendChild(wrap)
     const ta = wrap.querySelector('#npTeks')
     const daftar = () => ta.value.split(/\n+/).map(x => x.trim().toUpperCase()).filter(Boolean)
-    const info = () => { const n = daftar().length, q = Number(it.qty) || 0; wrap.querySelector('#npInfo').textContent = n ? `${n} nama${q ? ' · qty ' + q + (q % n === 0 ? ` = ${q / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}` : '' }
+    const info = () => { const h = hitungNama(ta.value, it.qty), el = wrap.querySelector('#npInfo'); el.textContent = h.pesan; el.style.color = h.ok ? '#7c3aed' : '#b45309' }
     ta.oninput = info; info()
     pasangBacaFoto(wrap.querySelector('#npOcr'), ta, wrap.querySelector('#npInfo'), order.designFiles || [], () => {})
     wrap.querySelector('#npDariCatatan')?.addEventListener('click', () => { ta.value = String(order.notes || '').split(/\n+/).map(x => x.trim()).filter(x => x && !/PAPAN|P\/HH|PRA\/HH|\d+\s*NAMA|NAMA\s*\d/i.test(x)).join('\n'); info() })

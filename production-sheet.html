@@ -120,6 +120,7 @@
   import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi, divisiSaya } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
+  import { hitungNama } from './js/namaPapan.js?v=20261112a'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
@@ -371,7 +372,7 @@
     document.body.appendChild(wrap)
     const ta = wrap.querySelector('#nsTeks')
     const daftar = () => ta.value.split(/\n+/).map(x => x.trim().toUpperCase()).filter(Boolean)
-    const info = () => { const n = daftar().length, q = Number(it.qty) || 0; wrap.querySelector('#nsInfo').textContent = n ? `${n} nama${q ? ' · qty ' + q + (q % n === 0 ? ` = ${q / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}` : '' }
+    const info = () => { const h = hitungNama(ta.value, it.qty), el = wrap.querySelector('#nsInfo'); el.textContent = h.pesan; el.style.color = h.ok ? '#7c3aed' : '#b45309' }
     ta.oninput = info; info()
     pasangBacaFoto(wrap.querySelector('#nsOcr'), ta, wrap.querySelector('#nsInfo'), o.designFiles || [], () => {})
     wrap.querySelector('#nsDariCatatan')?.addEventListener('click', () => { ta.value = String(o.notes || '').split(/\n+/).map(x => x.trim()).filter(x => x && !/PAPAN|P\/HH|PRA\/HH|\d+\s*NAMA|NAMA\s*\d/i.test(x)).join('\n'); info() })
@@ -469,8 +470,8 @@
                   ${bolehIsiNama() && (o.division === 'papan-nama' || /papan/i.test(it.name || '')) ? ` <button onclick="editNamaSheet('${o.id}', ${(o.orderItems || []).indexOf(it)})" style="border:1px solid rgba(124,58,237,.35);background:#fff;color:#7c3aed;border-radius:6px;font-size:10px;font-weight:700;padding:1px 6px;cursor:pointer">✏️ Nama</button>` : ''}
                   ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean), q = Number(it.qty) || 0
                       // Curiga: jumlah nama jauh lebih sedikit dari qty (mis. 1 nama untuk 19 pcs)
-                      const curiga = q > 3 && q / ns.length > 3
-                      return `<br><span style="color:#7c3aed;font-weight:600">🏷 ${ns.length > 1 ? ns.length + ' nama: ' : ''}${ns.join(' · ')}</span>${curiga ? `<br><span style="color:#b45309;font-size:10px">⚠ ${ns.length} nama untuk ${q} pcs — daftar nama mungkin belum lengkap, cek order</span>` : ''}` })() : (o.division === 'papan-nama' || /papan/i.test(it.name || '') ? '<br><span style="color:#b45309;font-size:10px">⚠ daftar nama belum diisi di order</span>' : '')}
+                      const h = hitungNama(it.namaCustom, q), curiga = !h.ok || (h.perRata != null && q > 3 && h.perRata > 3)
+                      return `<br><span style="color:#7c3aed;font-weight:600">🏷 ${ns.length > 1 ? ns.length + ' nama: ' : ''}${ns.join(' · ')}</span>${curiga ? `<br><span style="color:#b45309;font-size:10px">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — daftar nama mungkin belum lengkap, cek order' : esc(h.pesan)}</span>` : ''}` })() : (o.division === 'papan-nama' || /papan/i.test(it.name || '') ? '<br><span style="color:#b45309;font-size:10px">⚠ daftar nama belum diisi di order</span>' : '')}
                 </div>`
               ).join('')
             : o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
@@ -550,9 +551,8 @@
       // Sheet "Daftar Nama": satu baris per nama (untuk dikerjakan satu per satu)
       const baris = []
       rows.forEach(o => itemsJenis(o, jenis).forEach(it => {
-        const ns = String(it.namaCustom || '').split(/\n+/).map(x => x.trim()).filter(Boolean)
-        const per = ns.length && Number(it.qty) && Number(it.qty) % ns.length === 0 ? Number(it.qty) / ns.length : ''
-        ns.forEach((n, i) => baris.push({ 'No Order': o.orderNumber || '', 'Pelanggan': o.customerName || '', 'Item': it.name || '', 'Varian': it.varian || '', 'No': i + 1, 'Nama': n, 'Qty per nama': per, 'Target': o.dueDate || '', 'Lokasi': o.lokasiNama || 'Pusat' }))
+        const h = hitungNama(it.namaCustom, it.qty)
+        h.baris.forEach((x, i) => baris.push({ 'No Order': o.orderNumber || '', 'Pelanggan': o.customerName || '', 'Item': it.name || '', 'Varian': it.varian || '', 'No': i + 1, 'Nama': x.nama, 'Qty per nama': x.jml ?? '', 'Target': o.dueDate || '', 'Lokasi': o.lokasiNama || 'Pusat' }))
       }))
       if (baris.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(baris), 'Daftar Nama')
       const tgl = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '')
