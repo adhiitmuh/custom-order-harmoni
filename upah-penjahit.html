@@ -91,7 +91,7 @@
 <script type="module">
   import { db, storage } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, ordersQuery, canSeeOrder } from './js/auth.js'
-  import { collection, getDocs, getDoc, doc, setDoc, updateDoc, writeBatch, where, Timestamp, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, getDoc, doc, setDoc, updateDoc, writeBatch, where, Timestamp, query, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { daftarPenjahit, pembayaranPenjahit, DIVISI_PENJAHIT, divisiBolehAjukanUpah } from './js/penjahit.js?v=20261105'
   import { normalNoWa } from './js/notifwa.js'
@@ -139,6 +139,18 @@
     isiPilihanPenjahit()
     renderKerjaan()
     renderPengajuan()
+    pantauPengajuan()
+  }
+
+  // Pengajuan baru dari CS langsung muncul tanpa perlu muat ulang halaman
+  let _pantau = null
+  function pantauPengajuan() {
+    if (_pantau) return
+    _pantau = onSnapshot(collection(db, 'pengajuan_upah'), snap => {
+      pengajuan = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      if (document.querySelector('.mdl-bg')) return   // jangan ganggu form yang sedang terbuka
+      renderKerjaan(); renderPengajuan()
+    }, () => {})
   }
 
   // Kunci identitas penjahit: id master bila ada, kalau tidak nama (data lama)
