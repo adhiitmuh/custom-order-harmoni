@@ -39,6 +39,7 @@ export function pasangBacaFoto(wadah, ta, info, fotoOrder = [], setelah = () => 
   box.style.cssText = 'margin:6px 0;padding:8px;border:1px dashed rgba(124,58,237,.35);border-radius:8px;font-size:12px'
   box.innerHTML = `<div style="font-weight:700;color:#7c3aed;margin-bottom:6px">📷 Baca nama dari foto</div>
     ${gambar.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${gambar.map((u, i) => `<img src="${esc(u)}" data-i="${i}" title="Baca foto ini" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid rgba(3,69,67,.15);cursor:pointer">`).join('')}</div><div style="font-size:11px;color:rgba(3,69,67,.55);margin-bottom:6px">Ketuk foto order di atas, atau:</div>` : ''}
+    <div style="font-size:11px;color:rgba(3,69,67,.55);margin-bottom:6px">Tarik (drag) foto ke sini, atau:</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <label class="btn btn-ghost btn-sm" style="cursor:pointer">🖼 Pilih foto<input type="file" accept="image/*" style="display:none"></label>
       <button type="button" class="btn btn-ghost btn-sm" data-tempel>📋 Tempel foto</button>
@@ -68,6 +69,19 @@ export function pasangBacaFoto(wadah, ta, info, fotoOrder = [], setelah = () => 
       info.style.color = '#b45309'; info.textContent = 'Tidak ada foto di clipboard — salin fotonya dulu (tekan lama → Salin)'
     } catch { info.style.color = '#b45309'; info.textContent = 'Tempel tidak diizinkan browser — pakai 🖼 Pilih foto' }
   }
+  // Drag & drop: file foto (Foto/File/WhatsApp) atau gambar dari tab lain → langsung dibaca
+  const target = wadah.closest('.card') || box
+  const sorot = on => { box.style.background = on ? 'rgba(124,58,237,.08)' : ''; box.style.borderColor = on ? '#7c3aed' : 'rgba(124,58,237,.35)' }
+  target.addEventListener('dragover', e => { e.preventDefault(); sorot(true) })
+  target.addEventListener('dragleave', e => { if (!target.contains(e.relatedTarget)) sorot(false) })
+  target.addEventListener('drop', e => {
+    sorot(false)
+    const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/'))
+    const url = (e.dataTransfer?.getData('text/uri-list') || '').split('\n').find(u => /^https?:/.test(u.trim()))
+    if (!f && !url) return
+    e.preventDefault()
+    jalankan(f || url.trim())
+  })
   // ⌘V di textarea/editor dengan foto → langsung dibaca
   wadah.closest('.card')?.addEventListener('paste', e => {
     const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith('image/'))
