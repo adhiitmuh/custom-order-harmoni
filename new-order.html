@@ -617,15 +617,57 @@
   const hargaDasar = o => (diCabang() && o?.priceCabang) ? o.priceCabang : (o?.priceNormal || 0)
 
   // Item yang belum ada di daftar harga: tawarkan item yang mirip supaya tidak dobel
+  const _alasanBeda = {}          // rowId → alasan CS kenapa item ini beda dari item yang hampir sama
+  const _hampirSama = {}          // rowId → item daftar harga yang hampir sama (≥ 90%)
+  const kataDari = t => kunciNama(t).split(' ').filter(Boolean)
+  // Item daftar harga yang namanya terkandung utuh di nama ketikan → sisa katanya bisa jadi varian
+  function saranVarian(nama) {
+    const kn = kataDari(nama)
+    return (currentPriceList?.items || []).map((it, i) => ({ it, i, kp: kataDari(it.name) }))
+      .filter(x => x.kp.length && x.kp.length < kn.length && x.kp.every(w => kn.includes(w)))
+      .sort((a, b) => b.kp.length - a.kp.length).slice(0, 2)
+      .map(x => ({ ...x, sisa: String(nama).toUpperCase().split(/\s+/).filter(w => !x.kp.includes(kunciNama(w))).join(' ').trim() }))
+      .filter(x => x.sisa)
+  }
   function tampilkanItemBaru(id, nama) {
     const el = document.getElementById(`item-baru-${id}`)
     if (!el) return
-    if (!nama) { el.style.display = 'none'; return }
-    const mirip = cariMirip(nama, currentPriceList?.items || [], 0.6).slice(0, 3)
-    el.innerHTML = mirip.length
-      ? `<span style="color:#b45309;font-weight:700">⚠ Mirip item yang sudah ada:</span> ${mirip.map(m => `<button type="button" onclick="pakaiItemKatalog(${id}, ${m.i})" style="border:1px solid #0369a1;color:#0369a1;background:#f0f9ff;border-radius:5px;padding:0 6px;font-size:10px;font-weight:700;cursor:pointer;margin:1px">${escHtml(m.it.name)}</button>`).join('')}<br><span style="color:rgba(3,69,67,.5)">Kalau barangnya sama, ketuk namanya. Kalau beda, biarkan — jadi 🆕 item baru di daftar harga.</span>`
-      : `<span style="color:#0369a1;font-weight:700">🆕 Item baru</span> <span style="color:rgba(3,69,67,.5)">— disimpan ke daftar harga saat order dibuat</span>`
+    delete _hampirSama[id]
+    if (!nama) { el.style.display = 'none'; delete _alasanBeda[id]; return }
+    const items = currentPriceList?.items || []
+    const varian = saranVarian(nama)
+    const mirip = cariMirip(nama, items, 0.6).filter(m => !varian.some(v => v.i === m.i)).slice(0, 3)
+    const hampir = cariMirip(nama, items, 0.9)[0]
+    if (hampir) _hampirSama[id] = hampir.it.name
+    const tombol = (onclick, teks) => `<button type="button" onclick="${onclick}" style="border:1px solid #0369a1;color:#0369a1;background:#f0f9ff;border-radius:5px;padding:0 6px;font-size:10px;font-weight:700;cursor:pointer;margin:1px">${teks}</button>`
+    let html = ''
+    if (varian.length) html += `<span style="color:#7c3aed;font-weight:700">💡 Jadikan varian:</span> ${varian.map(v => tombol(`pakaiVarian(${id}, ${v.i}, '${escHtml(v.sisa).replace(/'/g, "\\'")}')`, `${escHtml(v.it.name)} · varian <u>${escHtml(v.sisa)}</u>`)).join('')}<br>`
+    if (mirip.length) html += `<span style="color:#b45309;font-weight:700">⚠ Mirip item yang sudah ada:</span> ${mirip.map(m => tombol(`pakaiItemKatalog(${id}, ${m.i})`, escHtml(m.it.name))).join('')}<br>`
+    if (hampir) {
+      html += _alasanBeda[id]
+        ? `<span style="color:#15803d">✓ Beda dari ${escHtml(hampir.it.name)}: <i>${escHtml(_alasanBeda[id])}</i></span> <a href="#" onclick="event.preventDefault();isiAlasanBeda(${id})" style="font-size:10px">ubah</a>`
+        : `<span style="color:#b91c1c;font-weight:700">⛔ Hampir sama dengan ${escHtml(hampir.it.name)}</span> — ketuk pilihan di atas, atau ${tombol(`isiAlasanBeda(${id})`, 'Beda — tulis alasan')}`
+    } else if (varian.length || mirip.length) html += `<span style="color:rgba(3,69,67,.5)">Kalau barangnya sama, ketuk pilihan di atas. Kalau beda, biarkan — jadi 🆕 item baru di daftar harga.</span>`
+    else html = `<span style="color:#0369a1;font-weight:700">🆕 Item baru</span> <span style="color:rgba(3,69,67,.5)">— disimpan ke daftar harga saat order dibuat</span>`
+    el.innerHTML = html
     el.style.display = ''
+  }
+  window.isiAlasanBeda = function(id) {
+    const a = prompt(`Item ini hampir sama dengan "${_hampirSama[id] || ''}". Apa bedanya?\n(cth: ukuran lebih besar, bahan beda, jenis jahitan beda)`, _alasanBeda[id] || '')
+    if (a === null) return
+    if (a.trim().length < 3) { alert('Tulis alasan bedanya (minimal 3 huruf)'); return }
+    _alasanBeda[id] = a.trim()
+    matchItemToPrice(id)
+  }
+  window.pakaiVarian = function(id, idx, sisa) {
+    const p = currentPriceList?.items?.[idx]; if (!p) return
+    document.querySelector(`[data-field="name"][data-row="${id}"]`).value = p.name.toUpperCase()
+    const v = document.querySelector(`[data-field="varian"][data-row="${id}"]`)
+    if (v) v.value = [v.value.trim(), sisa].filter(Boolean).join(' ').toUpperCase()
+    const ada = (p.variants || []).find(x => kunciNama(x.name) === kunciNama(v?.value || ''))
+    const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
+    if (priceEl && !priceEl.value) { priceEl.value = fmtPrice(ada ? hargaDasar(ada) || hargaDasar(p) : hargaDasar(p)); calcRow(id) }
+    matchItemToPrice(id); showTierButtons(id)
   }
   // Saran langsung saat mengetik nama item: item di daftar harga yang namanya mirip / mengandung kata yang diketik
   window.tutupSaran = () => document.getElementById('saranItemBox')?.remove()
@@ -808,7 +850,8 @@
       const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
       const tier = getItemTier(name, varian, price)
-      return { name, varian, namaCustom: namaCustom || null, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier }
+      const rowId = tr.id?.replace('row-', '')
+      return { name, varian, namaCustom: namaCustom || null, qty, pricePerUnit: price, priceModal: priceModal || null, subtotal: qty * price, tier, ...(_alasanBeda[rowId] && _hampirSama[rowId] ? { alasanBeda: _alasanBeda[rowId], miripDengan: _hampirSama[rowId] } : {}) }
     }).filter(i => i.name || i.qty || i.pricePerUnit)
   }
 
@@ -1120,6 +1163,14 @@
     if (!document.getElementById('lokasiId').value) { errEl.textContent = 'Pilih lokasi order masuk'; errEl.style.display=''; return }
     const dueDate = document.getElementById('dueDate').value
     if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
+    // Item baru yang hampir sama dengan item di daftar harga harus dipilih dari daftar, atau diberi alasan bedanya
+    {
+      const belum = [...document.querySelectorAll('#itemRows tr')].map(tr => tr.id?.replace('row-', '')).filter(id => _hampirSama[id] && !_alasanBeda[id])
+      if (belum.length) {
+        const nm = belum.map(id => document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value).join(', ')
+        errEl.textContent = `"${nm}" hampir sama dengan item di daftar harga (${belum.map(id => _hampirSama[id]).join(', ')}). Pilih item yang sudah ada, atau tekan "Beda — tulis alasan".`; errEl.style.display=''; return
+      }
+    }
     // Papan nama wajib masuk Papan Nama Sheet: divisi Bordir/Papan Nama + daftar nama lengkap sesuai qty
     {
       const papan = getItemRows().filter(i => selectedDiv === 'papan-nama' || /papan/i.test(i.name))
