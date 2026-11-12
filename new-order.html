@@ -1094,6 +1094,18 @@
     if (!document.getElementById('lokasiId').value) { errEl.textContent = 'Pilih lokasi order masuk'; errEl.style.display=''; return }
     const dueDate = document.getElementById('dueDate').value
     if (!dueDate) { errEl.textContent = 'Target selesai harus diisi'; errEl.style.display=''; return }
+    // Papan nama wajib masuk Papan Nama Sheet: divisi Bordir/Papan Nama + daftar nama lengkap sesuai qty
+    {
+      const papan = getItemRows().filter(i => selectedDiv === 'papan-nama' || /papan/i.test(i.name))
+      if (papan.length && !['bordir', 'papan-nama'].includes(selectedDiv)) {
+        errEl.textContent = `Item papan nama (${papan.map(i => i.name).join(', ')}) harus diorder di divisi Bordir atau Papan Nama — kalau tidak, tidak masuk Papan Nama Sheet.`; errEl.style.display=''; return
+      }
+      for (const i of papan) {
+        if (!i.namaCustom) { errEl.textContent = `Daftar nama untuk "${i.name}" belum diisi — wajib diisi supaya masuk Papan Nama Sheet.`; errEl.style.display=''; return }
+        const h = hitungNama(i.namaCustom, i.qty)
+        if (!h.ok) { errEl.textContent = `Daftar nama "${i.name}" belum cocok: ${h.pesan}`; errEl.style.display=''; return }
+      }
+    }
     if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
     // Approval hanya karena item baru → alasan terisi otomatis
     const hanyaItemBaru = currentPriceTier === 'promo' && _hasilTier.tier === 'normal' && _hasilTier.itemBaru?.length

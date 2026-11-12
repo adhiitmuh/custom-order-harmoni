@@ -2668,6 +2668,7 @@
     wrap.querySelector('#npDariCatatan')?.addEventListener('click', () => { ta.value = String(order.notes || '').split(/\n+/).map(x => x.trim()).filter(x => x && !/PAPAN|P\/HH|PRA\/HH|\d+\s*NAMA|NAMA\s*\d/i.test(x)).join('\n'); info() })
     wrap.querySelector('#npBatal').onclick = () => wrap.remove()
     wrap.querySelector('#npSimpan').onclick = async () => {
+      if (!daftar().length) { const el = wrap.querySelector('#npInfo'); el.style.color = '#b91c1c'; el.textContent = 'Daftar nama tidak boleh kosong — papan nama wajib ada namanya supaya masuk Papan Nama Sheet.'; return }
       const semua = wrap.querySelector('#npSemua')?.checked, sasaran = new Set([i, ...(semua ? lainPapan.map(x => x.j) : [])])
       const items = (order.orderItems || []).map((x, j) => sasaran.has(j) ? { ...x, namaCustom: daftar().join('\n') || null } : x)
       try { await updateDoc(doc(db, 'orders', orderId), { orderItems: items, updatedAt: Timestamp.now() }); wrap.remove(); await loadOrder(getProfile()) }
