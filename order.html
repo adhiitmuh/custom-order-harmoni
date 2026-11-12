@@ -87,7 +87,7 @@
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
-  import { DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
+  import { DIVISIONS, DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
@@ -352,7 +352,7 @@
           <div class="card" style="margin-bottom:16px">
             <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Detail Order</h2>
             <div class="grid-2" style="gap:14px;font-size:13px">
-              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Divisi</p><p style="font-weight:600">${meta.label||''}</p></div>
+              <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Divisi</p><p style="font-weight:600">${meta.label||''}${profile.role === 'owner' ? ` <button onclick="pindahDivisi()" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;margin-left:4px">✏️ Pindah divisi</button>` : ''}</p>${(order.riwayatDivisi||[]).length ? `<p style="font-size:10px;color:rgba(3,69,67,.45);margin-top:2px">Dipindah dari ${(order.riwayatDivisi||[]).map(r => esc(DIVISION_META[r.dari]?.label || r.dari)).join(', ')}</p>` : ''}</div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Tanggal Pesan</p><p style="font-weight:600">${fmtDate(order.orderDate)}</p></div>
               <div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Target Selesai</p><p style="font-weight:600">${fmtDate(order.dueDate)}</p>${order.originalDueDate && order.originalDueDate !== order.dueDate ? `<p style="font-size:11px;color:rgba(3,69,67,.4);text-decoration:line-through">Awal: ${fmtDate(order.originalDueDate)}</p>` : ''}</div>
               ${showContact ? `<div><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:2px">Kontak</p><p style="font-weight:600;font-family:monospace">${order.customerContact||'-'}</p></div>` : ''}
@@ -2564,6 +2564,33 @@
     await updateDoc(doc(db, 'orders', orderId), { komplain: list, updatedAt: Timestamp.now() }); await loadOrder(getProfile())
   }
 
+
+  // ── Pindah divisi (Owner): untuk order yang salah divisi saat dibuat. Nomor order tetap. ──
+  window.pindahDivisi = async function() {
+    if (getProfile()?.role !== 'owner') return
+    const lama = order.division
+    const wrap = document.createElement('div')
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px'
+    wrap.innerHTML = `<div class="card" style="max-width:380px;width:100%">
+      <h3 style="font-size:15px;font-weight:800;margin-bottom:6px">Pindah divisi order</h3>
+      <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:10px">${esc(order.orderNumber || '')} sekarang di <b>${esc(DIVISION_META[lama]?.label || lama)}</b>. Nomor order tidak berubah; perpindahan tercatat.</p>
+      <select id="pdBaru" style="width:100%;margin-bottom:8px">${DIVISIONS.filter(d => d !== lama).map(d => `<option value="${d}">${DIVISION_META[d]?.icon || ''} ${DIVISION_META[d]?.label || d}</option>`).join('')}</select>
+      <input id="pdAlasan" type="text" placeholder="Alasan (cth: salah pilih saat input)" style="width:100%;margin-bottom:10px">
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" id="pdBatal">Batal</button><button class="btn btn-primary btn-sm" id="pdOk">Pindahkan</button></div></div>`
+    document.body.appendChild(wrap)
+    wrap.querySelector('#pdBatal').onclick = () => wrap.remove()
+    wrap.querySelector('#pdOk').onclick = async () => {
+      const baru = wrap.querySelector('#pdBaru').value, alasan = wrap.querySelector('#pdAlasan').value.trim()
+      if (!alasan) { alert('Tulis alasannya dulu'); return }
+      try {
+        await updateDoc(doc(db, 'orders', orderId), { division: baru, updatedAt: Timestamp.now(),
+          riwayatDivisi: arrayUnion({ dari: lama, ke: baru, alasan, oleh: getProfile()?.name || 'Owner', at: new Date().toISOString() }) })
+        wrap.remove()
+        alert(`Order dipindah ke ${DIVISION_META[baru]?.label || baru}.\n\nCatatan: harga di order tidak berubah — kalau daftar harga divisi baru berbeda, cek & sesuaikan lewat Edit Order.`)
+        location.reload()
+      } catch (e) { alert('Gagal memindahkan: ' + e.message) }
+    }
+  }
   window.approvePrice = async function() {
     const btn = document.getElementById('approvePriceBtn')
     if (btn) { btn.disabled=true; btn.textContent='Menyetujui…' }
