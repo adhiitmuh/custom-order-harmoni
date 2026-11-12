@@ -117,6 +117,8 @@
     document.getElementById('buatWrap').style.display = bolehDivisi.length ? '' : 'none'
     document.getElementById('tidakBolehWrap').style.display = bolehDivisi.length ? 'none' : ''
     await muat()
+    const buktiId = new URLSearchParams(location.search).get('bukti')
+    if (buktiId) { pilihTab('dibayar'); if ((profile?.role || p.role) === 'owner') bukaBukti(buktiId, true) }
     if (sorotId) {
       const pg = pengajuan.find(x => x.id === sorotId)
       if (pg) pilihTab(pg.status || 'diajukan')
@@ -336,12 +338,35 @@
     renderPengajuan()
   }
 
+  // Upah yang ditandai "sudah transfer" langsung dari halaman order (tanpa pengajuan)
+  function bayarLangsung() {
+    const out = []
+    orders.forEach(o => Object.entries(o.tailorPayments || {}).forEach(([eid, pay]) => {
+      if (!pay || pay.pengajuanId) return
+      const t = daftarPenjahit(o).find(x => x.id === eid) || {}
+      const m = (t.penjahitId && master.find(x => x.id === t.penjahitId)) || master.find(x => x.nama.trim().toLowerCase() === String(t.nama || '').trim().toLowerCase())
+      out.push({ id: `langsung:${o.id}:${eid}`, orderId: o.id, entryId: eid, orderNumber: o.orderNumber || '', customerName: o.customerName || '', qty: t.qty,
+        penjahitNama: t.nama || '—', bank: m?.bank || '', noRek: m?.noRek || '', atasNama: m?.atasNama || '',
+        jumlah: Number(pay.jumlah) || Number(t.upah) || 0, by: pay.by, at: pay.at, bukti: pay.bukti || null })
+    }))
+    return out.sort((a, b) => (b.at?.seconds || 0) - (a.at?.seconds || 0))
+  }
   function renderPengajuan() {
     const el = document.getElementById('daftarPengajuan')
     const list = pengajuan.filter(p => (p.status || 'diajukan') === tab)
-    if (!list.length) { el.innerHTML = `<div class="empty"><p>${tab === 'diajukan' ? 'Tidak ada pengajuan yang menunggu transfer' : 'Belum ada data'}</p></div>`; return }
     const isOwner = profile.role === 'owner'
-    el.innerHTML = list.map(p => {
+    const langsung = tab === 'dibayar' ? bayarLangsung() : []
+    if (!list.length && !langsung.length) { el.innerHTML = `<div class="empty"><p>${tab === 'diajukan' ? 'Tidak ada pengajuan yang menunggu transfer' : 'Belum ada data'}</p></div>`; return }
+    el.innerHTML = (langsung.length ? `<div style="font-size:12px;font-weight:800;color:rgba(3,69,67,.6);margin:4px 0 8px">Ditransfer langsung dari halaman order (tanpa pengajuan)</div>` + langsung.map(x => `<div class="pg-card">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div><div style="font-size:15px;font-weight:800">🧵 ${esc(x.penjahitNama)}</div>
+            <div style="font-size:12px;margin-top:2px"><a href="order.html?id=${x.orderId}" style="color:var(--green);font-weight:700">${esc(x.orderNumber)}</a> · ${esc(x.customerName)}${x.qty ? ' · ' + esc(x.qty) + ' pcs' : ''}</div></div>
+          <div style="font-size:18px;font-weight:800">${rp(x.jumlah)}</div>
+        </div>
+        <div style="font-size:12px;color:#047857;font-weight:700;margin-top:6px">✓ Ditransfer ${rp(x.jumlah)} oleh ${esc(x.by || '')} · ${tgl(x.at)}</div>
+        ${x.bukti ? `<a href="${esc(x.bukti)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px"><img src="${esc(x.bukti)}" alt="Bukti transfer" style="max-width:180px;max-height:140px;border-radius:8px;border:1px solid rgba(3,69,67,.12)"><div style="font-size:11px;color:var(--green);font-weight:700">📷 Lihat bukti transfer</div></a>`
+          : `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:4px">Tanpa foto bukti transfer</div>${isOwner ? `<div><button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="bukaBukti('${x.id}', true)">📷 Tambah bukti transfer</button></div>` : ''}`}
+      </div>`).join('') + (list.length ? `<div style="font-size:12px;font-weight:800;color:rgba(3,69,67,.6);margin:14px 0 8px">Lewat pengajuan</div>` : '') : '') + list.map(p => {
       const st = p.status || 'diajukan'
       const milikSaya = p.dibuatOlehUid === profile.id
       const bolehBatal = st === 'diajukan' && (isOwner || milikSaya)
@@ -386,7 +411,8 @@
 
   // Adi: tandai pengajuan sudah ditransfer + foto bukti transfer (bisa tempel / seret / pilih file)
   window.bukaBukti = function(id, hanyaBukti = false) {
-    const p = pengajuan.find(x => x.id === id); if (!p) return
+    const lgs = String(id).startsWith('langsung:') ? bayarLangsung().find(x => x.id === id) : null
+    const p = lgs ? { ...lgs, total: lgs.jumlah, jumlahDibayar: lgs.jumlah } : pengajuan.find(x => x.id === id); if (!p) return
     const bg = document.createElement('div'); bg.className = 'mdl-bg'
     bg.innerHTML = `<div class="mdl">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">${hanyaBukti ? '📷 Bukti transfer' : '✓ Tandai sudah ditransfer'}</div>
@@ -444,11 +470,13 @@
         let bukti = null
         if (file) {
           const f = file.type.startsWith('image/') ? await compressImage(file) : file
-          const r = ref(storage, `bukti_upah/${id}_${Date.now()}_${(f.name || 'bukti.jpg').replace(/[^\w.-]/g, '_')}`)
+          const r = ref(storage, `bukti_upah/${String(id).replace(/[^\w-]/g, '_')}_${Date.now()}_${(f.name || 'bukti.jpg').replace(/[^\w.-]/g, '_')}`)
           await uploadBytes(r, f)
           bukti = await getDownloadURL(r)
         }
-        if (hanyaBukti) {
+        if (hanyaBukti && lgs) {
+          await updateDoc(doc(db, 'orders', lgs.orderId), { [`tailorPayments.${lgs.entryId}.bukti`]: bukti })
+        } else if (hanyaBukti) {
           const batch = writeBatch(db)
           batch.update(doc(db, 'pengajuan_upah', id), { buktiTransfer: bukti })
           ;(p.items || []).forEach(it => batch.update(doc(db, 'orders', it.orderId), { [`tailorPayments.${it.entryId}.bukti`]: bukti }))

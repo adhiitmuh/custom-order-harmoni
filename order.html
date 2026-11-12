@@ -600,7 +600,7 @@
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
                   ${(() => { const pg = !bayar && _pengajuanAktif[t.id]; return bayar
-                    ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}${bayar.bukti && /^https:\/\//.test(bayar.bukti) ? ` · <a href="${esc(bayar.bukti)}" target="_blank" rel="noopener" style="color:#047857">📷 bukti</a>` : ''}</span>`
+                    ? `<span style="font-size:11px;font-weight:700;color:#047857">✓ Sudah ditransfer${bayar.jumlah ? ' ' + fmtCurrency(bayar.jumlah) : ''}${bayar.by ? ' · ' + esc(bayar.by) : ''}${tgl ? ' · ' + tgl : ''}${bayar.bukti && /^https:\/\//.test(bayar.bukti) ? ` · <a href="${esc(bayar.bukti)}" target="_blank" rel="noopener" style="color:#047857">📷 bukti</a>` : ''}</span>${!bayar.bukti && isOwnerP ? ` <a href="upah-penjahit.html?bukti=${encodeURIComponent(bayar.pengajuanId || 'langsung:' + orderId + ':' + t.id)}" style="font-size:11px;font-weight:700;color:#075985;border:1px solid rgba(7,89,133,.3);border-radius:999px;padding:2px 8px;text-decoration:none;background:#fff">📷 Tambah bukti</a>` : ''}`
                     : pg ? `<a href="upah-penjahit.html?id=${pg.id}" style="font-size:11px;font-weight:700;color:#b45309;text-decoration:none">🔒 Sedang diajukan ${fmtCurrency(pg.upah)} · ${esc(pg.oleh)} — upah terkunci sampai dibayar/dibatalkan →</a>`
                     : `<span style="font-size:11px;font-weight:700;color:#b91c1c">⏳ Belum ditransfer</span>` })()}
                   <div style="display:flex;gap:6px">
