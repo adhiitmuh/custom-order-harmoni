@@ -33,3 +33,16 @@ export function hitungNama(teks, qty) {
   return { n, total, baris, ok: !q || total === q,
     pesan: `${n} nama · total ${total} papan${q ? (total === q ? ` = qty ${q} ✓` : ` — qty item ${q}, selisih ${q - total > 0 ? 'kurang ' + (q - total) : 'lebih ' + (total - q)}`) : ''}` }
 }
+
+// Teks tampilan: "7 nama × 2 papan = 14" lalu daftar nama ("ANNISA ×2" kalau jumlahnya ditulis per nama)
+export function labelNama(teks, qty) {
+  const h = hitungNama(teks, qty)
+  const rata = h.perRata != null && h.perRata > 1
+  const pakaiJumlah = h.perRata === undefined
+  const judul = h.n <= 1 && !rata && !(pakaiJumlah && h.total > 1) ? ''
+    : rata ? `${h.n} nama × ${h.perRata} papan = ${h.total}: `
+    : pakaiJumlah ? `${h.n} nama = ${h.total} papan: `
+    : `${h.n} nama: `
+  const daftar = h.baris.map(x => pakaiJumlah && x.jml > 1 ? `${x.nama} ×${x.jml}` : x.nama)
+  return { h, judul, daftar }
+}

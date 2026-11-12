@@ -120,7 +120,7 @@
   import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi, divisiSaya } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
-  import { hitungNama } from './js/namaPapan.js?v=20261112a'
+  import { hitungNama, labelNama } from './js/namaPapan.js?v=20261112c'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
@@ -471,7 +471,7 @@
                   ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean), q = Number(it.qty) || 0
                       // Curiga: jumlah nama jauh lebih sedikit dari qty (mis. 1 nama untuk 19 pcs)
                       const h = hitungNama(it.namaCustom, q), curiga = !h.ok || (h.perRata != null && q > 3 && h.perRata > 3)
-                      return `<br><span style="color:#7c3aed;font-weight:600">🏷 ${ns.length > 1 ? ns.length + ' nama: ' : ''}${ns.join(' · ')}</span>${curiga ? `<br><span style="color:#b45309;font-size:10px">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — daftar nama mungkin belum lengkap, cek order' : esc(h.pesan)}</span>` : ''}` })() : (o.division === 'papan-nama' || /papan/i.test(it.name || '') ? '<br><span style="color:#b45309;font-size:10px">⚠ daftar nama belum diisi di order</span>' : '')}
+                      return `<br><span style="color:#7c3aed;font-weight:600">🏷 ${(l => esc(l.judul) + l.daftar.map(esc).join(' · '))(labelNama(it.namaCustom, q))}</span>${curiga ? `<br><span style="color:#b45309;font-size:10px">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — daftar nama mungkin belum lengkap, cek order' : esc(h.pesan)}</span>` : ''}` })() : (o.division === 'papan-nama' || /papan/i.test(it.name || '') ? '<br><span style="color:#b45309;font-size:10px">⚠ daftar nama belum diisi di order</span>' : '')}
                 </div>`
               ).join('')
             : o.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:2px">${o.varian}</div>` : ''}
