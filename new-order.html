@@ -224,7 +224,7 @@
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
   import { entriPembayaran, pisahMetode, opsiMetode } from './js/pembayaran.js?v=20261108a'
-  import { nilaiTierOrder, bolehSetujui, LABEL_TIER, simpanDaftarHarga, cariMirip, kunciNama } from './js/hargaList.js?v=20261110a'
+  import { nilaiTierOrder, bolehSetujui, LABEL_TIER, simpanDaftarHarga, cariMirip, kunciNama, skorMirip } from './js/hargaList.js?v=20261110a'
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon', 'tailor', 'butik', 'jilbab', 'sewa-kostum']
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -523,9 +523,9 @@
     tr.innerHTML = `
       <td style="padding:6px 4px">
         <input type="text" placeholder="cth: BORDIR LOGO, JERSEY FUTSAL…" value="${(item.name||'').toUpperCase()}" autocapitalize="characters"
-          data-field="name" data-row="${id}" oninput="kapital(this)"
+          data-field="name" data-row="${id}" oninput="kapital(this);saranItem(${id})" onkeydown="if(event.key==='Escape')tutupSaran()"
           style="text-transform:uppercase;width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)';setTimeout(tutupSaran,200)" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${(item.varian||'').toUpperCase()}" autocapitalize="characters"
           data-field="varian" data-row="${id}" oninput="kapital(this)"
           style="text-transform:uppercase;width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
@@ -626,6 +626,32 @@
       ? `<span style="color:#b45309;font-weight:700">⚠ Mirip item yang sudah ada:</span> ${mirip.map(m => `<button type="button" onclick="pakaiItemKatalog(${id}, ${m.i})" style="border:1px solid #0369a1;color:#0369a1;background:#f0f9ff;border-radius:5px;padding:0 6px;font-size:10px;font-weight:700;cursor:pointer;margin:1px">${escHtml(m.it.name)}</button>`).join('')}<br><span style="color:rgba(3,69,67,.5)">Kalau barangnya sama, ketuk namanya. Kalau beda, biarkan — jadi 🆕 item baru di daftar harga.</span>`
       : `<span style="color:#0369a1;font-weight:700">🆕 Item baru</span> <span style="color:rgba(3,69,67,.5)">— disimpan ke daftar harga saat order dibuat</span>`
     el.style.display = ''
+  }
+  // Saran langsung saat mengetik nama item: item di daftar harga yang namanya mirip / mengandung kata yang diketik
+  window.tutupSaran = () => document.getElementById('saranItemBox')?.remove()
+  window.saranItem = function(id) {
+    const inp = document.querySelector(`[data-field="name"][data-row="${id}"]`)
+    const q = (inp?.value || '').trim().toUpperCase(), items = currentPriceList?.items || []
+    if (q.length < 2 || !items.length) return tutupSaran()
+    const kata = q.split(/\s+/).filter(Boolean)
+    const hasil = items.map((it, i) => {
+      const nm = String(it.name || '').toUpperCase(), kataNm = nm.split(/[\s\-\/.,()]+/)
+      const cocokKata = kata.filter(k => kataNm.some(w => w.startsWith(k) || (k.length >= 3 && skorMirip(k, w) >= 0.6)) || nm.includes(k)).length / kata.length
+      return { it, i, skor: Math.max(cocokKata, skorMirip(q, nm)) + (nm.startsWith(q) ? 0.5 : 0) }
+    }).filter(x => x.skor >= 0.6 && String(x.it.name).toUpperCase() !== q).sort((a, b) => b.skor - a.skor).slice(0, 6)
+    if (!hasil.length) return tutupSaran()
+    let box = document.getElementById('saranItemBox')
+    if (!box) { box = document.createElement('div'); box.id = 'saranItemBox'; document.body.appendChild(box) }
+    const r = inp.getBoundingClientRect()
+    box.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.bottom + scrollY + 2}px;width:${Math.max(r.width, 260)}px;max-width:calc(100vw - 16px);background:#fff;border:1.5px solid #034543;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:3000;overflow:hidden;font-size:12px`
+    box.innerHTML = `<div style="padding:5px 10px;font-size:10px;font-weight:700;color:rgba(3,69,67,.5);background:#f6faf9">ADA DI DAFTAR HARGA — ketuk untuk pakai</div>` +
+      hasil.map(h => `<div data-i="${h.i}" style="padding:8px 10px;cursor:pointer;border-top:1px solid rgba(3,69,67,.07);display:flex;justify-content:space-between;gap:8px">
+        <span style="font-weight:600">${escHtml(h.it.name)}${h.it.variants?.length ? ` <span style="font-size:10px;color:rgba(3,69,67,.5)">(${h.it.variants.length} varian)</span>` : ''}</span>
+        <span style="color:rgba(3,69,67,.6);white-space:nowrap">${hargaDasar(h.it) ? 'Rp ' + Number(hargaDasar(h.it)).toLocaleString('id-ID') : ''}</span></div>`).join('')
+    box.querySelectorAll('[data-i]').forEach(el => {
+      el.onmouseenter = () => el.style.background = '#f0f9ff'; el.onmouseleave = () => el.style.background = ''
+      el.onpointerdown = e => { e.preventDefault(); tutupSaran(); pakaiItemKatalog(id, +el.dataset.i); toggleNamaCustom(id) }
+    })
   }
   window.pakaiItemKatalog = function(id, idx) {
     const p = currentPriceList?.items?.[idx]; if (!p) return
