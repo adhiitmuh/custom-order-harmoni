@@ -382,10 +382,14 @@
       ${hanyaBukti ? '' : `<label style="font-size:11px;color:rgba(3,69,67,.5)">Total yang ditransfer (Rp)</label>
       <input type="text" inputmode="numeric" id="mdlJumlah" value="${Math.round(p.total).toLocaleString('id-ID')}" style="font-size:15px;font-weight:700;margin-bottom:10px">`}
       <label class="bukti-drop" id="mdlDrop">
-        <input type="file" id="mdlFoto" accept="image/*,application/pdf" style="display:none">
-        <div id="mdlDropTeks">📎 Foto bukti transfer — <b>tempel (Ctrl/⌘+V)</b>, seret ke sini, atau ketuk untuk pilih</div>
+        <input type="file" id="mdlFoto" data-tf-tombol="1" accept="image/*,application/pdf" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+        <div id="mdlDropTeks">📎 Foto bukti transfer — ketuk di sini untuk pilih dari Foto/Galeri, atau seret / tempel</div>
         <div id="mdlPrev"></div>
       </label>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost btn-sm" id="mdlPilih" style="flex:1;justify-content:center">🖼 Pilih dari Foto</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="mdlTempel" style="flex:1;justify-content:center">📋 Tempel screenshot</button>
+      </div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn btn-ghost btn-sm" id="mdlBatal" style="flex:1;justify-content:center">Batal</button>
         <button class="btn btn-green btn-sm" id="mdlSimpan" style="flex:1;justify-content:center">${hanyaBukti ? 'Simpan bukti' : 'Simpan'}</button>
@@ -400,6 +404,17 @@
       prev.innerHTML = f.type.startsWith('image/') ? `<img src="${URL.createObjectURL(f)}" alt="">` : `<div style="margin-top:6px;font-weight:700">📄 ${esc(f.name)}</div>`
       bg.querySelector('#mdlDropTeks').textContent = '✓ ' + f.name + ' — ketuk untuk ganti'
     })
+    bg.querySelector('#mdlPilih').onclick = () => inp.click()
+    bg.querySelector('#mdlTempel').onclick = async () => {
+      try {
+        const items = await navigator.clipboard.read()
+        for (const it of items) {
+          const t = it.types.find(x => x.startsWith('image/'))
+          if (t) { const dt = new DataTransfer(); dt.items.add(new File([await it.getType(t)], 'bukti.png', { type: t })); inp.files = dt.files; inp.dispatchEvent(new Event('change')); return }
+        }
+        alert('Belum ada gambar yang disalin. Buka screenshot transfer di Foto → tekan lama → Salin, lalu tekan Tempel lagi.')
+      } catch { alert('Browser tidak mengizinkan tempel — pakai "Pilih dari Foto".') }
+    }
     bg.querySelector('#mdlBatal').onclick = () => bg.remove()
     bg.querySelector('#mdlSimpan').onclick = async () => {
       const btn = bg.querySelector('#mdlSimpan')
