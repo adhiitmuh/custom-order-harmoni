@@ -2644,6 +2644,8 @@
   // ── Daftar nama papan nama per item (satu nama per baris) → masuk Papan Nama Sheet ──
   window.editNamaPapan = function(i) {
     const it = (order.orderItems || [])[i]; if (!it) return
+    const isPapan = x => order.division === 'papan-nama' || /papan/i.test(x.name || '')
+    const lainPapan = (order.orderItems || []).map((x, j) => ({ it: x, j })).filter(x => x.j !== i && isPapan(x.it))
     const wrap = document.createElement('div')
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px'
     wrap.innerHTML = `<div class="card" style="max-width:440px;width:100%">
@@ -2651,7 +2653,8 @@
       <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:8px">Satu nama per baris. Qty item: <b>${it.qty || 0}</b></p>
       <textarea id="npTeks" rows="9" style="width:100%;text-transform:uppercase;font-size:13px">${esc(it.namaCustom || '')}</textarea>
       <div id="npOcr"></div>
-      <div id="npInfo" style="font-size:11px;color:#7c3aed;margin:4px 0 10px"></div>
+      <div id="npInfo" style="font-size:11px;color:#7c3aed;margin:4px 0 6px"></div>
+      ${lainPapan.length ? `<label style="display:flex;gap:6px;align-items:flex-start;font-size:12px;margin-bottom:10px;cursor:pointer"><input type="checkbox" id="npSemua" checked style="margin-top:2px"> <span>Pakai daftar nama yang sama juga untuk ${lainPapan.map(x => `<b>${esc(x.it.name)}</b> (qty ${x.it.qty || 0})`).join(', ')}</span></label>` : ''}
       <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
         ${order.notes ? `<button class="btn btn-ghost btn-sm" id="npDariCatatan">📋 Salin dari Catatan</button>` : '<span></span>'}
         <div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="npBatal">Batal</button><button class="btn btn-primary btn-sm" id="npSimpan">Simpan</button></div></div></div>`
@@ -2661,10 +2664,11 @@
     const info = () => { const n = daftar().length, q = Number(it.qty) || 0; wrap.querySelector('#npInfo').textContent = n ? `${n} nama${q ? ' · qty ' + q + (q % n === 0 ? ` = ${q / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}` : '' }
     ta.oninput = info; info()
     pasangBacaFoto(wrap.querySelector('#npOcr'), ta, wrap.querySelector('#npInfo'), order.designFiles || [], () => {})
-    wrap.querySelector('#npDariCatatan')?.addEventListener('click', () => { ta.value = String(order.notes || '').split(/\n+/).map(x => x.trim()).filter(Boolean).join('\n'); info() })
+    wrap.querySelector('#npDariCatatan')?.addEventListener('click', () => { ta.value = String(order.notes || '').split(/\n+/).map(x => x.trim()).filter(x => x && !/PAPAN|P\/HH|PRA\/HH|\d+\s*NAMA|NAMA\s*\d/i.test(x)).join('\n'); info() })
     wrap.querySelector('#npBatal').onclick = () => wrap.remove()
     wrap.querySelector('#npSimpan').onclick = async () => {
-      const items = (order.orderItems || []).map((x, j) => j === i ? { ...x, namaCustom: daftar().join('\n') || null } : x)
+      const semua = wrap.querySelector('#npSemua')?.checked, sasaran = new Set([i, ...(semua ? lainPapan.map(x => x.j) : [])])
+      const items = (order.orderItems || []).map((x, j) => sasaran.has(j) ? { ...x, namaCustom: daftar().join('\n') || null } : x)
       try { await updateDoc(doc(db, 'orders', orderId), { orderItems: items, updatedAt: Timestamp.now() }); wrap.remove(); await loadOrder(getProfile()) }
       catch (e) { alert('Gagal menyimpan: ' + e.message) }
     }
