@@ -3,12 +3,13 @@
 // Aturan: kalau tidak ada satu pun baris yang memakai jumlah → qty dibagi rata per nama.
 //         kalau ada → nama tanpa jumlah dihitung 1, dan totalnya harus sama dengan qty item.
 const POLA = [
+  /^(.*?)\t+\s*(\d{1,3})\s*$/,       // salinan Excel: NAMA <tab> 2
   /^(.*?)\s*[x×]\s*(\d{1,3})$/i,      // NAMA x2
   /^(.*?)\s*\(\s*(\d{1,3})\s*\)$/,     // NAMA (2)
   /^(.*?)\s*=\s*(\d{1,3})$/,           // NAMA = 2
 ]
 export function bacaBaris(baris) {
-  const t = String(baris || '').trim()
+  const t = String(baris || '').replace(/^\s*\d+\s*\t+/, '').trim()   // buang kolom No. dari Excel
   for (const p of POLA) { const m = t.match(p); if (m && m[1].trim()) return { nama: m[1].trim(), jml: +m[2] } }
   const d = t.match(/^(\d{1,3})\s*[x×]\s+(.+)$/i)          // 2x NAMA
   if (d) return { nama: d[2].trim(), jml: +d[1] }
