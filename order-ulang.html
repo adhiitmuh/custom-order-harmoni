@@ -114,7 +114,7 @@
     const c = pelanggan.find(x => x.k === k); if (!c) return
     const o = c.terakhir, item = (o.orderItems || []).map(i => i.name).filter(Boolean).slice(0, 2).join(' & ') || DIVISION_META[o.division]?.label || 'pesanan'
     const teks = `Halo ${c.nama} 👋\n\nTerima kasih sudah pernah order *${item}* di Harmoni (${BLN(o.tgl)}).\n\nKalau tahun ini ada kebutuhan lagi, kami siap bantu — bisa pakai desain yang sama supaya lebih cepat. Mau kami kirimkan penawaran harga terbaru?\n\n_Harmoni_`
-    window.open(`https://wa.me/${k}?text=${encodeURIComponent(teks)}`, '_blank')
+    window.open(`https://api.whatsapp.com/send?phone=${k}&text=${encodeURIComponent(teks)}`, '_blank')
     catat(k, 'Dihubungi')
   }
   window.catat = async (k, hasilAwal) => {

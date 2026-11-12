@@ -293,7 +293,7 @@
     try {
       if (lama) await updateDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), data)
       else await setDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), { ...data, dibuatOlehUid: profile.id || '', createdAt: now })
-      const url = `https://wa.me/${normalNoWa(waAdi)}?text=${encodeURIComponent(pesanWa(lok, tgl, r, setor, sisa, catatan))}`
+      const url = `https://api.whatsapp.com/send?phone=${normalNoWa(waAdi)}&text=${encodeURIComponent(pesanWa(lok, tgl, r, setor, sisa, catatan))}`
       if (w) w.location.href = url; else location.href = url
       await muat(true)
     } catch (err) { if (w) w.close(); alert('Gagal menyimpan laporan: ' + err.message) }

@@ -51,7 +51,7 @@ export function pesanTagihan(o, { rekening = '', chatUrl = '' } = {}) {
 }
 export function linkWaCustomer(kontak, pesan) {
   const no = String(kontak || '').replace(/\D/g, '').replace(/^0/, '62')
-  return no.startsWith('62') && no.length >= 9 ? `https://wa.me/${no}?text=${encodeURIComponent(pesan)}` : `https://wa.me/?text=${encodeURIComponent(pesan)}`
+  return no.startsWith('62') && no.length >= 9 ? `https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(pesan)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(pesan)}`
 }
 
 // Satu pesan untuk semua nota belum lunas milik satu customer (nomor WA sama)

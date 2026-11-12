@@ -310,7 +310,7 @@
   window.kirimWa = function(id) {
     const p = pengajuan.find(x => x.id === id); if (!p) return
     const no = normalNoWa(waOwner)
-    window.open(`https://wa.me/${no}?text=${encodeURIComponent(pesanWa(p))}`, '_blank')
+    window.open(`https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(pesanWa(p))}`, '_blank')
     // Catat sudah dikirim (oleh pengaju) supaya Adi & CS lain tahu
     if (p.dibuatOlehUid === profile.id && p.status === 'diajukan') {
       const upd = { waDikirimAt: Timestamp.now(), waDikirimOleh: profile.name || '', waDikirimKali: (p.waDikirimKali || 0) + 1 }

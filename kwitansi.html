@@ -120,7 +120,7 @@
       `Total pesanan: ${fmtCurrency(order.totalPrice || 0)}`, `Sudah dibayar: ${fmtCurrency(order.depositPaid || 0)}`, sisa <= 0 ? `✅ *LUNAS*` : `Sisa: *${fmtCurrency(sisa)}*`, ``, `Terima kasih 🙏 — Harmoni`].join('\n')
     // Kontak customer disembunyikan dari Pemilik Divisi
     const no = profile?.role === 'divisi' ? '' : String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
-    window.open(no.startsWith('62') ? `https://wa.me/${no}?text=${encodeURIComponent(teks)}` : `https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank')
+    window.open(no.startsWith('62') ? `https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(teks)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(teks)}`, '_blank')
   }
 </script>
 </body>

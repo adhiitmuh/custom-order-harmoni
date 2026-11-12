@@ -199,7 +199,7 @@
     const teks = [`*Rincian kewajiban modal*`, `${x.dari} → ${x.ke}`, ``,
       ...x.tunggakan.map(t => [`*${nb(t.m)}* — sisa ${rpT(t.sisa)}${t.umur >= 3 ? ' ⚠' : ''}`, ...det.filter(b => b.p.tgl.startsWith(t.m)).map(b => `• ${b.p.tgl.slice(8)}/${b.p.tgl.slice(5, 7)} ${b.p.orderNumber || ''} ${b.p.customerName || ''} — modal ${rpT(b.modal)}`)].join('\n')),
       ``, `*TOTAL BELUM DITRANSFER: ${rpT(x.saldo)}*`, ...(rek.length ? [``, `Transfer ke:`, ...rek.map(b => `${b.bankName} ${b.accountNumber} a.n. ${b.accountHolder}`)] : [])].join('\n')
-    window.open(`https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank')
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(teks)}`, '_blank')
   }
   window.tutupModal = id => { document.getElementById(id).style.display = 'none' }
   let _pilih = null

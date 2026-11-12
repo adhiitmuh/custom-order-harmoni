@@ -56,7 +56,7 @@ export async function tawarkanWaDivisi(divisi, labelDivisi, pesan) {
   if (nomor) {
     const kirim = document.createElement('a')
     kirim.textContent = 'Kirim WA'
-    kirim.href = `https://wa.me/${nomor}?text=${encodeURIComponent(pesan)}`
+    kirim.href = `https://api.whatsapp.com/send?phone=${nomor}&text=${encodeURIComponent(pesan)}`
     kirim.target = '_blank'
     kirim.rel = 'noopener'
     kirim.style.cssText = 'flex:1;padding:10px;border-radius:10px;background:#25d366;color:#fff;font-weight:800;text-align:center;text-decoration:none'

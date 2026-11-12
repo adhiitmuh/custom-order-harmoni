@@ -1609,8 +1609,8 @@
     const kontak = supplier?.kontak?.replace(/\D/g,'').replace(/^0/,'62') || ''
     const msg = `Halo *${supplierNama}*,\n\nBerikut link detail pesanan dari *Harmoni Indonesia* untuk Anda kerjakan:\n\n${url}\n\nMelalui link ini Anda bisa:\n✅ Lihat detail pesanan & file desain\n✅ Update progress pengerjaan\n\nTerima kasih 🙏\n_Harmoni Indonesia_`
     const waUrl = kontak.startsWith('62')
-      ? `https://wa.me/${kontak}?text=${encodeURIComponent(msg)}`
-      : `https://wa.me/?text=${encodeURIComponent(msg)}`
+      ? `https://api.whatsapp.com/send?phone=${kontak}&text=${encodeURIComponent(msg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
     window.open(waUrl, '_blank')
   }
 
@@ -3475,8 +3475,8 @@
     const msg = `Halo *${order.customerName}*,\n\nBerikut link untuk memantau progress dan berdiskusi desain pesanan Anda (*${order.orderNumber}*):\n\n${chatUrl}\n\nMelalui link ini Anda bisa:\n✅ Lihat status pengerjaan\n✅ Diskusi & kirim referensi desain\n✅ Chat langsung dengan tim Harmoni\n\n_Harmoni · Makassar_`
     const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
     const url = contact.startsWith('62')
-      ? `https://wa.me/${contact}?text=${encodeURIComponent(msg)}`
-      : `https://wa.me/?text=${encodeURIComponent(msg)}`
+      ? `https://api.whatsapp.com/send?phone=${contact}&text=${encodeURIComponent(msg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
     window.open(url, '_blank')
   }
 
@@ -3495,7 +3495,7 @@
 
   window.backFromInvoice = function() { location.reload() }
 
-  function teksInvoice() {
+  function teksInvoice(denganGambar = false) {
     const sisa = (order.totalPrice||0) - (order.depositPaid||0)
     const isPaid = sisa <= 0 && (order.totalPrice||0)>0
     const chatUrl = order.chatToken
@@ -3519,7 +3519,7 @@
       if (banks.length || qris.length) {
         bayarLines.push(`*CARA PEMBAYARAN*`)
         banks.forEach(b => bayarLines.push(`🏦 ${b.bankName} *${b.accountNumber}*${b.accountHolder ? `\n   a.n. ${b.accountHolder}` : ''}`))
-        qris.forEach(q => bayarLines.push(`📱 ${q.nama ? (/qris/i.test(q.nama) ? q.nama : 'QRIS ' + q.nama) : 'QRIS'}${q.imageUrl ? (_qrisFile[q.imageUrl] ? ' — gambar terlampir' : `:\n${q.imageUrl}`) : ' — scan di toko / minta ke admin'}`))
+        qris.forEach(q => bayarLines.push(`📱 ${q.nama ? (/qris/i.test(q.nama) ? q.nama : 'QRIS ' + q.nama) : 'QRIS'}${q.imageUrl ? (denganGambar && _qrisFile[q.imageUrl] ? ' — gambar terlampir' : `:\n${q.imageUrl}`) : ' — scan di toko / minta ke admin'}`))
         bayarLines.push(`Mohon kirim bukti transfer setelah membayar 🙏`, ``)
       }
     }
@@ -3549,8 +3549,8 @@
   function bukaWaTeks(teks) {
     const contact = (order.customerContact||'').replace(/\D/g,'').replace(/^0/,'62')
     const url = contact.startsWith('62')
-      ? `https://wa.me/${contact}?text=${encodeURIComponent(teks)}`
-      : `https://wa.me/?text=${encodeURIComponent(teks)}`
+      ? `https://api.whatsapp.com/send?phone=${contact}&text=${encodeURIComponent(teks)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(teks)}`
     window.open(url,'_blank')
   }
 
@@ -3578,7 +3578,7 @@
     m.querySelector('#waInvBatal').onclick = tutup
     m.querySelector('#waInvTeks').onclick = () => { tutup(); bukaWaTeks(teksInvoice()) }
     m.querySelector('#waInvGambar').onclick = () => {
-      const teks = teksInvoice()
+      const teks = teksInvoice(true)
       navigator.clipboard?.writeText(teks).catch(() => {})
       navigator.share({ files, text: teks }).then(tutup).catch(err => {
         if (err?.name === 'AbortError') return
