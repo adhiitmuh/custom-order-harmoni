@@ -321,6 +321,7 @@
             <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">
               ${order.priceApprovalTier==='admin'?'Hanya Owner / Pemilik Divisi yang dapat menyetujui harga ini':'Hanya Kepala Cabang, Pemilik Divisi atau Owner yang dapat menyetujui'}
             </div>
+            ${daftarItemApproval(profile)}
           </div>
           ${bolehSetujui(profile, order.priceApprovalTier, order.division) ? `
           <div style="display:flex;gap:8px;flex-shrink:0">
@@ -2591,7 +2592,55 @@
       } catch (e) { alert('Gagal memindahkan: ' + e.message) }
     }
   }
+
+  // ── Tolak per item (approval harga) ──────────────────────────────────────────
+  const kunciItemOrder = it => `${String(it.name || '').trim().toUpperCase()}||${String(it.varian || '').trim().toUpperCase()}`
+  const itemDitolakAktif = () => {
+    const ada = new Set((order.orderItems || []).map(kunciItemOrder))
+    return (order.itemDitolak || []).filter(x => ada.has(x.kunci))
+  }
+  function daftarItemApproval(profile) {
+    const items = order.orderItems || []; if (!items.length) return ''
+    const tolak = new Map(itemDitolakAktif().map(x => [x.kunci, x]))
+    const bisa = bolehSetujui(profile, order.priceApprovalTier, order.division)
+    const baru = new Set((order.hargaCek?.itemBaru || []).map(n => String(n).toUpperCase()))
+    return `<div style="margin-top:10px;border-top:1px dashed rgba(3,69,67,.15);padding-top:8px">
+      <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.55);margin-bottom:4px">Item di order ini${bisa ? ' — tolak item yang tidak sesuai' : ''}:</div>
+      ${items.map((it, i) => { const k = kunciItemOrder(it), t = tolak.get(k), nm = it.name + (it.varian ? ' – ' + it.varian : '')
+        const isBaru = baru.has(String(it.name).toUpperCase()) || baru.has(String(nm).toUpperCase())
+        return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0;font-size:12px;${t ? 'color:#b91c1c' : ''}">
+          <span style="flex:1;min-width:160px">${t ? '✕ ' : ''}<b>${esc(nm)}</b> · ${it.qty} × ${fmtCurrency(it.price || 0)}${isBaru ? ' <span style="font-size:10px;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:0 5px">🆕 baru</span>' : ''}
+            ${t ? `<div style="font-size:11px">Ditolak ${esc(t.oleh || '')}: ${esc(t.alasan || '')}</div>` : ''}</span>
+          ${bisa ? (t ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="batalTolakItem(${i})">↩ Batal tolak</button>`
+                      : `<button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="tolakItem(${i})">✕ Tolak item</button>`) : ''}
+        </div>` }).join('')}
+      ${tolak.size ? `<div style="font-size:11px;color:#b91c1c;margin-top:4px;font-weight:700">${tolak.size} item ditolak — CS perbaiki lewat <b>Edit</b> (ganti dengan item yang ada di daftar harga, ubah harga, atau hapus item). Harga baru bisa disetujui setelah item itu tidak ada lagi.</div>` : ''}
+    </div>`
+  }
+  window.tolakItem = async function(i) {
+    const it = (order.orderItems || [])[i]; if (!it) return
+    const alasan = prompt(`Alasan menolak "${it.name}${it.varian ? ' – ' + it.varian : ''}":\n(cth: sudah ada di daftar harga dengan nama lain, harga terlalu murah, salah item)`)
+    if (!alasan || !alasan.trim()) return
+    const p = getProfile()
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { itemDitolak: arrayUnion({ kunci: kunciItemOrder(it), name: it.name, varian: it.varian || '', alasan: alasan.trim(), oleh: p.name, olehUid: p.id, at: new Date().toISOString() }), updatedAt: Timestamp.now() })
+      // Kabari pembuat order
+      if (order.createdBy && order.createdBy !== p.id)
+        writeMentionNotifs([{ id: order.createdBy }], p.id, p.name, `Item ditolak: ${it.name} — ${alasan.trim()}`, orderId, order.orderNumber).catch(() => {})
+      await loadOrder(p)
+    } catch (e) { alert('Gagal menolak item: ' + e.message) }
+  }
+  window.batalTolakItem = async function(i) {
+    const it = (order.orderItems || [])[i]; if (!it) return
+    const k = kunciItemOrder(it)
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { itemDitolak: (order.itemDitolak || []).filter(x => x.kunci !== k), updatedAt: Timestamp.now() })
+      await loadOrder(getProfile())
+    } catch (e) { alert('Gagal: ' + e.message) }
+  }
   window.approvePrice = async function() {
+    const masih = itemDitolakAktif()
+    if (masih.length) { alert(`Masih ada ${masih.length} item yang ditolak:\n• ${masih.map(x => x.name + (x.varian ? ' – ' + x.varian : '')).join('\n• ')}\n\nCS perlu memperbaiki/menghapus item itu lewat Edit dulu, atau tekan "Batal tolak".`); return }
     const btn = document.getElementById('approvePriceBtn')
     if (btn) { btn.disabled=true; btn.textContent='Menyetujui…' }
     try {
