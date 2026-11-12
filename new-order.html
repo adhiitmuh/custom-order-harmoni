@@ -531,10 +531,11 @@
           onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
           onchange="showTierButtons(${id})">
         <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
-          <input type="text" placeholder="Nama / teks yang dicetak di papan nama" value="${item.namaCustom||''}"
-            data-field="namaCustom" data-row="${id}"
-            style="width:100%;border:none;border-bottom:1.5px dashed rgba(124,58,237,.35);padding:3px 2px;font-size:11px;color:#4c1d95;outline:none;background:transparent;border-radius:0"
-            onfocus="this.style.borderBottomColor='#7c3aed'" onblur="this.style.borderBottomColor='rgba(124,58,237,.35)'">
+          <textarea rows="2" placeholder="Nama yang dicetak — SATU NAMA PER BARIS (bisa paste dari WA)"
+            data-field="namaCustom" data-row="${id}" oninput="hitungNamaPapan(${id})"
+            style="width:100%;border:1.5px dashed rgba(124,58,237,.35);border-radius:6px;padding:4px 6px;font-size:11px;color:#4c1d95;outline:none;background:transparent;resize:vertical;text-transform:uppercase"
+            onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='rgba(124,58,237,.35)'">${String(item.namaCustom||'').replace(/</g,'&lt;')}</textarea>
+          <div id="namaCount-${id}" style="font-size:10px;color:#7c3aed;margin-top:2px"></div>
         </div>
       </td>
       <td style="padding:6px 4px">
@@ -542,7 +543,7 @@
           data-field="qty" data-row="${id}"
           style="width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 8px;font-size:13px;text-align:center;outline:none"
           onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)'"
-          oninput="calcRow(${id})">
+          oninput="calcRow(${id});hitungNamaPapan(${id})">
       </td>
       <td style="padding:6px 4px">
         <input type="text" inputmode="numeric" placeholder="0" value="${fmtPrice(item.pricePerUnit)}"
@@ -775,7 +776,7 @@
     return [...document.querySelectorAll('#itemRows tr')].map(tr => {
       const name  = (tr.querySelector('[data-field="name"]')?.value.trim() || '').toUpperCase()
       const varian = (tr.querySelector('[data-field="varian"]')?.value.trim() || '').toUpperCase()
-      const namaCustom = tr.querySelector('[data-field="namaCustom"]')?.value.trim() || ''
+      const namaCustom = (tr.querySelector('[data-field="namaCustom"]')?.value || '').split(/\n+/).map(x => x.trim().toUpperCase()).filter(Boolean).join('\n')
       const qty   = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
       const price = parsePrice(tr.querySelector('[data-field="price"]')?.value)
       const priceModal = parsePrice(tr.querySelector('[data-field="modal"]')?.value)
@@ -789,6 +790,14 @@
     return selectedDiv === 'papan-nama' || name.includes('papan')
   }
 
+  // Daftar nama papan: hitung jumlah nama dibanding qty (mis. 7 nama, qty 14 = 2 papan per nama)
+  window.hitungNamaPapan = function(rowId) {
+    const ta = document.querySelector(`[data-field="namaCustom"][data-row="${rowId}"]`), el = document.getElementById(`namaCount-${rowId}`)
+    if (!ta || !el) return
+    const n = ta.value.split(/\n+/).map(x => x.trim()).filter(Boolean).length
+    const qty = +document.querySelector(`[data-field="qty"][data-row="${rowId}"]`)?.value || 0
+    el.textContent = !n ? '' : `${n} nama${qty ? ' · qty ' + qty + (qty % n === 0 ? ` = ${qty / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}`
+  }
   window.toggleNamaCustom = function(rowId) {
     const wrap = document.getElementById(`namaCustomWrap-${rowId}`)
     if (wrap) wrap.style.display = _isPapanItem(rowId) ? '' : 'none'
