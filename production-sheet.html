@@ -119,6 +119,7 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getActiveDivisions, hasProductionAccess, canSeeOrder, csRangkapDivisi, divisiSaya } from './js/auth.js'
   import { collection, getDocs, doc, updateDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { pasangBacaFoto } from './js/ocrNama.js?v=20261112a'
   import { STATUS_LABEL, fmtCurrency, fmtDate } from './js/utils.js'
 
   const SHEET_DIVISIONS = ['bordir', 'papan-nama']
@@ -359,6 +360,7 @@
       <h3 style="font-size:15px;font-weight:800;margin-bottom:4px">${esc(o.orderNumber || '')} · ${esc(o.customerName || '')}</h3>
       <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:8px">${esc(it.name)}${it.varian ? ' · ' + esc(it.varian) : ''} — qty <b>${it.qty || 0}</b>. Satu nama per baris.</p>
       <textarea id="nsTeks" rows="9" style="width:100%;text-transform:uppercase;font-size:13px">${esc(it.namaCustom || '')}</textarea>
+      <div id="nsOcr"></div>
       <div id="nsInfo" style="font-size:11px;color:#7c3aed;margin:4px 0 10px"></div>
       <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
         ${o.notes ? '<button class="btn btn-ghost btn-sm" id="nsDariCatatan">📋 Salin dari Catatan</button>' : '<span></span>'}
@@ -368,6 +370,7 @@
     const daftar = () => ta.value.split(/\n+/).map(x => x.trim().toUpperCase()).filter(Boolean)
     const info = () => { const n = daftar().length, q = Number(it.qty) || 0; wrap.querySelector('#nsInfo').textContent = n ? `${n} nama${q ? ' · qty ' + q + (q % n === 0 ? ` = ${q / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}` : '' }
     ta.oninput = info; info()
+    pasangBacaFoto(wrap.querySelector('#nsOcr'), ta, wrap.querySelector('#nsInfo'), o.designFiles || [], () => {})
     wrap.querySelector('#nsDariCatatan')?.addEventListener('click', () => { ta.value = String(o.notes || '').split(/\n+/).map(x => x.trim()).filter(Boolean).join('\n'); info() })
     wrap.querySelector('#nsBatal').onclick = () => wrap.remove()
     wrap.querySelector('#nsSimpan').onclick = async () => {

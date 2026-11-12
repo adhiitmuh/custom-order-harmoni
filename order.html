@@ -91,6 +91,7 @@
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
+  import { pasangBacaFoto } from './js/ocrNama.js?v=20261112a'
   import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER } from './js/hargaList.js?v=20261110a'
   import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261108a'
 
@@ -2649,6 +2650,7 @@
       <h3 style="font-size:15px;font-weight:800;margin-bottom:4px">Daftar nama — ${esc(it.name)}${it.varian ? ' · ' + esc(it.varian) : ''}</h3>
       <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:8px">Satu nama per baris. Qty item: <b>${it.qty || 0}</b></p>
       <textarea id="npTeks" rows="9" style="width:100%;text-transform:uppercase;font-size:13px">${esc(it.namaCustom || '')}</textarea>
+      <div id="npOcr"></div>
       <div id="npInfo" style="font-size:11px;color:#7c3aed;margin:4px 0 10px"></div>
       <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
         ${order.notes ? `<button class="btn btn-ghost btn-sm" id="npDariCatatan">📋 Salin dari Catatan</button>` : '<span></span>'}
@@ -2658,6 +2660,7 @@
     const daftar = () => ta.value.split(/\n+/).map(x => x.trim().toUpperCase()).filter(Boolean)
     const info = () => { const n = daftar().length, q = Number(it.qty) || 0; wrap.querySelector('#npInfo').textContent = n ? `${n} nama${q ? ' · qty ' + q + (q % n === 0 ? ` = ${q / n} per nama` : ' (tidak habis dibagi — cek lagi)') : ''}` : '' }
     ta.oninput = info; info()
+    pasangBacaFoto(wrap.querySelector('#npOcr'), ta, wrap.querySelector('#npInfo'), order.designFiles || [], () => {})
     wrap.querySelector('#npDariCatatan')?.addEventListener('click', () => { ta.value = String(order.notes || '').split(/\n+/).map(x => x.trim()).filter(Boolean).join('\n'); info() })
     wrap.querySelector('#npBatal').onclick = () => wrap.remove()
     wrap.querySelector('#npSimpan').onclick = async () => {
