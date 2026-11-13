@@ -153,7 +153,9 @@
       await dataAuthReady
       const iz = await getDoc(doc(db, 'settings', 'izin_harga'))
       window._izinHarga = iz.exists() ? (iz.data().map || {}) : {}
-      profile.izinHarga = window._izinHarga[profile.id]?.divisions || []
+      const izSaya = window._izinHarga[profile.id]
+      const hariIni = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)   // WITA
+      profile.izinHarga = izSaya && (!izSaya.sampai || hariIni <= izSaya.sampai) ? (izSaya.divisions || []) : []
     } catch { profile.izinHarga = [] }
     if (profile.role === 'owner') {
       document.getElementById('pageTitle').insertAdjacentHTML('afterend', `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="bukaIzinHarga()">👥 Izin isi daftar harga</button>`)
@@ -300,10 +302,16 @@
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
     m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px;max-height:88vh;overflow:auto">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px">👥 Izin isi daftar harga</div>
-      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Orang yang dicentang bisa menambah item & mengisi harga <b>Normal, Cabang, Promo, Modal</b> di divisi itu. Harga Admin, hapus & ganti nama item tetap hanya Owner.</p>
+      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Orang yang dicentang bisa menambah item & mengisi harga <b>Normal, Cabang, Promo, Modal</b> di divisi itu. Harga Admin, hapus & ganti nama item tetap hanya Owner. <b>Berlaku sampai</b> kosong = tanpa batas; lewat tanggal itu izin mati sendiri.</p>
       <input type="search" id="izCari" placeholder="Cari nama…" style="margin-bottom:8px">
       <div id="izList">${staf.map(u => `<div class="izRow" data-nama="${escAttr(u.name.toLowerCase())}" style="border-top:1px solid rgba(3,69,67,.08);padding:8px 0">
-        <div style="font-weight:700;font-size:13px">${escAttr(u.name)} <span style="font-weight:400;color:rgba(3,69,67,.45);font-size:11px">${escAttr(u.role || '')}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="font-weight:700;font-size:13px">${escAttr(u.name)} <span style="font-weight:400;color:rgba(3,69,67,.45);font-size:11px">${escAttr(u.role || '')}</span>
+            ${map[u.id]?.sampai && map[u.id].sampai < new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10) ? '<span style="font-size:10px;color:#b91c1c;font-weight:700"> · izin sudah habis</span>' : ''}</div>
+          <label style="font-size:11px;color:rgba(3,69,67,.6);display:flex;gap:4px;align-items:center">Berlaku sampai
+            <input type="date" data-sampai="${escAttr(u.id)}" value="${escAttr(map[u.id]?.sampai || '')}" style="font-size:11px;padding:2px 4px;width:auto">
+            <button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="const i=this.previousElementSibling;const d=new Date(Date.now()+8*3600e3);d.setMonth(d.getMonth()+1);i.value=d.toISOString().slice(0,10)">+1 bln</button></label>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px">${divs.map(d => `<label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" data-uid="${escAttr(u.id)}" data-nama="${escAttr(u.name)}" value="${escAttr(d.key)}" ${(map[u.id]?.divisions || []).includes(d.key) ? 'checked' : ''}>${escAttr((DIVISION_META[d.key]?.icon || '') + ' ' + (DIVISION_META[d.key]?.label || d.label || d.key))}</label>`).join('')}</div></div>`).join('')}</div>
       <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('izinModal').remove()">Batal</button><button class="btn btn-primary" style="flex:1" onclick="simpanIzinHarga()">Simpan</button></div></div>`
     document.body.appendChild(m)
@@ -312,6 +320,7 @@
   window.simpanIzinHarga = async function() {
     const map = {}
     document.querySelectorAll('#izinModal input[type=checkbox]:checked').forEach(c => { (map[c.dataset.uid] = map[c.dataset.uid] || { nama: c.dataset.nama, divisions: [] }).divisions.push(c.value) })
+    Object.keys(map).forEach(uid => { const v = document.querySelector(`#izinModal input[data-sampai="${uid}"]`)?.value; if (v) map[uid].sampai = v })
     try {
       await setDoc(doc(db, 'settings', 'izin_harga'), { map, updatedAt: Timestamp.now() })
       window._izinHarga = map; document.getElementById('izinModal').remove()

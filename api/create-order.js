@@ -1904,7 +1904,9 @@ async function handlePriceListSave(request, env) {
   else if (role !== 'owner') {
     const iz = await firestoreGet(projectId, token, 'settings/izin_harga').catch(() => null)
     const map = iz?.fields ? parseFields(iz.fields).map || {} : {}
-    if ((map[staff.uid]?.divisions || []).includes(division)) role = 'pengisi'
+    const izin = map[staff.uid]
+    const hariIni = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)   // WITA
+    if ((izin?.divisions || []).includes(division) && (!izin.sampai || hariIni <= izin.sampai)) role = 'pengisi'
   }
   if (role !== 'owner' && !HARGA_IZIN[role]) return json({ error: 'Akun ini tidak bisa mengubah daftar harga' }, 403)
   if (role === 'divisi') return json({ error: 'Pemilik Divisi hanya bisa mengubah daftar harga divisinya' }, 403)
