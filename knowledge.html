@@ -565,12 +565,12 @@
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:8px">
             <div>
-              <label style="font-size:11px;color:#059669;font-weight:700">Harga Normal (Rp)</label>
-              <input type="text" inputmode="numeric" value="${fmtPrice(item.priceNormal)}"${kunci('priceNormal', item._tersimpan ? item.priceNormal : 0, item.baru)} oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceNormal',this.value)" placeholder="misal: 25.000" style="border-color:rgba(5,150,105,.3)">
-            </div>
-            <div>
               <label style="font-size:11px;color:#0369a1;font-weight:700">Harga Cabang (Rp)</label>
               <input type="text" inputmode="numeric" value="${fmtPrice(item.priceCabang)}"${kunci('priceCabang', item._tersimpan ? item.priceCabang : 0, item.baru)} oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceCabang',this.value)" placeholder="kosong = pakai normal" style="border-color:rgba(3,105,161,.3)">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#059669;font-weight:700">Harga Normal (Rp)</label>
+              <input type="text" inputmode="numeric" value="${fmtPrice(item.priceNormal)}"${kunci('priceNormal', item._tersimpan ? item.priceNormal : 0, item.baru)} oninput="this.value=fmtInputPrice(this.value);updatePriceRow(${i},'priceNormal',this.value)" placeholder="misal: 25.000" style="border-color:rgba(5,150,105,.3)">
             </div>
             <div>
               <label style="font-size:11px;color:#d97706;font-weight:700">Harga Promo (Rp)</label>
@@ -623,12 +623,12 @@
         <input type="text" value="${e(v.name)}" oninput="updateVariant(${itemIdx},${varIdx},'name',this.value)" placeholder="cth: Dryfit, Hyget" style="width:100%;border:1.5px solid rgba(3,69,67,.15);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>
       <div>
-        <label style="font-size:10px;font-weight:700;color:#059669;display:block;margin-bottom:3px">NORMAL</label>
-        <input type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}"${kunci('priceNormal', v._tersimpan ? v.priceNormal : 0, v.baru)} oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceNormal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(5,150,105,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
-      </div>
-      <div>
         <label style="font-size:10px;font-weight:700;color:#0369a1;display:block;margin-bottom:3px">CABANG</label>
         <input type="text" inputmode="numeric" value="${fmtPrice(v.priceCabang)}"${kunci('priceCabang', v._tersimpan ? v.priceCabang : 0, v.baru)} oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceCabang',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(3,105,161,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#059669;display:block;margin-bottom:3px">NORMAL</label>
+        <input type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}"${kunci('priceNormal', v._tersimpan ? v.priceNormal : 0, v.baru)} oninput="this.value=fmtInputPrice(this.value);updateVariant(${itemIdx},${varIdx},'priceNormal',this.value)" placeholder="0" style="width:100%;border:1.5px solid rgba(5,150,105,.3);border-radius:6px;padding:5px 8px;font-size:12px;outline:none">
       </div>
       <div>
         <label style="font-size:10px;font-weight:700;color:#d97706;display:block;margin-bottom:3px">PROMO</label>
@@ -803,8 +803,8 @@
         return [canEdit ? `<tr data-item-index="${i}" draggable="true">
           <td><span class="drag-handle-icon" title="Seret untuk urutkan ulang">⠿</span><input class="inp-inline" type="text" value="${escAttr(p.name||'')}"${kunciNamaItem(p)} onchange="updateInlinePrice('${d}',${i},'name',this.value)" placeholder="Nama produk">${lencanaBaru(d, i, p)}</td>
           <td><button onclick="addInlineVariant('${d}',${i})" style="background:none;border:1px dashed rgba(3,69,67,.2);border-radius:5px;padding:2px 7px;font-size:10px;cursor:pointer;color:rgba(3,69,67,.4)">+ varian</button></td>
-          <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(p.priceNormal)}"${kunci('priceNormal', p.priceNormal, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-cabang" type="text" inputmode="numeric" value="${fmtPrice(p.priceCabang)}"${kunci('priceCabang', p.priceCabang, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceCabang',this.value)" placeholder="0"></td>
+          <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(p.priceNormal)}"${kunci('priceNormal', p.priceNormal, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceNormal',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(p.pricePromo)}"${kunci('pricePromo', p.pricePromo, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'pricePromo',this.value)" placeholder="0"></td>
           <td><input class="inp-inline tier-admin" type="text" inputmode="numeric" value="${fmtPrice(p.priceAdmin)}"${kunci('priceAdmin', p.priceAdmin, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceAdmin',this.value)" placeholder="0"></td>
           ${canEditModal ? `<td><input class="inp-inline tier-modal" type="text" inputmode="numeric" value="${fmtPrice(p.priceModal)}"${kunci('priceModal', p.priceModal, p.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlinePrice('${d}',${i},'priceModal',this.value)" placeholder="0"></td>` : ''}
@@ -817,8 +817,8 @@
         </tr>` : `<tr>
           <td style="font-weight:600;white-space:normal">${escAttr(p.name||'')}</td>
           <td style="color:rgba(3,69,67,.2);font-size:11px">—</td>
-          <td class="tier-normal">${p.priceNormal ? Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
           <td class="tier-cabang">${p.priceCabang ? Number(p.priceCabang).toLocaleString('id-ID') : '—'}</td>
+          <td class="tier-normal">${p.priceNormal ? Number(p.priceNormal).toLocaleString('id-ID') : '—'}</td>
           <td class="tier-promo">${p.pricePromo ? Number(p.pricePromo).toLocaleString('id-ID') : '—'}</td>
           <td class="tier-admin">${p.priceAdmin ? Number(p.priceAdmin).toLocaleString('id-ID') : '—'}</td>
           ${canEditModal ? `<td class="tier-modal">${p.priceModal ? Number(p.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
@@ -851,8 +851,8 @@
       const variantRows = p.variants.map((v, vi) => canEdit ? `<tr style="background:rgba(3,69,67,.012)">
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
         <td style="white-space:normal"><input class="inp-inline" type="text" value="${escAttr(v.name||'')}"${kunciNamaItem(v, p)} onchange="updateInlineVariant('${d}',${i},${vi},'name',this.value)" placeholder="Nama varian" style="font-size:12px;color:rgba(3,69,67,.75);font-weight:500;white-space:normal"></td>
-        <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}"${kunci('priceNormal', v.priceNormal, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-cabang" type="text" inputmode="numeric" value="${fmtPrice(v.priceCabang)}"${kunci('priceCabang', v.priceCabang, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceCabang',this.value)" placeholder="0"></td>
+        <td><input class="inp-inline tier-normal" type="text" inputmode="numeric" value="${fmtPrice(v.priceNormal)}"${kunci('priceNormal', v.priceNormal, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceNormal',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-promo" type="text" inputmode="numeric" value="${fmtPrice(v.pricePromo)}"${kunci('pricePromo', v.pricePromo, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'pricePromo',this.value)" placeholder="0"></td>
         <td><input class="inp-inline tier-admin" type="text" inputmode="numeric" value="${fmtPrice(v.priceAdmin)}"${kunci('priceAdmin', v.priceAdmin, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceAdmin',this.value)" placeholder="0"></td>
         ${canEditModal ? `<td><input class="inp-inline tier-modal" type="text" inputmode="numeric" value="${fmtPrice(v.priceModal)}"${kunci('priceModal', v.priceModal, v.baru)} oninput="this.value=fmtInputPrice(this.value)" onchange="updateInlineVariant('${d}',${i},${vi},'priceModal',this.value)" placeholder="0"></td>` : ''}
@@ -861,8 +861,8 @@
       </tr>` : `<tr>
         <td style="padding-left:16px;border-left:2px solid rgba(3,69,67,.08)"></td>
         <td style="font-size:12px;color:rgba(3,69,67,.7);font-weight:500;white-space:normal">${escAttr(v.name||'')}</td>
-        <td class="tier-normal">${v.priceNormal ? Number(v.priceNormal).toLocaleString('id-ID') : '—'}</td>
         <td class="tier-cabang">${v.priceCabang ? Number(v.priceCabang).toLocaleString('id-ID') : '—'}</td>
+        <td class="tier-normal">${v.priceNormal ? Number(v.priceNormal).toLocaleString('id-ID') : '—'}</td>
         <td class="tier-promo">${v.pricePromo ? Number(v.pricePromo).toLocaleString('id-ID') : '—'}</td>
         <td class="tier-admin">${v.priceAdmin ? Number(v.priceAdmin).toLocaleString('id-ID') : '—'}</td>
         ${canEditModal ? `<td class="tier-modal">${v.priceModal ? Number(v.priceModal).toLocaleString('id-ID') : '—'}</td>` : ''}
@@ -880,8 +880,8 @@
       <thead><tr>
         <th style="width:200px;min-width:80px">LAYANAN / PRODUK</th>
         <th style="width:90px;min-width:55px">VARIAN</th>
-        <th style="width:85px;min-width:55px">NORMAL</th>
         <th style="width:85px;min-width:55px" title="Harga di cabang/titik (Normal + ongkos transport/operasional cabang)">CABANG</th>
+        <th style="width:85px;min-width:55px">NORMAL</th>
         <th style="width:85px;min-width:55px">PROMO</th>
         <th style="width:85px;min-width:55px">ADMIN</th>
         ${canEditModal ? '<th style="width:85px;min-width:55px">MODAL</th>' : ''}
@@ -1052,6 +1052,9 @@
     scheduleInlineSave(division)
   }
 
+  const simpanSemuaTertunda = () => Object.keys(_inlineSaveTimers).forEach(d => { clearTimeout(_inlineSaveTimers[d]); flushInlineSave(d) })
+  window.addEventListener('pagehide', simpanSemuaTertunda)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') simpanSemuaTertunda() })
   function scheduleInlineSave(division) {
     clearTimeout(_inlineSaveTimers[division])
     _inlineSaveTimers[division] = setTimeout(() => flushInlineSave(division), 1000)
@@ -1059,17 +1062,12 @@
 
   async function flushInlineSave(division) {
     delete _inlineSaveTimers[division]
-    // Masih mengetik di tabel ini → tunda; simpan setelah keluar dari kolom
-    const wrap = document.getElementById(`price-wrap-${division}`)
-    if (wrap && wrap.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') {
-      const el = document.activeElement
-      el.addEventListener('blur', () => scheduleInlineSave(division), { once: true })
-      return
-    }
+    // Tetap simpan walau kursor masih di kolom (di iPad kursor sering tidak lepas) — tabel tidak dibangun ulang kalau tersimpan semua
     const items = (priceDataStore[division]?.items || []).map(rapikanItem).filter(item => item.name)
     const names = items.map(it => it.name.toLowerCase())
-    if (names.some((n, i) => names.indexOf(n) !== i)) {
-      showSavedToast('⚠ Ada nama duplikat — perbaiki sebelum data tersimpan', '#d97706')
+    const dobel = names.find((n, i) => names.indexOf(n) !== i)
+    if (dobel) {
+      alert(`⚠ Harga BELUM tersimpan: ada 2 item bernama "${dobel.toUpperCase()}". Ganti nama atau hapus salah satunya dulu (bisa pakai 🧹 Cek dobel).`)
       return
     }
     try {
