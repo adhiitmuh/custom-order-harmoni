@@ -566,11 +566,11 @@
         <input type="text" placeholder="cth: BORDIR LOGO, JERSEY FUTSAL…" value="${(item.name||'').toUpperCase()}" autocapitalize="characters"
           data-field="name" data-row="${id}" oninput="kapital(this);saranItem(${id})" onkeydown="if(event.key==='Escape')tutupSaran()"
           style="text-transform:uppercase;width:100%;border:1.5px solid rgba(3,69,67,.12);border-radius:8px;padding:7px 10px;font-size:13px;outline:none"
-          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)';setTimeout(tutupSaran,200)" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
+          onfocus="this.style.borderColor='#034543'" onblur="this.style.borderColor='rgba(3,69,67,.12)';setTimeout(()=>tutupSaran(this),200)" onchange="matchItemToPrice(${id});toggleNamaCustom(${id})">
         <input type="text" placeholder="Spesifikasi / varian (opsional)" value="${(item.varian||'').toUpperCase()}" autocapitalize="characters"
-          data-field="varian" data-row="${id}" oninput="kapital(this)"
+          data-field="varian" data-row="${id}" oninput="kapital(this);saranVarianKolom(${id})"
           style="text-transform:uppercase;width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
-          onfocus="this.style.borderBottomColor='#034543'" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)'"
+          onfocus="this.style.borderBottomColor='#034543';saranVarianKolom(${id})" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)';setTimeout(()=>tutupSaran(this),200)"
           onchange="showTierButtons(${id})">
         <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
           <textarea rows="2" placeholder="Nama yang dicetak — SATU NAMA PER BARIS. Jumlah beda per nama? tulis: NAMA x2"
@@ -717,30 +717,71 @@
     matchItemToPrice(id); showTierButtons(id)
   }
   // Saran langsung saat mengetik nama item: item di daftar harga yang namanya mirip / mengandung kata yang diketik
-  window.tutupSaran = () => document.getElementById('saranItemBox')?.remove()
-  window.saranItem = function(id) {
-    const inp = document.querySelector(`[data-field="name"][data-row="${id}"]`)
-    const q = (inp?.value || '').trim().toUpperCase(), items = currentPriceList?.items || []
-    if (q.length < 2 || !items.length) return tutupSaran()
+  window.tutupSaran = el => { const b = document.getElementById('saranItemBox'); if (b && (!el || b._inp === el)) b.remove() }
+  // Kandidat saran: tiap item + tiap varian ("ITEM · VARIAN"), nama lain ikut dicocokkan
+  function kandidatKatalog() {
+    const out = []
+    ;(currentPriceList?.items || []).forEach((it, i) => {
+      const nama = [it.name, ...(it.alias || [])]
+      out.push({ i, v: -1, label: it.name, teks: nama, harga: hargaDasar(it), nVarian: it.variants?.length || 0 })
+      ;(it.variants || []).forEach((va, j) => out.push({ i, v: j, label: `${it.name} · ${va.name}`, teks: nama.map(n => `${n} ${va.name}`), harga: hargaDasar(va) || hargaDasar(it) }))
+    })
+    return out
+  }
+  function skorSaran(q, teksList) {
     const kata = q.split(/\s+/).filter(Boolean)
-    const hasil = items.map((it, i) => {
-      const nm = [it.name, ...(it.alias || [])].join(' / ').toUpperCase(), kataNm = nm.split(/[\s\-\/.,()]+/)
-      const cocokKata = kata.filter(k => kataNm.some(w => w.startsWith(k) || (k.length >= 3 && skorMirip(k, w) >= 0.6)) || nm.includes(k)).length / kata.length
-      return { it, i, skor: Math.max(cocokKata, ...[it.name, ...(it.alias || [])].map(a => skorMirip(q, String(a).toUpperCase()))) + (nm.startsWith(q) ? 0.5 : 0) }
-    }).filter(x => x.skor >= 0.6 && String(x.it.name).toUpperCase() !== q).sort((a, b) => b.skor - a.skor).slice(0, 6)
-    if (!hasil.length) return tutupSaran()
+    return Math.max(...teksList.map(t => {
+      const nm = String(t).toUpperCase(), kataNm = nm.split(/[\s\-\/.,()]+/)
+      const cocok = kata.filter(k => kataNm.some(w => w.startsWith(k) || (k.length >= 3 && skorMirip(k, w) >= 0.6)) || nm.includes(k)).length / kata.length
+      return Math.max(cocok, skorMirip(q, nm)) + (nm.startsWith(q) ? 0.5 : 0)
+    }))
+  }
+  function tampilkanSaran(inp, daftar, pilih) {
+    if (!daftar.length) return tutupSaran()
     let box = document.getElementById('saranItemBox')
     if (!box) { box = document.createElement('div'); box.id = 'saranItemBox'; document.body.appendChild(box) }
+    box._inp = inp
     const r = inp.getBoundingClientRect()
-    box.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.bottom + scrollY + 2}px;width:${Math.max(r.width, 260)}px;max-width:calc(100vw - 16px);background:#fff;border:1.5px solid #034543;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:3000;overflow:hidden;font-size:12px`
+    box.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.bottom + scrollY + 2}px;width:${Math.max(r.width, 280)}px;max-width:calc(100vw - 16px);background:#fff;border:1.5px solid #034543;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:3000;overflow:hidden;font-size:12px`
     box.innerHTML = `<div style="padding:5px 10px;font-size:10px;font-weight:700;color:rgba(3,69,67,.5);background:#f6faf9">ADA DI DAFTAR HARGA — ketuk untuk pakai</div>` +
-      hasil.map(h => `<div data-i="${h.i}" style="padding:8px 10px;cursor:pointer;border-top:1px solid rgba(3,69,67,.07);display:flex;justify-content:space-between;gap:8px">
-        <span style="font-weight:600">${escHtml(h.it.name)}${h.it.variants?.length ? ` <span style="font-size:10px;color:rgba(3,69,67,.5)">(${h.it.variants.length} varian)</span>` : ''}</span>
-        <span style="color:rgba(3,69,67,.6);white-space:nowrap">${hargaDasar(h.it) ? 'Rp ' + Number(hargaDasar(h.it)).toLocaleString('id-ID') : ''}</span></div>`).join('')
-    box.querySelectorAll('[data-i]').forEach(el => {
+      daftar.map((h, n) => `<div data-n="${n}" style="padding:8px 10px;cursor:pointer;border-top:1px solid rgba(3,69,67,.07);display:flex;justify-content:space-between;gap:8px">
+        <span style="font-weight:600">${escHtml(h.label)}${h.nVarian ? ` <span style="font-size:10px;color:rgba(3,69,67,.5)">(${h.nVarian} varian)</span>` : ''}</span>
+        <span style="color:rgba(3,69,67,.6);white-space:nowrap">${h.harga ? 'Rp ' + Number(h.harga).toLocaleString('id-ID') : ''}</span></div>`).join('')
+    box.querySelectorAll('[data-n]').forEach(el => {
       el.onmouseenter = () => el.style.background = '#f0f9ff'; el.onmouseleave = () => el.style.background = ''
-      el.onpointerdown = e => { e.preventDefault(); tutupSaran(); pakaiItemKatalog(id, +el.dataset.i); toggleNamaCustom(id) }
+      el.onpointerdown = e => { e.preventDefault(); tutupSaran(); pilih(daftar[+el.dataset.n]) }
     })
+  }
+  window.saranItem = function(id) {
+    const inp = document.querySelector(`[data-field="name"][data-row="${id}"]`)
+    const q = (inp?.value || '').trim().toUpperCase()
+    if (q.length < 2 || !currentPriceList?.items?.length) return tutupSaran()
+    const hasil = kandidatKatalog().map(k => ({ ...k, skor: skorSaran(q, k.teks) }))
+      .filter(x => x.skor >= 0.6 && x.label.toUpperCase() !== q)
+      .sort((a, b) => b.skor - a.skor || (a.v - b.v)).slice(0, 7)
+    tampilkanSaran(inp, hasil, h => pilihKatalog(id, h.i, h.v))
+  }
+  // Ketik di kolom varian → saran varian dari item yang dipilih
+  window.saranVarianKolom = function(id) {
+    const inp = document.querySelector(`[data-field="varian"][data-row="${id}"]`)
+    const nama = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value || ''
+    const p = (currentPriceList?.items || []).find(x => kunciNama(x.name) === kunciNama(nama))
+    if (!p?.variants?.length) return tutupSaran()
+    const q = (inp?.value || '').trim().toUpperCase()
+    const hasil = p.variants.map((va, j) => ({ i: currentPriceList.items.indexOf(p), v: j, label: va.name, harga: hargaDasar(va) || hargaDasar(p), skor: q ? skorSaran(q, [va.name]) : 1 }))
+      .filter(x => !q || (x.skor >= 0.5 && x.label.toUpperCase() !== q)).sort((a, b) => b.skor - a.skor)
+    tampilkanSaran(inp, hasil, h => pilihKatalog(id, h.i, h.v))
+  }
+  // Pakai item (dan varian) dari daftar harga, harga ikut
+  window.pilihKatalog = function(id, i, v) {
+    const p = currentPriceList?.items?.[i]; if (!p) return
+    if (v < 0) { pakaiItemKatalog(id, i); toggleNamaCustom(id); return }
+    const va = p.variants[v]
+    document.querySelector(`[data-field="name"][data-row="${id}"]`).value = p.name.toUpperCase()
+    const vEl = document.querySelector(`[data-field="varian"][data-row="${id}"]`); if (vEl) vEl.value = String(va.name).toUpperCase()
+    const priceEl = document.querySelector(`[data-field="price"][data-row="${id}"]`)
+    if (priceEl) { priceEl.value = fmtPrice(hargaDasar(va) || hargaDasar(p)); calcRow(id) }
+    matchItemToPrice(id); showTierButtons(id); toggleNamaCustom(id); window.recalcAutoModal()
   }
   window.pakaiItemKatalog = function(id, idx) {
     const p = currentPriceList?.items?.[idx]; if (!p) return
