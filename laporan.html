@@ -151,7 +151,7 @@
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getProfile, ordersQuery, divisiSaya } from './js/auth.js'
   import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
-  import { collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { collection, getDocs, query, orderBy, doc, getDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { banksPemilikDivisi } from './js/pembayaran.js?v=20261108a'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
@@ -577,6 +577,44 @@
       '<p style="font-size:13px;color:rgba(3,69,67,.35);text-align:center;padding:16px">Belum ada data modal. Isi harga modal di tiap order untuk melihat profit.</p>'
   }
 
+
+  // Owner: isi harga modal order lama yang masih kosong dari kolom MODAL di daftar harga (qty × modal per varian/item)
+  const kunciNm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  window.isiModalDariDaftar = async function() {
+    const target = allOrders.filter(o => !(Number(o.hargaModal) > 0) && o.status !== 'cancelled')
+    if (!target.length) { alert('Semua order sudah punya harga modal'); return }
+    const daftar = {}
+    for (const d of [...new Set(target.map(o => o.division))]) {
+      const sn = await getDoc(doc(db, 'price_list', d)).catch(() => null)
+      daftar[d] = sn?.exists() ? (sn.data().items || []) : []
+    }
+    const isi = [], kurang = []
+    for (const o of target) {
+      const kat = daftar[o.division] || []
+      let total = 0, lengkap = (o.orderItems || []).length > 0
+      for (const it of o.orderItems || []) {
+        const p = kat.find(x => kunciNm(x.name) === kunciNm(it.name)) || kat.find(x => (x.alias || []).some(a => kunciNm(a) === kunciNm(it.name)))
+        const v = p && it.varian ? (p.variants || []).find(x => kunciNm(x.name) === kunciNm(it.varian)) : null
+        const m = Number(v?.priceModal) || Number(p?.priceModal) || 0
+        if (!m && (Number(it.pricePerUnit ?? it.price) || 0) > 0) lengkap = false
+        total += (Number(it.qty) || 0) * m
+      }
+      if (total > 0) isi.push({ o, total, lengkap }); else kurang.push(o)
+    }
+    if (!isi.length) { alert(`Belum ada yang bisa diisi: item di ${kurang.length} order itu belum punya MODAL di daftar harga.\n\nIsi dulu kolom MODAL di Product Knowledge → Daftar Harga.`); return }
+    const sebagian = isi.filter(x => !x.lengkap).length
+    if (!confirm(`${isi.length} order akan diisi harga modalnya (total ${fmtCurrency(isi.reduce((t, x) => t + x.total, 0))}).${sebagian ? `\n⚠ ${sebagian} di antaranya hanya sebagian item yang punya modal — cek lagi nanti.` : ''}${kurang.length ? `\n${kurang.length} order dilewati karena itemnya belum ada modal di daftar harga.` : ''}\n\nLanjutkan?`)) return
+    try {
+      for (let i = 0; i < isi.length; i += 400) {
+        const b = writeBatch(db)
+        isi.slice(i, i + 400).forEach(x => b.update(doc(db, 'orders', x.o.id), { hargaModal: x.total, hargaModalDari: 'daftar harga', hargaModalEditBy: (getProfile()?.name || 'Owner') + ' (otomatis)', hargaModalEditAt: new Date() }))
+        await b.commit()
+      }
+      isi.forEach(x => { x.o.hargaModal = x.total })
+      alert(`✓ ${isi.length} order sudah diisi harga modalnya`)
+      location.reload()
+    } catch (e) { alert('Gagal: ' + e.message) }
+  }
   function renderKewajibanDivisi(orders) {
     const profile = getProfile()
     const isOwner = profile?.role === 'owner'
@@ -641,6 +679,7 @@
         <div class="stat-val" style="color:#b91c1c;font-size:20px">${fmtCurrency(totalKewajiban)}</div>
         <div class="stat-lbl">${pemilikList.length} pemilik · ${divData.length} divisi aktif</div>
         ${totalOrderTanpaModal > 0 ? `<div style="font-size:10px;color:#d97706;margin-top:4px">⚠ ${totalOrderTanpaModal} order belum ada modal</div>` : `<div style="font-size:10px;color:#059669;margin-top:4px">Semua order sudah ada data modal ✓</div>`}
+        ${totalOrderTanpaModal > 0 && isOwner ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="isiModalDariDaftar()">🔧 Isi modal dari daftar harga</button>` : ''}
       </div>`)
 
     if (!divData.length) {

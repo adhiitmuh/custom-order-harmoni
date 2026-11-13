@@ -248,18 +248,29 @@
   let _autoHargaModal = 0
   const _rowModalPrice = {}
 
+  // Modal per pcs satu baris: isian manual Owner, kalau kosong dari daftar harga (varian dulu, lalu item)
+  function modalBaris(rowId) {
+    if (_rowModalPrice[rowId] > 0) return _rowModalPrice[rowId]
+    const nama = document.querySelector(`[data-field="name"][data-row="${rowId}"]`)?.value || ''
+    const varian = document.querySelector(`[data-field="varian"][data-row="${rowId}"]`)?.value || ''
+    const kat = currentPriceList?.items || []
+    const p = kat.find(x => kunciNama(x.name) === kunciNama(nama)) || kat.find(x => (x.alias || []).some(a => kunciNama(a) === kunciNama(nama)))
+    if (!p) return 0
+    const v = varian && (p.variants || []).find(x => kunciNama(x.name) === kunciNama(varian))
+    return Number(v?.priceModal) || Number(p.priceModal) || 0
+  }
   window.recalcAutoModal = function() {
     if (SIZE_DIVISIONS.includes(selectedDiv)) {
       const qty = SIZES.reduce((s, sz) => s + (Number(document.getElementById('size_'+sz)?.value)||0), 0)
       const rows = [...document.querySelectorAll('#itemRows tr')]
       const firstId = rows[0]?.id.replace('row-','')
-      const modal = firstId ? (_rowModalPrice[firstId] || 0) : 0
+      const modal = firstId ? modalBaris(firstId) : 0
       _autoHargaModal = modal * qty
     } else {
       _autoHargaModal = [...document.querySelectorAll('#itemRows tr')].reduce((sum, tr) => {
         const rowId = tr.id.replace('row-','')
         const qty = Number(tr.querySelector('[data-field="qty"]')?.value) || 0
-        return sum + qty * (_rowModalPrice[rowId] || 0)
+        return sum + qty * modalBaris(rowId)
       }, 0)
     }
   }
@@ -1320,7 +1331,7 @@
           notes: document.getElementById('notes').value.trim(),
           varian: getItemRows().map(i => i.varian).filter(Boolean).join(', ') || null,
           sizeBreakdown: getSizeBreakdown() || null,
-          hargaModal: _autoHargaModal > 0 ? _autoHargaModal : null,
+          hargaModal: (window.recalcAutoModal(), _autoHargaModal > 0 ? _autoHargaModal : null),
           sumberOrder: document.getElementById('sumberOrder').value || 'staff',
           agentSessionId: '',
           branch: profile.branch || '',
