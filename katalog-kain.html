@@ -184,65 +184,96 @@ function deltaE00([L1, a1, b1], [L2, a2, b2]) {
 const hexKeRgb = h => { const x = String(h || '').replace('#', ''); return [0, 2, 4].map(i => parseInt(x.slice(i, i + 2), 16) || 0) }
 const rgbKeHex = c => '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
 const PUTIH_KATALOG = [240, 240, 236]
+// Koreksi cahaya di ruang cahaya linear (seperti cara kamera menangkap cahaya) — lebih tepat untuk ruangan gelap/lampu berwarna
+const keLin = c => { c /= 255; return c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92 }
+const dariLin = v => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)
+const ILUSTRASI = `<svg viewBox="0 0 240 120" width="100%" style="max-width:300px;display:block;margin:6px auto" role="img" aria-label="Contoh foto: kertas putih di samping kain">
+  <rect x="2" y="2" width="236" height="116" rx="10" fill="#e8e3d8"/><text x="120" y="14" font-size="9" text-anchor="middle" fill="#6b6b6b">meja / lantai polos</text>
+  <rect x="22" y="24" width="80" height="80" rx="3" fill="#fff" stroke="#ccc"/><text x="62" y="68" font-size="10" text-anchor="middle" fill="#555">kertas HVS</text>
+  <rect x="112" y="22" width="106" height="84" rx="4" fill="#2f5d8a"/><text x="165" y="62" font-size="10" text-anchor="middle" fill="#fff">kain (rata,</text><text x="165" y="75" font-size="10" text-anchor="middle" fill="#fff">dilipat 2–3 lapis)</text>
+  <circle cx="62" cy="88" r="5" fill="none" stroke="#e11d48" stroke-width="2"/><text x="62" y="101" font-size="8" text-anchor="middle" fill="#e11d48">① ketuk</text>
+  <g fill="none" stroke="#fde047" stroke-width="2"><circle cx="140" cy="92" r="5"/><circle cx="165" cy="40" r="5"/><circle cx="195" cy="92" r="5"/></g><text x="165" y="114" font-size="8" text-anchor="middle" fill="#7c2d12">② ketuk kain di 3 tempat</text></svg>`
+const TIPS_FOTO = `<div class="panduan">${ILUSTRASI}<b>Tips supaya warnanya pas:</b><ol>
+  <li><b>Cahaya siang yang teduh</b> — dekat jendela atau di teras, <b>tidak kena sinar matahari langsung</b>. Paling bagus jam 9 pagi – 3 sore.</li>
+  <li><b>Matikan flash</b> dan matikan lampu ruangan (jangan campur lampu kuning dengan cahaya jendela).</li>
+  <li><b>Kertas HVS putih polos di samping kain</b>, satu foto, kena cahaya yang sama. Ini paling penting — tanpa kertas putih hasilnya bisa meleset jauh.</li>
+  <li>Kain <b>rata, tidak kusut</b>. Kalau kainnya tipis, <b>lipat 2–3 lapis</b> supaya warna alas tidak tembus.</li>
+  <li>Foto <b>lurus dari atas</b>, jarak ±30 cm, <b>jangan ada bayangan HP/tangan</b>. Jangan zoom.</li>
+  <li>Pakai kamera biasa: <b>tanpa filter, tanpa mode kecantikan</b>.</li>
+  <li>Pakai <b>kain yang bersih & tidak pudar</b> (seragam lama yang sering dicuci warnanya sudah berubah).</li>
+  <li><b>Jangan pakai screenshot atau foto kiriman orang lain</b> — warnanya sudah berubah. Foto langsung kainnya.</li>
+  <li>Setelah foto muncul: <b>ketuk kertas putih</b> (bagian yang tidak silau), lalu <b>ketuk kain di 3 tempat berbeda</b> — hasilnya dirata-rata supaya lebih akurat.</li></ol></div>`
 let dariFoto = []   // kode yang dipilih dari hasil foto — ditandai di pesan WA supaya CS mengecek
 function cariDariFoto() {
   const m = document.createElement('div'); m.className = 'modal'
   m.innerHTML = `<div class="box"><div class="badan">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:17px">📷 Cari warna dari foto</b><button class="btn btn-ghost" id="fTutup" style="padding:8px 12px">Tutup</button></div>
-    <details id="fPanduan" open style="margin-top:10px"><summary style="font-weight:700;font-size:13px;cursor:pointer">Cara foto supaya hasilnya pas</summary><div class="panduan"><ol>
-      <li>Foto di <b>cahaya siang</b> (dekat jendela/teras). <b>Jangan pakai flash</b> & jangan di bawah lampu kuning.</li>
-      <li><b>Taruh kertas HVS putih di samping kain</b> — satu foto berisi kain + kertas.</li>
-      <li>Foto lurus dari atas, kain rata, tanpa filter.</li>
-      <li>Setelah foto muncul: <b>ketuk kertas putih</b>, lalu <b>ketuk kainnya</b>.</li></ol></div></details>
+    <details id="fPanduan" open style="margin-top:10px"><summary style="font-weight:700;font-size:13px;cursor:pointer">📋 Tips foto supaya warnanya pas (baca dulu)</summary>${TIPS_FOTO}</details>
     <label class="btn btn-wa" style="display:block;text-align:center;margin-top:10px;cursor:pointer">📷 Ambil / pilih foto<input type="file" id="fFile" accept="image/*" style="display:none"></label>
     <div class="langkah" id="fLangkah"></div>
-    <canvas id="fCanvas"></canvas>
+    <div style="position:relative"><canvas id="fCanvas"></canvas></div>
     <div id="fSampel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:8px"></div>
     <div id="fHasil"></div>
     <div style="font-size:11px;color:var(--abu);margin-top:10px">🔒 Foto hanya diproses di HP Anda, tidak diunggah ke mana pun.</div></div></div>`
   document.body.appendChild(m)
   const cv = m.querySelector('#fCanvas'), ctx = cv.getContext('2d', { willReadFrequently: true })
-  let putih = null, kain = null, mode = 'putih'
-  const langkah = t => m.querySelector('#fLangkah').textContent = t
+  let asli = null, putih = null, putihSilau = false, titik = [], mode = 'putih', lebih = false
+  const langkah = t => m.querySelector('#fLangkah').innerHTML = t
   m.querySelector('#fTutup').onclick = () => m.remove()
   m.querySelector('#fFile').onchange = e => { const file = e.target.files[0]; if (!file) return; const img = new Image(); img.onload = () => {
       const sc = Math.min(1, 1200 / Math.max(img.width, img.height)); cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc)
-      ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.style.display = 'block'; putih = kain = null; mode = 'putih'; m.querySelector('#fPanduan').open = false
-      langkah('① Ketuk KERTAS PUTIH di foto'); tampil(); cv.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height); asli = ctx.getImageData(0, 0, cv.width, cv.height); cv.style.display = 'block'
+      putih = null; titik = []; mode = 'putih'; lebih = false; m.querySelector('#fPanduan').open = false
+      langkah('① Ketuk <u>KERTAS PUTIH</u> di foto'); tampil(); cv.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
     img.src = URL.createObjectURL(file); e.target.value = '' }
-  const sampel = (x, y) => { const r = Math.max(6, Math.round(Math.min(cv.width, cv.height) * 0.025)), x0 = Math.max(0, x - r), y0 = Math.max(0, y - r)
-    const d = ctx.getImageData(x0, y0, Math.min(r * 2, cv.width - x0), Math.min(r * 2, cv.height - y0)).data, px = []
-    for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]])
+  // Rata-rata area di titik ketuk; buang 15% piksel tergelap & terterang (serat, bayangan, kilap)
+  const sampel = (x, y) => { const r = Math.max(6, Math.round(Math.min(cv.width, cv.height) * 0.03)), x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), w = Math.min(r * 2, cv.width - x0), h = Math.min(r * 2, cv.height - y0), px = []
+    for (let yy = y0; yy < y0 + h; yy++) for (let xx = x0; xx < x0 + w; xx++) { const i = (yy * cv.width + xx) * 4; px.push([asli.data[i], asli.data[i + 1], asli.data[i + 2]]) }
     px.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2])); const pot = px.slice(Math.floor(px.length * .15), Math.ceil(px.length * .85))
-    return [0, 1, 2].map(c => pot.reduce((t, p) => t + p[c], 0) / pot.length) }
-  cv.addEventListener('pointerdown', e => { const b = cv.getBoundingClientRect(), x = Math.round((e.clientX - b.left) * cv.width / b.width), y = Math.round((e.clientY - b.top) * cv.height / b.height), c = sampel(x, y)
-    if (mode === 'putih') { if (c.reduce((a, v) => a + v, 0) / 3 < 120) { langkah('Itu terlalu gelap untuk kertas putih — ketuk kertasnya, atau tekan "Tanpa kertas putih"'); return } putih = c; mode = 'kain'; langkah('② Sekarang ketuk KAIN-nya (bagian tengah)') }
-    else { kain = c; langkah('✓ Ketuk bagian kain lain untuk mencoba lagi') }
-    tampil() })
-  const koreksi = c => putih ? c.map((v, i) => v * PUTIH_KATALOG[i] / Math.max(1, putih[i])) : c
+    return { rgb: [0, 1, 2].map(c => pot.reduce((t, p) => t + p[c], 0) / pot.length), silau: pot.filter(p => Math.max(...p) >= 254).length / pot.length > 0.3 } }
+  const gambarTitik = () => { ctx.putImageData(asli, 0, 0); const r = Math.max(6, Math.round(Math.min(cv.width, cv.height) * 0.03)); ctx.lineWidth = Math.max(2, r / 4)
+    if (putih) { ctx.strokeStyle = '#e11d48'; ctx.beginPath(); ctx.arc(putih.x, putih.y, r, 0, 7); ctx.stroke() }
+    ctx.strokeStyle = '#fde047'; titik.forEach(t => { ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, 7); ctx.stroke() }) }
+  cv.addEventListener('pointerdown', e => { const b = cv.getBoundingClientRect(), x = Math.round((e.clientX - b.left) * cv.width / b.width), y = Math.round((e.clientY - b.top) * cv.height / b.height), s = sampel(x, y)
+    if (mode === 'putih') { if (s.rgb.reduce((a, v) => a + v, 0) / 3 < 120) { langkah('Itu terlalu gelap untuk kertas putih — ketuk kertasnya, atau tekan "Tanpa kertas putih"'); return }
+      putih = { ...s, x, y }; putihSilau = s.silau; mode = 'kain'; langkah('② Ketuk <u>KAIN</u> di 3 tempat berbeda (0/3)') }
+    else { if (titik.length >= 3) titik.shift(); titik.push({ ...s, x, y }); langkah(titik.length < 3 ? `② Ketuk <u>KAIN</u> di tempat lain (${titik.length}/3) — hasil sudah muncul di bawah` : '✓ 3 titik kain — ketuk lagi untuk mengganti titik terlama') }
+    gambarTitik(); tampil() })
+  const koreksi = c => putih ? c.map((v, i) => Math.min(255, dariLin(Math.min(1, keLin(v) * keLin(PUTIH_KATALOG[i]) / Math.max(1e-4, keLin(putih.rgb[i])))))) : c
+  // Rata-rata titik kain di ruang linear
+  const warnaKain = () => titik.length ? [0, 1, 2].map(i => dariLin(titik.reduce((s, t) => s + keLin(koreksi(t.rgb)[i]), 0) / titik.length)) : null
   const sw = (h, l) => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:22px;height:22px;border-radius:5px;background:${h};border:1px solid rgba(0,0,0,.15)"></span>${l}</span>`
   function tampil() {
-    const sEl = m.querySelector('#fSampel'), hEl = m.querySelector('#fHasil')
-    sEl.innerHTML = (putih ? sw(rgbKeHex(putih), 'kertas ✓') : (cv.style.display === 'block' ? `<button class="btn btn-ghost" id="fTanpa" style="padding:7px 12px;font-size:12px">Tanpa kertas putih</button>` : '')) + (kain ? sw(rgbKeHex(koreksi(kain)), 'warna kain Anda') : '')
-    m.querySelector('#fTanpa')?.addEventListener('click', () => { putih = null; mode = 'kain'; langkah('② Ketuk KAIN-nya (tanpa kertas putih — hasil kurang akurat)'); tampil() })
+    const sEl = m.querySelector('#fSampel'), hEl = m.querySelector('#fHasil'), kain = warnaKain()
+    sEl.innerHTML = (putih ? sw(rgbKeHex(putih.rgb), 'kertas ✓') : (cv.style.display === 'block' ? `<button class="btn btn-ghost" id="fTanpa" style="padding:7px 12px;font-size:12px">Tanpa kertas putih</button>` : '')) + (kain ? sw(rgbKeHex(kain), `warna kain Anda (${titik.length} titik)`) + `<button class="btn btn-ghost" id="fUlang" style="padding:6px 10px;font-size:12px">Ulangi ketuk</button>` : '')
+    m.querySelector('#fTanpa')?.addEventListener('click', () => { putih = null; mode = 'kain'; langkah('② Ketuk <u>KAIN</u> di 3 tempat (tanpa kertas putih — hasil kurang akurat)'); tampil() })
+    m.querySelector('#fUlang')?.addEventListener('click', () => { putih = null; titik = []; mode = 'putih'; gambarTitik(); langkah('① Ketuk <u>KERTAS PUTIH</u> di foto'); tampil() })
     if (!kain) { hEl.innerHTML = ''; return }
-    const lab = rgbKeLab(koreksi(kain)), out = []
+    const lab = rgbKeLab(kain), out = []
     jenis.forEach((j, i) => (j.varian || []).forEach((v, k) => { if (v.hex) out.push({ i, k, j, v, d: deltaE00(lab, v._lab || (v._lab = rgbKeLab(hexKeRgb(v.hex)))) }) }))
-    const hasil = out.sort((a, b) => a.d - b.d).slice(0, 5)
+    out.sort((a, b) => a.d - b.d); const hasil = out.slice(0, lebih ? 10 : 5)
     const label = d => d < 5 ? ['sangat mirip', '#047857'] : d < 10 ? ['mirip', '#1d4ed8'] : d < 18 ? ['agak beda', '#b45309'] : ['kurang mirip', '#b91c1c']
+    // "Kembar": kode yang warnanya di katalog hampir sama dengan #1 — tidak bisa dibedakan lewat foto
+    const kembar = hasil.slice(1).filter(x => deltaE00(x.v._lab, hasil[0].v._lab) < 3)
+    const pr = [], [L, A, B] = lab, C = Math.hypot(A, B)
+    if (!putih) pr.push('Foto <b>tanpa kertas putih</b> — hasil bisa jauh meleset kalau fotonya di bawah lampu. Sebaiknya ulangi dengan kertas HVS putih di samping kain.')
+    if (putihSilau || (putih && Math.max(...putih.rgb) >= 253)) pr.push('Kertas putihnya <b>silau / terlalu terang</b> — foto ulang di tempat teduh (tidak kena matahari langsung).')
+    if (titik.some(t => t.silau)) pr.push('Bagian kain yang diketuk <b>mengkilap/silau</b> — ketuk bagian lain atau foto ulang di tempat teduh.')
+    if (titik.length >= 2) { const labs = titik.map(t => rgbKeLab(koreksi(t.rgb))); if (Math.max(...labs.map(a => deltaE00(a, lab))) > 6) pr.push('Warna di titik-titik yang diketuk <b>berbeda-beda</b> — mungkin ada bayangan atau kain kusut. Ratakan kain & foto ulang.') }
+    if (out[0] && out[0].d > 12) pr.push('Warna kain Anda belum ada yang benar-benar mirip di katalog. Kirim fotonya ke kami, CS akan bantu carikan.')
+    if (L < 30) pr.push('Warna <b>gelap</b> (hitam/dongker/abu tua) banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
+    else if (C < 10) pr.push('Warna <b>putih/krem/abu-abu</b> banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
+    if (titik.length < 3 && putih) pr.push(`Ketuk kain di <b>${3 - titik.length} tempat lagi</b> supaya hasilnya lebih akurat.`)
     hEl.innerHTML = `<div class="langkah" style="margin-top:14px">Warna yang paling mirip:</div>`
-      + (() => { const pr = [], [L, A, B] = lab, C = Math.hypot(A, B)
-          if (!putih) pr.push('Foto <b>tanpa kertas putih</b> — hasil bisa jauh meleset kalau fotonya di bawah lampu. Sebaiknya ulangi dengan kertas HVS putih di samping kain.')
-          if (putih && Math.max(...putih) > 250) pr.push('Foto <b>terlalu terang</b> (kertas putihnya "silau") — coba foto ulang di tempat yang tidak kena sinar matahari langsung.')
-          if (hasil[0] && hasil[0].d > 12) pr.push('Warna kain Anda belum ada yang benar-benar mirip di katalog. Kirim fotonya ke kami, CS akan bantu carikan.')
-          if (L < 30) pr.push('Warna <b>gelap</b> (hitam/dongker/abu tua) banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
-          else if (C < 10) pr.push('Warna <b>putih/krem/abu-abu</b> banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
-          return pr.length ? `<div class="catatan">${pr.map(t => '⚠️ ' + t).join('<br>')}</div>` : '' })()
-      + hasil.map(x => { const [l, w] = label(x.d), key = kunci(x.j, x.v), sdh = dipilih.includes(key)
+      + (pr.length ? `<div class="catatan">${pr.map(t => '⚠️ ' + t).join('<br>')}</div>` : '')
+      + (kembar.length ? `<div style="font-size:12px;color:var(--abu);margin-bottom:4px">Kode bertanda <b>≈</b> warnanya hampir kembar dengan #1 di katalog — bisa dipilih beberapa, CS akan bantu pastikan.</div>` : '')
+      + hasil.map((x, n) => { const [l, w] = label(x.d), key = kunci(x.j, x.v), sdh = dipilih.includes(key)
         return `<div class="hasil"><span class="sw" style="background:${esc(x.v.hex)}"></span>
-          <span style="flex:1;min-width:0;font-size:12px"><b style="font-size:15px">${esc(x.j.nama)} ${esc(x.v.kode)}</b>${x.v.ket ? ` <span style="color:var(--merah);font-weight:700">${esc(x.v.ket)}</span>` : ''}<br><span style="color:${w};font-weight:700">${l}</span></span>
+          <span style="flex:1;min-width:0;font-size:12px"><b style="font-size:15px">${n + 1}. ${kembar.includes(x) ? '≈ ' : ''}${esc(x.j.nama)} ${esc(x.v.kode)}</b>${x.v.ket ? ` <span style="color:var(--merah);font-weight:700">${esc(x.v.ket)}</span>` : ''}<br><span style="color:${w};font-weight:700">${l}</span></span>
           <button class="btn ${sdh ? 'btn-ghost' : 'btn-wa'}" data-key="${esc(key)}" style="padding:9px 12px;font-size:13px">${sdh ? '✓ Dipilih' : 'Pilih'}</button></div>` }).join('')
-      + `<div class="catatan" style="margin-top:10px">⚠️ Hasil ini <b>perkiraan</b> — warna di foto dipengaruhi cahaya & kamera. Setelah memilih, tekan <b>Kirim via WA</b> dan <b>kirimkan juga foto kainnya</b> di chat, nanti CS kami cocokkan langsung dengan kain aslinya.</div>`
+      + (lebih ? '' : `<button class="btn btn-ghost" id="fLebih" style="width:100%;margin-top:6px;font-size:13px">Tampilkan 5 warna lagi</button>`)
+      + `<div class="catatan" style="margin-top:10px">Hasil ini <b>perkiraan</b> — warna di foto dipengaruhi cahaya & kamera. Setelah memilih, tekan <b>Kirim via WA</b> dan <b>kirimkan juga foto kainnya</b> di chat, nanti CS kami cocokkan langsung dengan kain aslinya.</div>`
+    m.querySelector('#fLebih')?.addEventListener('click', () => { lebih = true; tampil() })
     hEl.querySelectorAll('[data-key]').forEach(b => b.onclick = () => { const key = b.dataset.key
       if (dipilih.includes(key)) { dipilih = dipilih.filter(x => x !== key); dariFoto = dariFoto.filter(x => x !== key) } else { dipilih.push(key); dariFoto.push(key) }
       simpan(); render(); renderBar(); tampil() })
