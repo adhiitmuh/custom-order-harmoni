@@ -104,7 +104,9 @@
   const NOTIFY_KEY = ''
 
   // Notifikasi WA otomatis ke customer via Worker
+  // WA otomatis (Fonnte) tidak dipakai — fungsi dibiarkan kosong supaya tidak ada klaim "terkirim"
   function notifyCustomer(type, extra = {}) {
+    return
     if (!order?.customerContact || !WORKER_URL) return
     fetch(`${WORKER_URL}/notify-customer`, {
       method: 'POST',
@@ -123,31 +125,13 @@
   }
 
   // Tombol manual — bypass cooldown, force-send notif
-  window.notifyCustomerManual = async function() {
-    const btn = document.getElementById('notifCustomerBtn')
-    if (!btn || !WORKER_URL) return
-    const orig = btn.innerHTML
-    btn.disabled = true; btn.innerHTML = '⏳'
-    try {
-      await fetch(`${WORKER_URL}/notify-customer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Notify-Key': NOTIFY_KEY },
-        body: JSON.stringify({
-          orderId,
-          customerContact: order.customerContact,
-          customerName: order.customerName,
-          orderNumber: order.orderNumber,
-          chatToken: order.chatToken || null,
-          lokasiNama: order.lokasiNama || order.branch || '',
-          type: 'manual',
-        }),
-      })
-      btn.innerHTML = '✅ Terkirim'
-      setTimeout(() => { btn.disabled = false; btn.innerHTML = orig }, 3000)
-    } catch {
-      btn.disabled = false; btn.innerHTML = orig
-      alert('Gagal mengirim notifikasi. Coba lagi.')
-    }
+  // Tombol 🔔 Notif: buka WhatsApp ke customer berisi link chat (tidak ada WA otomatis)
+  window.notifyCustomerManual = function() {
+    if (!order?.customerContact) { alert('Nomor WA customer belum ada'); return }
+    const chatUrl = order.chatToken ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}` : ''
+    const pesan = `Halo Kak ${order.customerName || ''} 👋\nAda kabar terbaru untuk pesanan *${order.orderNumber}*.${chatUrl ? `\nSilakan cek di sini: ${chatUrl}` : ''}\n\nTerima kasih 🙏 — Harmoni`
+    const no = String(order.customerContact).replace(/\D/g, '').replace(/^0/, '62')
+    window.open(`https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(pesan)}`, '_blank')
   }
 
   function fmtPrice(n) {
@@ -1664,8 +1648,6 @@
         }).catch(() => {})
         updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
       }
-      // Auto-notif customer via WA
-      notifyCustomer('progress', { percentage: pct })
       await loadOrder(profile)
     } finally { btn.disabled=false; btn.textContent='Simpan' }
   }
@@ -2802,14 +2784,30 @@
         updateDoc(doc(db,'public_order_info',order.chatToken), { status }).catch(() => {})
       }
       await loadOrder(getProfile())
-      // Auto-notif customer via WA untuk status penting
-      if (['in-progress','quality-check','done','delivered'].includes(status)) {
-        notifyCustomer('status_change', { statusLabel: STATUS_LABEL[status] })
-        showNotifToast(`📱 Notifikasi WA terkirim ke ${order.customerName}`, STATUS_LABEL[status])
-      }
+      // Tidak ada WA otomatis: tawarkan tombol kabari customer lewat WA (dikirim manual oleh CS)
+      if (['in-progress','quality-check','done','delivered'].includes(status) && order.customerContact && !order.marketplace) tawarkanKabariWa(status)
     } catch(e) { alert('Gagal mengubah status: ' + e.message) }
   }
 
+  // Pesan status untuk customer — dibuka di WhatsApp, CS tinggal tekan Kirim
+  function tawarkanKabariWa(status) {
+    const chatUrl = order.chatToken ? `https://adhiitmuh.github.io/custom-order-harmoni/chat.html?t=${order.chatToken}` : ''
+    const kalimat = { 'in-progress': 'sedang kami kerjakan 🧵', 'quality-check': 'sedang dalam pengecekan kualitas (QC) 🔍', done: 'sudah SELESAI dan siap diambil/dikirim ✅', delivered: 'sudah dikirim/diserahkan 📦' }[status] || STATUS_LABEL[status]
+    const sisa = (order.totalPrice || 0) - (order.depositPaid || 0)
+    const pesan = [`Halo Kak ${order.customerName || ''} 👋`, ``, `Pesanan *${order.orderNumber}* ${kalimat}.`,
+      status === 'done' && sisa > 0 ? `\nSisa pembayaran: *${fmtCurrency(sisa)}*` : '',
+      chatUrl ? `\nPantau progres & diskusi: ${chatUrl}` : '', ``, `Terima kasih 🙏 — Harmoni`].filter(x => x !== '').join('\n')
+    const no = String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
+    document.getElementById('waToast')?.remove()
+    const t = document.createElement('div'); t.id = 'waToast'
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;left:auto;background:var(--white);border:1.5px solid #bbf7d0;border-radius:14px;padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:999;max-width:300px'
+    t.innerHTML = `<div style="font-size:13px;font-weight:700;color:#059669">Status: ${esc(STATUS_LABEL[status] || status)}</div>
+      <div style="font-size:11px;color:rgba(3,69,67,.55);margin:3px 0 8px">Customer belum dikabari. Kirim WA sekarang?</div>
+      <div style="display:flex;gap:6px"><a class="btn btn-sm" style="background:#25d366;color:#fff;flex:1;justify-content:center" target="_blank" rel="noopener" href="https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(pesan)}">📲 Kabari via WA</a>
+      <button class="btn btn-ghost btn-sm" onclick="this.closest('#waToast').remove()">Nanti</button></div>`
+    document.body.appendChild(t)
+    setTimeout(() => t?.remove(), 20000)
+  }
   function showNotifToast(title, subtitle = '') {
     document.getElementById('waToast')?.remove()
     const toast = document.createElement('div')

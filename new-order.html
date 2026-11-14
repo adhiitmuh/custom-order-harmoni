@@ -652,6 +652,9 @@
       }
     }
     tampilkanItemBaru(id, match ? null : nameEl.value.trim())
+    // Diketik manual & cocok dengan item yang punya varian → tampilkan pilihan varian
+    const vKol = document.querySelector(`[data-field="varian"][data-row="${id}"]`)
+    if (match?.variants?.length && vKol && !vKol.value.trim() && document.activeElement !== vKol) setTimeout(() => saranVarianKolom(id), 80)
     if (match?.priceModal && getProfile()?.role === 'owner') {
       const modalEl = document.querySelector(`[data-field="modal"][data-row="${id}"]`)
       if (modalEl && !modalEl.value) {
@@ -726,6 +729,7 @@
     matchItemToPrice(id); showTierButtons(id)
   }
   // Saran langsung saat mengetik nama item: item di daftar harga yang namanya mirip / mengandung kata yang diketik
+  document.addEventListener('pointerdown', e => { const b = document.getElementById('saranItemBox'); if (b && !b.contains(e.target) && e.target !== b._inp) b.remove() })
   window.tutupSaran = el => { const b = document.getElementById('saranItemBox'); if (b && (!el || b._inp === el)) b.remove() }
   // Kandidat saran: tiap item + tiap varian ("ITEM · VARIAN"), nama lain ikut dicocokkan
   function kandidatKatalog() {
@@ -799,6 +803,9 @@
     nameEl.value = p.name.toUpperCase()
     if (priceEl && !p.variants?.length) { priceEl.value = fmtPrice(hargaDasar(p)); calcRow(id) }
     matchItemToPrice(id)
+    // Item punya varian → langsung buka pilihan varian
+    const vEl = document.querySelector(`[data-field="varian"][data-row="${id}"]`)
+    if (p.variants?.length && vEl && !vEl.value.trim()) setTimeout(() => vEl.focus(), 60)
   }
 
   window.showTierButtons = function(id) {
