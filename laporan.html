@@ -56,7 +56,9 @@
       </div>
     </div>
 
-    <div id="periodLabel" style="font-size:13px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:16px"></div>
+    <div id="divFilter" class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"></div>
+    <div id="periodLabel" style="font-size:13px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:4px"></div>
+    <div id="divLabel" style="font-size:12px;font-weight:600;color:#7c3aed;margin-bottom:16px"></div>
 
     <!-- Summary stats -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px" id="summaryCards">
@@ -281,15 +283,37 @@
     })
   }
 
+  // Pilih divisi yang ditampilkan (kosong = semua divisi). Disimpan di perangkat ini.
+  let divTerpilih = new Set((() => { try { return JSON.parse(localStorage.getItem('laporan_divisi') || '[]') } catch { return [] } })())
+  function renderDivFilter() {
+    const el = document.getElementById('divFilter'); if (!el) return
+    const ada = [...new Set(allOrders.filter(o => o.status !== 'cancelled').map(o => o.division).filter(Boolean))]
+      .sort((a, b) => (DIVISION_META[a]?.label || a).localeCompare(DIVISION_META[b]?.label || b))
+    ;[...divTerpilih].forEach(d => { if (!ada.includes(d)) divTerpilih.delete(d) })
+    const chip = (key, label, aktif) => `<button type="button" data-div="${key}" style="border:1.5px solid ${aktif ? '#034543' : 'rgba(3,69,67,.18)'};background:${aktif ? '#034543' : '#fff'};color:${aktif ? '#fff' : 'rgba(3,69,67,.75)'};border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${label}</button>`
+    el.innerHTML = `<span style="font-size:12px;font-weight:700;color:rgba(3,69,67,.45);margin-right:2px">DIVISI:</span>`
+      + chip('', 'Semua', !divTerpilih.size)
+      + ada.map(d => chip(d, `${DIVISION_META[d]?.icon || ''} ${DIVISION_META[d]?.label || d}`, divTerpilih.has(d))).join('')
+    el.querySelectorAll('[data-div]').forEach(b => b.onclick = () => {
+      const d = b.dataset.div
+      if (!d) divTerpilih.clear(); else divTerpilih.has(d) ? divTerpilih.delete(d) : divTerpilih.add(d)
+      try { localStorage.setItem('laporan_divisi', JSON.stringify([...divTerpilih])) } catch {}
+      if (currentFrom && currentTo) render(currentFrom, currentTo)
+    })
+    const lbl = document.getElementById('divLabel')
+    if (lbl) lbl.textContent = divTerpilih.size ? 'Divisi: ' + [...divTerpilih].map(d => DIVISION_META[d]?.label || d).join(', ') : ''
+  }
   function filterOrders(from, to) {
     return allOrders.filter(o => {
       if (o.status === 'cancelled') return false
+      if (divTerpilih.size && !divTerpilih.has(o.division)) return false
       const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt)
       return d >= from && d <= to
     })
   }
 
   function render(from, to) {
+    renderDivFilter()
     const semuaOrder = filterOrders(from, to)
     // Order marketplace (Shopee/Tokopedia/TikTok) ikut dihitung di omzet; rinciannya ditampilkan terpisah
     const mpOrders = semuaOrder.filter(o => o.marketplace)
