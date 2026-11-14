@@ -17,7 +17,7 @@ const tglDari = ts => ts?.toDate ? tglLokal(ts.toDate()) : ts?.seconds ? tglLoka
 
 // Status tagihan satu order. null = tidak ada tagihan (lunas / batal / tanpa harga).
 export function statusTagihan(o, hariIni = tglLokal()) {
-  if (!o || o.status === 'cancelled') return null
+  if (!o || o.status === 'cancelled' || o.marketplace) return null   // marketplace: dibayar lewat Shopee/Tokopedia
   const total = Number(o.totalPrice) || 0, bayar = Number(o.depositPaid) || 0
   const sisa = total - bayar
   if (!total || sisa <= 0) return null

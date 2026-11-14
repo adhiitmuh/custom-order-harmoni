@@ -460,6 +460,7 @@
         <td>
           <a class="order-num" href="order.html?id=${encodeURIComponent(o.id)}" target="_blank" style="text-decoration:none;color:var(--green)" title="Buka detail order">${o.orderNumber || '—'} ↗</a>
           <div style="font-size:10px;color:rgba(3,69,67,.3);margin-top:2px">${o.lokasiNama || 'Pusat'}</div>
+          ${o.marketplace ? `<div style="font-size:10px;font-weight:800;color:#7c3aed;background:#f5f3ff;border-radius:4px;padding:1px 6px;margin-top:3px;display:inline-block" title="No. pesanan ${esc(o.noPesananMarketplace || '')}">🛒 ${esc(o.marketplace)}</div>` : ''}
         </td>
         <td>
           <div style="font-weight:600;color:var(--black)">${o.customerName || '—'}</div>
@@ -530,7 +531,7 @@
         const ukuran = o.sizeBreakdown ? Object.entries(o.sizeBreakdown).filter(([, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(', ') : ''
         const st = statusDownload(o, jenis)
         return {
-          'No Order': o.orderNumber || '',
+          'No Order': o.orderNumber || '', 'Marketplace': o.marketplace ? o.marketplace + ' ' + (o.noPesananMarketplace || '') : '',
           'Pelanggan': o.customerName || '',
           'Item': items.map(it => `${it.name || ''}${it.varian ? ' · ' + it.varian : ''}${it.qty ? ' (' + it.qty + ')' : ''}`).join('\n'),
           'Nama Custom': items.map(it => it.namaCustom).filter(Boolean).join('\n'),
