@@ -14,6 +14,28 @@
   <meta name="theme-color" content="#034543">
   <title>Order Baru — Harmoni</title>
   <link rel="stylesheet" href="css/style.css?v=20261108a">
+<style>
+  /* HP: tiap item jadi kartu — nama item selebar layar, lalu Qty · Harga · (Modal) · Subtotal */
+  @media (max-width: 640px) {
+    #itemTable thead { display: none }
+    #itemTable { display: block }
+    #itemTable tbody#itemRows { display: block }
+    #itemRows tr { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 8px; padding: 10px 0; border-bottom: 1px solid rgba(3,69,67,.1) !important }
+    #itemRows td { padding: 0 !important; min-width: 0 !important }
+    #itemRows td:first-child { flex: 0 0 100% }
+    #itemRows td:nth-child(2) { flex: 0 0 64px }
+    #itemRows td:nth-child(3), #itemRows td:nth-child(4) { flex: 1 1 0 }
+    #itemRows td:nth-child(5) { flex: 1 1 auto; text-align: right; align-self: center }
+    #itemRows td:nth-child(6) { flex: 0 0 28px; align-self: center }
+    #itemRows td:nth-child(2)::before, #itemRows td:nth-child(3)::before, #itemRows td:nth-child(4)::before {
+      display: block; font-size: 10px; font-weight: 700; color: rgba(3,69,67,.45); letter-spacing: .04em; margin-bottom: 3px }
+    #itemRows td:nth-child(2)::before { content: 'QTY' }
+    #itemRows td:nth-child(3)::before { content: 'HARGA/PCS' }
+    #itemRows td:nth-child(4)::before { content: 'MODAL/PCS' }
+    #itemTable tfoot { display: block }
+    #itemTable tfoot tr { display: flex; justify-content: flex-end; gap: 12px }
+  }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -730,7 +752,8 @@
   }
   // Saran langsung saat mengetik nama item: item di daftar harga yang namanya mirip / mengandung kata yang diketik
   document.addEventListener('pointerdown', e => { const b = document.getElementById('saranItemBox'); if (b && !b.contains(e.target) && e.target !== b._inp) b.remove() })
-  window.tutupSaran = el => { const b = document.getElementById('saranItemBox'); if (b && (!el || b._inp === el)) b.remove() }
+  // el = kolom yang kehilangan fokus; jangan tutup kalau jari sedang di dalam daftar (menggulir / memilih)
+  window.tutupSaran = el => { const b = document.getElementById('saranItemBox'); if (b && (!el || (b._inp === el && !b._sentuh))) b.remove() }
   // Kandidat saran: tiap item + tiap varian ("ITEM · VARIAN"), nama lain ikut dicocokkan
   function kandidatKatalog() {
     const out = []
@@ -755,14 +778,24 @@
     if (!box) { box = document.createElement('div'); box.id = 'saranItemBox'; document.body.appendChild(box) }
     box._inp = inp
     const r = inp.getBoundingClientRect()
-    box.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.bottom + scrollY + 2}px;width:${Math.max(r.width, 280)}px;max-width:calc(100vw - 16px);background:#fff;border:1.5px solid #034543;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:3000;overflow:hidden;font-size:12px`
-    box.innerHTML = `<div style="padding:5px 10px;font-size:10px;font-weight:700;color:rgba(3,69,67,.5);background:#f6faf9">ADA DI DAFTAR HARGA — ketuk untuk pakai</div>` +
+    const lebar = Math.min(Math.max(r.width, 300), innerWidth - 16)
+    const kiri = Math.max(8, Math.min(r.left, innerWidth - lebar - 8))
+    box.style.cssText = `position:absolute;left:${kiri + scrollX}px;top:${r.bottom + scrollY + 2}px;width:${lebar}px;max-height:min(45vh,340px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:#fff;border:1.5px solid #034543;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:3000;font-size:12px`
+    if (!box._pasang) {
+      box._pasang = true
+      // Jari di dalam daftar → jangan ditutup oleh blur kolom (iPhone menutup keyboard saat daftar disentuh)
+      box.addEventListener('pointerdown', () => { box._sentuh = true; clearTimeout(box._t) })
+      const lepas = () => { clearTimeout(box._t); box._t = setTimeout(() => { box._sentuh = false }, 1500) }
+      box.addEventListener('pointerup', lepas); box.addEventListener('pointercancel', lepas); box.addEventListener('scroll', lepas, { passive: true })
+    }
+    box.innerHTML = `<div style="padding:5px 10px;font-size:10px;font-weight:700;color:rgba(3,69,67,.5);background:#f6faf9;position:sticky;top:0">ADA DI DAFTAR HARGA — ketuk untuk pakai${daftar.length > 4 ? ' · geser untuk lihat lainnya' : ''}</div>` +
       daftar.map((h, n) => `<div data-n="${n}" style="padding:8px 10px;cursor:pointer;border-top:1px solid rgba(3,69,67,.07);display:flex;justify-content:space-between;gap:8px">
         <span style="font-weight:600">${escHtml(h.label)}${h.nVarian ? ` <span style="font-size:10px;color:rgba(3,69,67,.5)">(${h.nVarian} varian)</span>` : ''}</span>
         <span style="color:rgba(3,69,67,.6);white-space:nowrap">${h.harga ? 'Rp ' + Number(h.harga).toLocaleString('id-ID') : ''}</span></div>`).join('')
     box.querySelectorAll('[data-n]').forEach(el => {
       el.onmouseenter = () => el.style.background = '#f0f9ff'; el.onmouseleave = () => el.style.background = ''
-      el.onpointerdown = e => { e.preventDefault(); tutupSaran(); pilih(daftar[+el.dataset.n]) }
+      // Pilih saat diketuk (click) — kalau jari menggeser untuk scroll, tidak terpilih
+      el.onclick = () => { tutupSaran(); pilih(daftar[+el.dataset.n]) }
     })
   }
   window.saranItem = function(id) {
@@ -771,7 +804,7 @@
     if (q.length < 2 || !currentPriceList?.items?.length) return tutupSaran()
     const hasil = kandidatKatalog().map(k => ({ ...k, skor: skorSaran(q, k.teks) }))
       .filter(x => x.skor >= 0.6 && x.label.toUpperCase() !== q)
-      .sort((a, b) => b.skor - a.skor || (a.v - b.v)).slice(0, 7)
+      .sort((a, b) => b.skor - a.skor || (a.v - b.v)).slice(0, 12)
     tampilkanSaran(inp, hasil, h => pilihKatalog(id, h.i, h.v))
   }
   // Ketik di kolom varian → saran varian dari item yang dipilih
