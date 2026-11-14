@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daftar Kain Harmoni Indonesia</title>
+<meta name="description" content="Katalog warna kain seragam Harmoni Indonesia — UNIONE, PASSUKA, VENOZA, ORLANDO, RIBSTOP">
+<meta property="og:title" content="Daftar Kain Harmoni Indonesia">
+<meta property="og:description" content="Lihat semua pilihan warna kain seragam, pilih warnanya, lalu kirim ke Harmoni lewat WhatsApp.">
+<link rel="icon" href="img/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --hijau: #034543; --krem: #FFFBD5; --bg: #F6F8F7; --teks: #0f2b2a; --abu: rgba(3,69,67,.55); --garis: rgba(3,69,67,.12); --merah: #b91c1c }
+  * { box-sizing: border-box }
+  body { margin: 0; padding-bottom: 96px; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: var(--bg); color: var(--teks) }
+  header { background: var(--hijau); color: var(--krem); padding: 22px 16px 18px; text-align: center }
+  header img { height: 30px; display: block; margin: 0 auto 8px }
+  header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em }
+  header p { margin: 6px 0 0; font-size: 13px; opacity: .8 }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 14px 16px 120px }
+  .alat { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0 8px }
+  .cari { width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--garis); border-radius: 12px; font-family: inherit; background: #fff; outline: none }
+  .cari:focus { border-color: var(--hijau) }
+  .tab { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px }
+  .tab button { border: 1.5px solid var(--garis); background: #fff; color: var(--teks); border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit }
+  .tab button.aktif { background: var(--hijau); color: #fff; border-color: var(--hijau) }
+  .info { font-size: 12px; color: var(--abu); margin: 8px 2px 10px }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px }
+  .kartu { background: #fff; border: 1.5px solid var(--garis); border-radius: 12px; overflow: hidden; cursor: pointer; position: relative; transition: transform .1s }
+  .kartu:active { transform: scale(.98) }
+  .kartu .w { height: 72px }
+  .kartu .t { padding: 7px 9px; font-size: 11px; line-height: 1.35 }
+  .kartu .t b { font-size: 14px; display: block }
+  .kartu .ket { color: var(--merah); font-weight: 700; font-size: 10px }
+  .kartu .mrk { color: var(--abu); font-size: 10px }
+  .kartu.dipilih { border-color: var(--hijau); box-shadow: 0 0 0 2px var(--hijau) }
+  .kartu.dipilih::after { content: '✓'; position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; background: var(--hijau); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px }
+  .catatan { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 12px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 10px }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--garis); box-shadow: 0 -6px 20px rgba(0,0,0,.08); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: none; z-index: 20 }
+  .bar .isi { max-width: 1100px; margin: 0 auto; display: flex; gap: 10px; align-items: center }
+  .bar .daftar { flex: 1; min-width: 0; font-size: 12px; color: var(--abu); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .bar .daftar b { color: var(--teks); font-size: 14px }
+  .btn { border: none; border-radius: 12px; padding: 12px 16px; font-size: 14px; font-weight: 800; cursor: pointer; font-family: inherit }
+  .btn-wa { background: #25d366; color: #fff }
+  .btn-ghost { background: #fff; color: var(--teks); border: 1.5px solid var(--garis) }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 14px }
+  .modal .box { background: #fff; border-radius: 16px; max-width: 420px; width: 100%; overflow: hidden; max-height: 92vh; overflow-y: auto }
+  .modal .besar { height: 180px }
+  .modal img { width: 100%; max-height: 300px; object-fit: cover; display: block }
+  .modal .badan { padding: 14px 16px 16px }
+  .kosong { text-align: center; color: var(--abu); padding: 30px 10px; font-size: 14px }
+  footer { text-align: center; font-size: 12px; color: var(--abu); padding: 10px 16px 30px }
+  @media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) } .kartu .w { height: 86px } }
+</style>
+</head>
+<body>
+<header>
+  <img src="img/logo-beige.png" alt="Harmoni Indonesia" onerror="this.style.display='none'">
+  <h1>Daftar Kain Harmoni Indonesia</h1>
+  <p>Pilihan warna kain seragam — ketuk warna yang Anda suka, lalu kirim ke kami</p>
+</header>
+<div class="wrap">
+  <div class="alat">
+    <input class="cari" id="cari" type="search" placeholder="Cari kode atau keterangan, mis. 714, PRAMUKA, SATPAM…" autocomplete="off">
+    <div class="tab" id="tab"></div>
+  </div>
+  <div class="catatan">ℹ️ Warna di layar bisa sedikit berbeda dengan kain asli (tergantung layar HP). Untuk kepastian, kami bisa kirimkan foto kain asli atau Anda bisa melihat buku katalog di toko kami.</div>
+  <div class="info" id="info">Memuat katalog…</div>
+  <div class="grid" id="grid"></div>
+</div>
+<footer>© Harmoni Indonesia</footer>
+<div class="bar" id="bar"><div class="isi">
+  <div class="daftar" id="barDaftar"></div>
+  <button class="btn btn-ghost" id="barHapus">Hapus</button>
+  <button class="btn btn-wa" id="barKirim">Kirim via WA</button>
+</div></div>
+
+<script>
+// Data dari Katalog Kain di YH Sistem Produksi (hanya kode, keterangan, contoh warna & foto — tanpa stok)
+const PROJECT = 'yh-sistem-produksi', KEY = 'AIzaSyDxkuQMUb0735kE2RrpSUtbuKSxfc-Kyqo'
+const FS = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`
+const CADANGAN = ['UNIONE', 'PASSUKA', 'VENOZA', 'ORLANDO', 'RIBSTOP'].map(n => ({ nama: n, file: `https://adhiitmuh.github.io/yh-sistem-produksi/katalog/${n.toLowerCase()}.json` }))
+const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+// Ubah format nilai REST Firestore ke JS biasa
+function dariFs(v) {
+  if (!v) return null
+  if ('stringValue' in v) return v.stringValue
+  if ('integerValue' in v) return +v.integerValue
+  if ('doubleValue' in v) return v.doubleValue
+  if ('booleanValue' in v) return v.booleanValue
+  if ('nullValue' in v) return null
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(dariFs)
+  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, dariFs(x)]))
+  return null
+}
+let jenis = [], waCS = '', tabAktif = 0, dipilih = []
+const kunci = (j, v) => j.nama + ' ' + v.kode
+async function muat() {
+  try {
+    const r = await fetch(`${FS}/config/katalog_kain?key=${KEY}&mask.fieldPaths=jenis&mask.fieldPaths=waCS&mask.fieldPaths=judulPublik`)
+    if (r.ok) { const d = await r.json(); const f = Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, dariFs(v)])); jenis = (f.jenis || []).filter(j => j && (j.varian || []).length && j.publik !== false); waCS = f.waCS || '' }
+  } catch (e) {}
+  if (!jenis.length) {   // katalog belum diisi di YH → pakai data katalog bawaan
+    for (const c of CADANGAN) { try { const d = await fetch(c.file).then(r => r.json()); jenis.push({ nama: c.nama, varian: d }) } catch (e) {} }
+  }
+  try { dipilih = JSON.parse(localStorage.getItem('kain_dipilih') || '[]') } catch (e) {}
+  const q = new URLSearchParams(location.search).get('merek'); if (q) { const i = jenis.findIndex(j => j.nama.toUpperCase() === q.toUpperCase()); if (i >= 0) tabAktif = i }
+  render(); renderBar()
+}
+function render() {
+  const q = document.getElementById('cari').value.trim().toUpperCase()
+  document.getElementById('tab').innerHTML = jenis.map((j, i) => `<button class="${!q && i === tabAktif ? 'aktif' : ''}" data-i="${i}">${esc(j.nama)} · ${(j.varian || []).length}</button>`).join('')
+  document.querySelectorAll('#tab button').forEach(b => b.onclick = () => { tabAktif = +b.dataset.i; document.getElementById('cari').value = ''; render(); scrollTo({ top: 0, behavior: 'smooth' }) })
+  const out = []
+  jenis.forEach((j, i) => { if (!q && i !== tabAktif) return; (j.varian || []).forEach((v, k) => { if (!q || `${j.nama} ${v.kode} ${v.ket || ''}`.toUpperCase().includes(q)) out.push({ i, k, j, v }) }) })
+  document.getElementById('info').textContent = jenis.length ? (q ? `${out.length} warna ditemukan di semua merek` : `${jenis[tabAktif]?.nama || ''} — ${out.length} warna · ketuk warna untuk melihat lebih besar & memilih`) : ''
+  document.getElementById('grid').innerHTML = out.length ? out.slice(0, 800).map(x => `<div class="kartu ${dipilih.includes(kunci(x.j, x.v)) ? 'dipilih' : ''}" data-i="${x.i}" data-k="${x.k}">
+      <div class="w" style="background:${esc(x.v.hex || '#ccc')}"></div>
+      <div class="t"><b>${esc(x.v.kode)}</b>${x.v.ket ? `<div class="ket">${esc(x.v.ket)}</div>` : ''}<div class="mrk">${esc(x.j.nama)}${x.v.adaFoto ? ' · 📷' : ''}</div></div></div>`).join('')
+    : `<div class="kosong">${jenis.length ? 'Warna tidak ditemukan — coba kata lain' : 'Katalog belum tersedia'}</div>`
+  document.querySelectorAll('.kartu').forEach(el => el.onclick = () => detail(+el.dataset.i, +el.dataset.k))
+}
+async function detail(i, k) {
+  const j = jenis[i], v = j.varian[k], key = kunci(j, v), pilih = dipilih.includes(key)
+  const m = document.createElement('div'); m.className = 'modal'
+  m.innerHTML = `<div class="box"><div id="mFoto"><div class="besar" style="background:${esc(v.hex || '#ccc')}"></div></div>
+    <div class="badan"><div style="font-size:22px;font-weight:800">${esc(v.kode)} <span style="font-size:13px;font-weight:700;color:var(--abu)">${esc(j.nama)}</span></div>
+      ${v.ket ? `<div style="color:var(--merah);font-weight:700;font-size:13px">${esc(v.ket)}</div>` : ''}
+      <div style="font-size:12px;color:var(--abu);margin:8px 0 12px">Sebutkan kode <b>${esc(j.nama)} ${esc(v.kode)}</b> saat memesan.</div>
+      <button class="btn ${pilih ? 'btn-ghost' : 'btn-wa'}" id="mPilih" style="width:100%">${pilih ? 'Batal pilih warna ini' : '✓ Pilih warna ini'}</button>
+      <button class="btn btn-ghost" id="mTutup" style="width:100%;margin-top:8px">Tutup</button></div></div>`
+  document.body.appendChild(m)
+  const tutup = () => m.remove()
+  m.onclick = e => { if (e.target === m) tutup() }; m.querySelector('#mTutup').onclick = tutup
+  m.querySelector('#mPilih').onclick = () => { dipilih = pilih ? dipilih.filter(x => x !== key) : [...dipilih, key]; simpan(); tutup(); render(); renderBar() }
+  if (v.adaFoto) {   // foto kain asli (bila sudah diunggah di katalog)
+    try { const id = (j.nama + '__' + v.kode).replace(/[\/\s.#$\[\]]+/g, '_'); const r = await fetch(`${FS}/katalog_foto/${encodeURIComponent(id)}?key=${KEY}&mask.fieldPaths=foto`); if (r.ok) { const f = dariFs((await r.json()).fields?.foto); if (f && /^data:image\//.test(f)) m.querySelector('#mFoto').innerHTML = `<img src="${f}" alt="Foto kain ${esc(v.kode)}">` } } catch (e) {}
+  }
+}
+function simpan() { try { localStorage.setItem('kain_dipilih', JSON.stringify(dipilih)) } catch (e) {} }
+function renderBar() {
+  const bar = document.getElementById('bar')
+  bar.style.display = dipilih.length ? 'block' : 'none'
+  document.getElementById('barDaftar').innerHTML = `<b>${dipilih.length} warna dipilih</b><br>${esc(dipilih.join(', '))}`
+}
+document.getElementById('barHapus').onclick = () => { dipilih = []; simpan(); render(); renderBar() }
+document.getElementById('barKirim').onclick = () => {
+  const pesan = `Halo Harmoni Indonesia 👋\nSaya tertarik dengan kain berikut dari katalog:\n${dipilih.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\nMohon info harga & ketersediaannya. Terima kasih 🙏`
+  const no = String(waCS || '').replace(/\D/g, '').replace(/^0/, '62')
+  window.open(`https://api.whatsapp.com/send?${no ? 'phone=' + no + '&' : ''}text=${encodeURIComponent(pesan)}`, '_blank')
+}
+let _t; document.getElementById('cari').oninput = () => { clearTimeout(_t); _t = setTimeout(render, 150) }
+muat()
+</script>
+</body>
+</html>
