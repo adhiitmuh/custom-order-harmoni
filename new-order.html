@@ -166,6 +166,11 @@
           </select>
           <p class="form-hint">Akan ditampilkan di invoice untuk informasi pembayaran</p>
         </div>
+        <div class="form-group" id="buktiDpWrap" style="margin-top:14px;margin-bottom:0">
+          <label>Foto Bukti Bayar DP <span style="color:#b91c1c">* wajib bila ada DP</span></label>
+          <input type="file" id="buktiDp" accept="image/*,.pdf">
+          <p class="form-hint">Tunai: foto uang yang diterima / nota. Transfer & QRIS: screenshot bukti transfer.</p>
+        </div>
         <!-- Price tier indicator -->
         <div id="priceTierInfo" style="display:none;margin-top:12px;padding:12px;border-radius:10px">
           <div id="priceTierMsg"></div>
@@ -1342,6 +1347,7 @@
     const dp = document.getElementById('depositPaid'), pm = document.getElementById('paymentMethod')
     if (dp) { dp.disabled = mp; if (mp) dp.value = document.getElementById('totalPrice').value }
     if (pm) pm.disabled = mp
+    const bw = document.getElementById('buktiDpWrap'); if (bw) bw.style.display = mp ? 'none' : ''
   }
   document.getElementById('orderForm').addEventListener('submit', async e => {
     e.preventDefault()
@@ -1378,6 +1384,11 @@
         const h = hitungNama(i.namaCustom, i.qty)
         if (!h.ok) { errEl.textContent = `Daftar nama "${i.name}" belum cocok: ${h.pesan}`; errEl.style.display=''; return }
       }
+    }
+    // Setiap uang masuk wajib ada foto bukti (termasuk tunai) — kecuali order marketplace
+    if (!isMarketplace() && parsePrice(document.getElementById('depositPaid').value) > 0) {
+      if (!document.getElementById('paymentMethod').value) { errEl.textContent = 'Pilih metode pembayaran DP (Tunai / QRIS / Transfer)'; errEl.style.display=''; return }
+      if (!document.getElementById('buktiDp').files[0]) { errEl.textContent = 'Foto bukti bayar DP wajib dilampirkan — termasuk pembayaran tunai (foto uang yang diterima / nota).'; errEl.style.display=''; return }
     }
     if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
     // Approval hanya karena item baru → alasan terisi otomatis
@@ -1422,6 +1433,17 @@
           designFiles = await uploadFiles(orderId, files)
         }
 
+        // Foto bukti DP
+        let buktiDp = null
+        const fBukti = document.getElementById('buktiDp').files[0]
+        if (fBukti && !isMarketplace() && parsePrice(document.getElementById('depositPaid').value) > 0) {
+          setStatus('Upload bukti bayar…')
+          const f = await compressImage(fBukti)
+          const r = ref(storage, `orders/${orderId}/payment/${Date.now()}_${f.name}`)
+          await new Promise((res, rej) => { const task = uploadBytesResumable(r, f); task.on('state_changed', null, rej, res) })
+          buktiDp = await getDownloadURL(r)
+        }
+
         setStatus('Menyimpan order…')
         await setDoc(doc(db,'orders',orderId), {
           orderNumber,
@@ -1460,6 +1482,7 @@
           orderItems: getItemRows(),
           paymentMethod: isMarketplace() ? 'marketplace' : (pisahMetode(document.getElementById('paymentMethod').value).metode || ''),
           chatToken,
+          ...(buktiDp ? { paymentProofs: [buktiDp] } : {}),
         })
 
         // DP awal masuk riwayat pembayaran (Laporan Harian)
@@ -1469,6 +1492,7 @@
             const e = entriPembayaran({ orderNumber, customerName: document.getElementById('customerName').value.trim().toUpperCase(), division: selectedDiv,
               lokasiId: selectedLokasi?.id || '', lokasiNama: selectedLokasi?.nama || '', createdByName: profile.name },
               orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', jenis: dpAwal >= parsePrice(document.getElementById('totalPrice').value) ? 'lunas' : 'dp' })
+            if (buktiDp) e.data.bukti = buktiDp
             await setDoc(e.ref, e.data)
           } catch (err) { console.warn('Riwayat pembayaran gagal dicatat:', err) }
         }

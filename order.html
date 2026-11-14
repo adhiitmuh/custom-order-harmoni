@@ -1294,6 +1294,7 @@
         editUpdates.sizeBreakdown = Object.keys(bd).length ? bd : null
       }
       const lamaDp = order.depositPaid || 0
+      if (editUpdates.depositPaid > lamaDp) { alert('DP bertambah harus dicatat lewat tombol "+ Tambah Pembayaran" (wajib foto bukti bayar, termasuk tunai).\n\nKembalikan DP ke ' + fmtCurrency(lamaDp) + ' di form ini.'); return }
       const batchEdit = writeBatch(db)
       batchEdit.update(doc(db,'orders',orderId), editUpdates)
       if (editUpdates.depositPaid !== lamaDp) {
@@ -2241,7 +2242,7 @@
       const newDp = parsePrice(document.getElementById('editDp').value)
       const pm = document.getElementById('editPaymentMethod')?.value || ''
       const lamaDp = order.depositPaid || 0
-      if (newDp > lamaDp && !pm) { alert('Pilih metode bayar untuk uang yang masuk (Tunai / QRIS / Transfer).'); return }
+      if (newDp > lamaDp) { alert('Uang masuk dicatat lewat tombol "+ Tambah Pembayaran" (wajib foto bukti bayar, termasuk tunai).\n\nDi sini DP hanya bisa tetap atau dikurangi (koreksi). Kembalikan DP ke ' + fmtCurrency(lamaDp) + ' lalu simpan.'); return }
       const updates = {
         totalPrice: parsePrice(document.getElementById('editTotal').value),
         depositPaid: newDp,
@@ -2358,7 +2359,7 @@
       <input type="text" id="tbCatatan" placeholder="cth: pelunasan ambil barang" style="font-size:13px;margin-bottom:10px">
       <label style="display:block;border:2px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:rgba(3,69,67,.6);cursor:pointer">
         <input type="file" id="tbBukti" accept="image/*,.pdf" style="display:none">
-        <span id="tbBuktiTeks">📎 Bukti bayar (opsional) — tempel, seret, atau ketuk</span>
+        <span id="tbBuktiTeks">📷 <b>Foto bukti bayar (WAJIB)</b> — tunai: foto uangnya / nota; transfer & QRIS: screenshot bukti. Tempel, seret, atau ketuk</span>
       </label>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" id="tbBatal">Batal</button>
@@ -2366,13 +2367,14 @@
       </div></div>`
     document.body.appendChild(bg)
     const fileEl = bg.querySelector('#tbBukti')
-    fileEl.addEventListener('change', () => { bg.querySelector('#tbBuktiTeks').textContent = fileEl.files[0] ? '✓ ' + fileEl.files[0].name : '📎 Bukti bayar (opsional)' })
+    fileEl.addEventListener('change', () => { bg.querySelector('#tbBuktiTeks').textContent = fileEl.files[0] ? '✓ ' + fileEl.files[0].name : '📷 Foto bukti bayar (WAJIB)' })
     bg.querySelector('#tbBatal').onclick = () => bg.remove()
     bg.querySelector('#tbSimpan').onclick = async () => {
       const jumlah = parsePrice(bg.querySelector('#tbJumlah').value)
       const metode = bg.querySelector('#tbMetode').value
       if (!jumlah) { alert('Isi jumlah yang diterima'); return }
       if (!metode) { alert('Pilih metode bayar (Tunai / QRIS / Transfer)'); return }
+      if (!fileEl.files[0]) { alert('Foto bukti bayar wajib dilampirkan — termasuk pembayaran tunai (foto uang yang diterima / nota).'); return }
       if (jumlah > sisa && sisa > 0 && !confirm(`Jumlah ${fmtCurrency(jumlah)} lebih besar dari sisa ${fmtCurrency(sisa)}. Tetap simpan?`)) return
       const btn = bg.querySelector('#tbSimpan'); btn.disabled = true; btn.textContent = 'Menyimpan…'
       try {

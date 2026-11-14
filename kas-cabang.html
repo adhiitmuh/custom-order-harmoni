@@ -293,6 +293,9 @@
     try {
       const rows = [...document.querySelectorAll('#setoran .rw')]
       const setoran = []
+      // Setoran tunai ke rekening wajib ada foto bukti setor (slip setoran / bukti transfer)
+      const tanpaBukti = rows.filter(r => ang(r.querySelector('.setJ').value) && !r.querySelector('.setB').files[0] && !r.querySelector('.setB').dataset.lama)
+      if (tanpaBukti.length) { alert('Setiap setoran tunai ke rekening wajib dilampiri foto bukti setor (slip setoran / bukti transfer).'); btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang'; return }
       for (const r of rows) { const j = ang(r.querySelector('.setJ').value); if (!j) continue; const f = r.querySelector('.setB').files[0]; setoran.push({ v: r.querySelector('.setV').value, label: r.querySelector('.setV').selectedOptions[0]?.textContent || '', jumlah: j, bukti: f ? await unggah(f, 'kas_cabang') : (r.querySelector('.setB').dataset.lama || '') }) }
       if (t.lebih > aturan.toleransi && !confirm(`Masih ada tunai ${rp(t.lebih)} di atas modal kembalian yang belum disetor. Tetap simpan?`)) { btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang'; return }
       const f = document.getElementById('tFoto').files[0]
