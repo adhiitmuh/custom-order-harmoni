@@ -48,6 +48,13 @@
   .modal .besar { height: 180px }
   .modal img { width: 100%; max-height: 300px; object-fit: cover; display: block }
   .modal .badan { padding: 14px 16px 16px }
+  .btn-foto { width: 100%; margin-top: 10px; background: var(--hijau); color: #fff; display: flex; align-items: center; justify-content: center; gap: 8px }
+  .panduan { background: #ecfdf5; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.55 }
+  .panduan ol { margin: 4px 0 0 18px; padding: 0 }
+  #fCanvas { width: 100%; border-radius: 12px; display: none; touch-action: none; cursor: crosshair; margin-top: 10px }
+  .langkah { font-size: 14px; font-weight: 800; color: var(--hijau); margin: 10px 0 4px }
+  .hasil { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--garis) }
+  .hasil .sw { width: 48px; height: 48px; border-radius: 10px; flex: 0 0 48px; border: 1px solid rgba(0,0,0,.1) }
   .kosong { text-align: center; color: var(--abu); padding: 30px 10px; font-size: 14px }
   footer { text-align: center; font-size: 12px; color: var(--abu); padding: 10px 16px 30px }
   @media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) } .kartu .w { height: 86px } }
@@ -62,6 +69,7 @@
 <div class="wrap">
   <div class="alat">
     <input class="cari" id="cari" type="search" placeholder="Cari kode atau keterangan, mis. 714, PRAMUKA, SATPAM…" autocomplete="off">
+    <button class="btn btn-foto" id="btnFoto">📷 Punya contoh kain? Cari warnanya dari foto</button>
     <div class="tab" id="tab"></div>
   </div>
   <div class="catatan">ℹ️ Warna di layar bisa sedikit berbeda dengan kain asli (tergantung layar HP). Untuk kepastian, kami bisa kirimkan foto kain asli atau Anda bisa melihat buku katalog di toko kami.</div>
@@ -106,6 +114,7 @@ async function muat() {
   try { dipilih = JSON.parse(localStorage.getItem('kain_dipilih') || '[]') } catch (e) {}
   const q = new URLSearchParams(location.search).get('merek'); if (q) { const i = jenis.findIndex(j => j.nama.toUpperCase() === q.toUpperCase()); if (i >= 0) tabAktif = i }
   render(); renderBar()
+  if (new URLSearchParams(location.search).has('foto')) cariDariFoto()
 }
 function render() {
   const q = document.getElementById('cari').value.trim().toUpperCase()
@@ -143,12 +152,97 @@ function renderBar() {
   bar.style.display = dipilih.length ? 'block' : 'none'
   document.getElementById('barDaftar').innerHTML = `<b>${dipilih.length} warna dipilih</b><br>${esc(dipilih.join(', '))}`
 }
-document.getElementById('barHapus').onclick = () => { dipilih = []; simpan(); render(); renderBar() }
+document.getElementById('barHapus').onclick = () => { dipilih = []; dariFoto = []; simpan(); render(); renderBar() }
 document.getElementById('barKirim').onclick = () => {
-  const pesan = `Halo Harmoni Indonesia 👋\nSaya tertarik dengan kain berikut dari katalog:\n${dipilih.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\nMohon info harga & ketersediaannya. Terima kasih 🙏`
+  const pesan = `Halo Harmoni Indonesia 👋\nSaya tertarik dengan kain berikut dari katalog:\n${dipilih.map((x, i) => `${i + 1}. ${x}${dariFoto.includes(x) ? ' (hasil cari dari foto)' : ''}`).join('\n')}\n\n${dariFoto.some(x => dipilih.includes(x)) ? 'Saya kirimkan juga foto kain contohnya, mohon dicek kecocokan warnanya. ' : ''}Mohon info harga & ketersediaannya. Terima kasih 🙏`
   const no = String(waCS || '').replace(/\D/g, '').replace(/^0/, '62')
   window.open(`https://api.whatsapp.com/send?${no ? 'phone=' + no + '&' : ''}text=${encodeURIComponent(pesan)}`, '_blank')
 }
+// ── Cari warna dari foto kain milik customer (diproses di HP customer, foto tidak diunggah) ──
+function rgbKeLab([r, g, b]) {
+  const f = c => { c /= 255; return c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92 }
+  const R = f(r), G = f(g), B = f(b)
+  let X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883
+  const t = v => v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116
+  X = t(X); Y = t(Y); Z = t(Z)
+  return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)]
+}
+function deltaE00([L1, a1, b1], [L2, a2, b2]) {
+  const rad = Math.PI / 180, C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cm = (C1 + C2) / 2
+  const G = 0.5 * (1 - Math.sqrt(Math.pow(Cm, 7) / (Math.pow(Cm, 7) + Math.pow(25, 7))))
+  const a1p = (1 + G) * a1, a2p = (1 + G) * a2, C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2)
+  const h = (a, b) => { const x = Math.atan2(b, a) / rad; return x < 0 ? x + 360 : x }
+  const h1p = h(a1p, b1), h2p = h(a2p, b2), dLp = L2 - L1, dCp = C2p - C1p
+  let dhp = 0; if (C1p * C2p) { dhp = h2p - h1p; if (dhp > 180) dhp -= 360; else if (dhp < -180) dhp += 360 }
+  const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin(dhp * rad / 2), Lm = (L1 + L2) / 2, Cmp = (C1p + C2p) / 2
+  let hm = h1p + h2p; if (C1p * C2p) { hm = Math.abs(h1p - h2p) > 180 ? (h1p + h2p + 360) / 2 : (h1p + h2p) / 2 }
+  const T = 1 - 0.17 * Math.cos((hm - 30) * rad) + 0.24 * Math.cos(2 * hm * rad) + 0.32 * Math.cos((3 * hm + 6) * rad) - 0.2 * Math.cos((4 * hm - 63) * rad)
+  const SL = 1 + 0.015 * Math.pow(Lm - 50, 2) / Math.sqrt(20 + Math.pow(Lm - 50, 2)), SC = 1 + 0.045 * Cmp, SH = 1 + 0.015 * Cmp * T
+  const RT = -2 * Math.sqrt(Math.pow(Cmp, 7) / (Math.pow(Cmp, 7) + Math.pow(25, 7))) * Math.sin(60 * Math.exp(-Math.pow((hm - 275) / 25, 2)) * rad)
+  return Math.sqrt(Math.pow(dLp / SL, 2) + Math.pow(dCp / SC, 2) + Math.pow(dHp / SH, 2) + RT * (dCp / SC) * (dHp / SH))
+}
+const hexKeRgb = h => { const x = String(h || '').replace('#', ''); return [0, 2, 4].map(i => parseInt(x.slice(i, i + 2), 16) || 0) }
+const rgbKeHex = c => '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
+const PUTIH_KATALOG = [240, 240, 236]
+let dariFoto = []   // kode yang dipilih dari hasil foto — ditandai di pesan WA supaya CS mengecek
+function cariDariFoto() {
+  const m = document.createElement('div'); m.className = 'modal'
+  m.innerHTML = `<div class="box"><div class="badan">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:17px">📷 Cari warna dari foto</b><button class="btn btn-ghost" id="fTutup" style="padding:8px 12px">Tutup</button></div>
+    <details id="fPanduan" open style="margin-top:10px"><summary style="font-weight:700;font-size:13px;cursor:pointer">Cara foto supaya hasilnya pas</summary><div class="panduan"><ol>
+      <li>Foto di <b>cahaya siang</b> (dekat jendela/teras). <b>Jangan pakai flash</b> & jangan di bawah lampu kuning.</li>
+      <li><b>Taruh kertas HVS putih di samping kain</b> — satu foto berisi kain + kertas.</li>
+      <li>Foto lurus dari atas, kain rata, tanpa filter.</li>
+      <li>Setelah foto muncul: <b>ketuk kertas putih</b>, lalu <b>ketuk kainnya</b>.</li></ol></div></details>
+    <label class="btn btn-wa" style="display:block;text-align:center;margin-top:10px;cursor:pointer">📷 Ambil / pilih foto<input type="file" id="fFile" accept="image/*" style="display:none"></label>
+    <div class="langkah" id="fLangkah"></div>
+    <canvas id="fCanvas"></canvas>
+    <div id="fSampel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:8px"></div>
+    <div id="fHasil"></div>
+    <div style="font-size:11px;color:var(--abu);margin-top:10px">🔒 Foto hanya diproses di HP Anda, tidak diunggah ke mana pun.</div></div></div>`
+  document.body.appendChild(m)
+  const cv = m.querySelector('#fCanvas'), ctx = cv.getContext('2d', { willReadFrequently: true })
+  let putih = null, kain = null, mode = 'putih'
+  const langkah = t => m.querySelector('#fLangkah').textContent = t
+  m.querySelector('#fTutup').onclick = () => m.remove()
+  m.querySelector('#fFile').onchange = e => { const file = e.target.files[0]; if (!file) return; const img = new Image(); img.onload = () => {
+      const sc = Math.min(1, 1200 / Math.max(img.width, img.height)); cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc)
+      ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.style.display = 'block'; putih = kain = null; mode = 'putih'; m.querySelector('#fPanduan').open = false
+      langkah('① Ketuk KERTAS PUTIH di foto'); tampil(); cv.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+    img.src = URL.createObjectURL(file); e.target.value = '' }
+  const sampel = (x, y) => { const r = Math.max(6, Math.round(Math.min(cv.width, cv.height) * 0.025)), x0 = Math.max(0, x - r), y0 = Math.max(0, y - r)
+    const d = ctx.getImageData(x0, y0, Math.min(r * 2, cv.width - x0), Math.min(r * 2, cv.height - y0)).data, px = []
+    for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]])
+    px.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2])); const pot = px.slice(Math.floor(px.length * .15), Math.ceil(px.length * .85))
+    return [0, 1, 2].map(c => pot.reduce((t, p) => t + p[c], 0) / pot.length) }
+  cv.addEventListener('pointerdown', e => { const b = cv.getBoundingClientRect(), x = Math.round((e.clientX - b.left) * cv.width / b.width), y = Math.round((e.clientY - b.top) * cv.height / b.height), c = sampel(x, y)
+    if (mode === 'putih') { if (c.reduce((a, v) => a + v, 0) / 3 < 120) { langkah('Itu terlalu gelap untuk kertas putih — ketuk kertasnya, atau tekan "Tanpa kertas putih"'); return } putih = c; mode = 'kain'; langkah('② Sekarang ketuk KAIN-nya (bagian tengah)') }
+    else { kain = c; langkah('✓ Ketuk bagian kain lain untuk mencoba lagi') }
+    tampil() })
+  const koreksi = c => putih ? c.map((v, i) => v * PUTIH_KATALOG[i] / Math.max(1, putih[i])) : c
+  const sw = (h, l) => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:22px;height:22px;border-radius:5px;background:${h};border:1px solid rgba(0,0,0,.15)"></span>${l}</span>`
+  function tampil() {
+    const sEl = m.querySelector('#fSampel'), hEl = m.querySelector('#fHasil')
+    sEl.innerHTML = (putih ? sw(rgbKeHex(putih), 'kertas ✓') : (cv.style.display === 'block' ? `<button class="btn btn-ghost" id="fTanpa" style="padding:7px 12px;font-size:12px">Tanpa kertas putih</button>` : '')) + (kain ? sw(rgbKeHex(koreksi(kain)), 'warna kain Anda') : '')
+    m.querySelector('#fTanpa')?.addEventListener('click', () => { putih = null; mode = 'kain'; langkah('② Ketuk KAIN-nya (tanpa kertas putih — hasil kurang akurat)'); tampil() })
+    if (!kain) { hEl.innerHTML = ''; return }
+    const lab = rgbKeLab(koreksi(kain)), out = []
+    jenis.forEach((j, i) => (j.varian || []).forEach((v, k) => { if (v.hex) out.push({ i, k, j, v, d: deltaE00(lab, v._lab || (v._lab = rgbKeLab(hexKeRgb(v.hex)))) }) }))
+    const hasil = out.sort((a, b) => a.d - b.d).slice(0, 5)
+    const label = d => d < 5 ? ['sangat mirip', '#047857'] : d < 10 ? ['mirip', '#1d4ed8'] : d < 18 ? ['agak beda', '#b45309'] : ['kurang mirip', '#b91c1c']
+    hEl.innerHTML = `<div class="langkah" style="margin-top:14px">Warna yang paling mirip:</div>`
+      + (hasil[0] && hasil[0].d > 12 ? `<div class="catatan">Warna kain Anda belum ada yang benar-benar mirip di katalog. Kirim fotonya ke kami, CS akan bantu carikan.</div>` : '')
+      + hasil.map(x => { const [l, w] = label(x.d), key = kunci(x.j, x.v), sdh = dipilih.includes(key)
+        return `<div class="hasil"><span class="sw" style="background:${esc(x.v.hex)}"></span>
+          <span style="flex:1;min-width:0;font-size:12px"><b style="font-size:15px">${esc(x.j.nama)} ${esc(x.v.kode)}</b>${x.v.ket ? ` <span style="color:var(--merah);font-weight:700">${esc(x.v.ket)}</span>` : ''}<br><span style="color:${w};font-weight:700">${l}</span></span>
+          <button class="btn ${sdh ? 'btn-ghost' : 'btn-wa'}" data-key="${esc(key)}" style="padding:9px 12px;font-size:13px">${sdh ? '✓ Dipilih' : 'Pilih'}</button></div>` }).join('')
+      + `<div class="catatan" style="margin-top:10px">⚠️ Hasil ini <b>perkiraan</b> — warna di foto dipengaruhi cahaya & kamera. Setelah memilih, tekan <b>Kirim via WA</b> dan <b>kirimkan juga foto kainnya</b> di chat, nanti CS kami cocokkan langsung dengan kain aslinya.</div>`
+    hEl.querySelectorAll('[data-key]').forEach(b => b.onclick = () => { const key = b.dataset.key
+      if (dipilih.includes(key)) { dipilih = dipilih.filter(x => x !== key); dariFoto = dariFoto.filter(x => x !== key) } else { dipilih.push(key); dariFoto.push(key) }
+      simpan(); render(); renderBar(); tampil() })
+  }
+}
+document.getElementById('btnFoto').onclick = cariDariFoto
 let _t; document.getElementById('cari').oninput = () => { clearTimeout(_t); _t = setTimeout(render, 150) }
 muat()
 </script>
