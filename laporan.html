@@ -291,9 +291,9 @@
 
   function render(from, to) {
     const semuaOrder = filterOrders(from, to)
-    // Order marketplace (Shopee/Tokopedia/TikTok): omzetnya sudah tercatat di Olsera → dipisah dari omzet Custom Order
+    // Order marketplace (Shopee/Tokopedia/TikTok) ikut dihitung di omzet; rinciannya ditampilkan terpisah
     const mpOrders = semuaOrder.filter(o => o.marketplace)
-    const orders = semuaOrder.filter(o => !o.marketplace)
+    const orders = semuaOrder
     const totalOmzet = orders.reduce((s,o) => s + (o.totalPrice||0), 0)
     const totalMasuk = orders.reduce((s,o) => s + (o.depositPaid||0), 0)
     const totalSisa  = totalOmzet - totalMasuk
@@ -378,9 +378,9 @@
       const perMp = {}
       mpOrders.forEach(o => { const k = o.marketplace; perMp[k] = perMp[k] || { n: 0, rp: 0 }; perMp[k].n++; perMp[k].rp += o.totalPrice || 0 })
       document.getElementById('summaryCards').insertAdjacentHTML('beforeend', `<div class="card" style="border-left:3px solid #7c3aed">
-        <div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:6px">🛒 Marketplace (terpisah)</div>
+        <div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:6px">🛒 Dari Marketplace</div>
         <div style="font-size:20px;font-weight:800">${fmtCurrency(mpOrders.reduce((t, o) => t + (o.totalPrice || 0), 0))}</div>
-        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px">${Object.entries(perMp).map(([k, v]) => `${k}: ${v.n} order`).join(' · ')}<br>Omzet sudah tercatat di Olsera — tidak dijumlah di atas. Modal tetap dihitung ke pemilik divisi.</div></div>`)
+        <div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:4px">${Object.entries(perMp).map(([k, v]) => `${k}: ${v.n} order`).join(' · ')}<br>Sudah termasuk di Total Omzet. Uangnya masuk lewat saldo marketplace (bukan kasir/rekening langsung).</div></div>`)
     }
     renderKewajibanDivisi(semuaOrder)
 
