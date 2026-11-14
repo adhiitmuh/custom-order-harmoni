@@ -193,10 +193,7 @@
     const snap = await getDoc(doc(db,'public_order_info',token))
     if (snap.exists()) {
       const orderInfo = snap.data()
-      try {
-        const orderSnap = await getDoc(doc(db,'orders',orderInfo.orderId))
-        if (orderSnap.exists()) orderInfo.status = orderSnap.data().status
-      } catch (_) {}
+      // Status diambil dari public_order_info (selalu diperbarui staf) — data order internal tidak dibaca dari halaman customer
       renderApp(orderInfo, allKnowledge, allPrices)
       return
     }

@@ -602,6 +602,8 @@
       })
       const o = allOrders.find(x => x.id === orderId)
       if (o) o.status = newStatus
+      // Halaman customer membaca status dari public_order_info
+      if (o?.chatToken) updateDoc(doc(db, 'public_order_info', o.chatToken), { status: newStatus }).catch(() => {})
       // Remove from list if now done
       if (DONE_STATUSES.includes(newStatus)) {
         allOrders = allOrders.filter(x => x.id !== orderId)
