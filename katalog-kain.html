@@ -231,7 +231,13 @@ function cariDariFoto() {
     const hasil = out.sort((a, b) => a.d - b.d).slice(0, 5)
     const label = d => d < 5 ? ['sangat mirip', '#047857'] : d < 10 ? ['mirip', '#1d4ed8'] : d < 18 ? ['agak beda', '#b45309'] : ['kurang mirip', '#b91c1c']
     hEl.innerHTML = `<div class="langkah" style="margin-top:14px">Warna yang paling mirip:</div>`
-      + (hasil[0] && hasil[0].d > 12 ? `<div class="catatan">Warna kain Anda belum ada yang benar-benar mirip di katalog. Kirim fotonya ke kami, CS akan bantu carikan.</div>` : '')
+      + (() => { const pr = [], [L, A, B] = lab, C = Math.hypot(A, B)
+          if (!putih) pr.push('Foto <b>tanpa kertas putih</b> — hasil bisa jauh meleset kalau fotonya di bawah lampu. Sebaiknya ulangi dengan kertas HVS putih di samping kain.')
+          if (putih && Math.max(...putih) > 250) pr.push('Foto <b>terlalu terang</b> (kertas putihnya "silau") — coba foto ulang di tempat yang tidak kena sinar matahari langsung.')
+          if (hasil[0] && hasil[0].d > 12) pr.push('Warna kain Anda belum ada yang benar-benar mirip di katalog. Kirim fotonya ke kami, CS akan bantu carikan.')
+          if (L < 30) pr.push('Warna <b>gelap</b> (hitam/dongker/abu tua) banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
+          else if (C < 10) pr.push('Warna <b>putih/krem/abu-abu</b> banyak yang mirip satu sama lain — kode pastinya akan dicek CS dari foto/kain asli.')
+          return pr.length ? `<div class="catatan">${pr.map(t => '⚠️ ' + t).join('<br>')}</div>` : '' })()
       + hasil.map(x => { const [l, w] = label(x.d), key = kunci(x.j, x.v), sdh = dipilih.includes(key)
         return `<div class="hasil"><span class="sw" style="background:${esc(x.v.hex)}"></span>
           <span style="flex:1;min-width:0;font-size:12px"><b style="font-size:15px">${esc(x.j.nama)} ${esc(x.v.kode)}</b>${x.v.ket ? ` <span style="color:var(--merah);font-weight:700">${esc(x.v.ket)}</span>` : ''}<br><span style="color:${w};font-weight:700">${l}</span></span>
