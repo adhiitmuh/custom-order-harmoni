@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="img/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <meta name="theme-color" content="#034543">
+  <title>Analisa Penjualan — Harmoni</title>
+  <link rel="stylesheet" href="css/style.css?v=20261108a">
+  <style>
+    .ap-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .ap-bar select, .ap-bar input { width:auto; font-size:13px; }
+    .ap-kartu { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+    .ap-k { background:#fff; border:1px solid rgba(3,69,67,.08); border-radius:12px; padding:12px 14px; }
+    .ap-k .l { font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.5); text-transform:uppercase; }
+    .ap-k .v { font-size:18px; font-weight:800; margin-top:4px; }
+    .ap-k .s { font-size:11px; color:rgba(3,69,67,.55); margin-top:2px; }
+    table.ap { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.ap th { text-align:left; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(3,69,67,.5); padding:8px; border-bottom:1px solid rgba(3,69,67,.1); white-space:nowrap; cursor:default; }
+    table.ap td { padding:7px 8px; border-bottom:1px solid rgba(3,69,67,.06); vertical-align:top; }
+    table.ap td.r, table.ap th.r { text-align:right; white-space:nowrap; }
+    .ap-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .bar { height:6px; border-radius:3px; background:#059669; min-width:2px; }
+    .card h3 { font-size:14px; font-weight:700; margin-bottom:4px; }
+    .ket { font-size:11px; color:rgba(3,69,67,.5); margin-bottom:8px; }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+    .tab { border:1.5px solid rgba(3,69,67,.15); background:#fff; border-radius:999px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer; }
+    .tab.on { background:var(--green); color:#fff; border-color:var(--green); }
+    .heat td.m { text-align:center; font-size:11px; min-width:38px; }
+    .naik { color:#059669; font-weight:700; } .turun { color:#b91c1c; font-weight:700; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav id="sidebar"></nav>
+  <main class="main">
+    <div style="margin-bottom:14px">
+      <p style="font-size:11px;color:var(--green);opacity:.4;letter-spacing:.06em;margin-bottom:4px">ANALISA</p>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.025em;color:var(--black)">Analisa Penjualan</h1>
+      <p style="font-size:12px;color:rgba(3,69,67,.45);margin-top:3px">Dari semua order Custom Order (kecuali batal & draft). Omzet = total harga order; item dikelompokkan per nama (+ varian). Khusus Owner.</p>
+    </div>
+    <div class="ap-bar">
+      <select id="fPer">
+        <option value="3">3 bulan terakhir</option><option value="6">6 bulan terakhir</option><option value="12" selected>12 bulan terakhir</option>
+        <option value="ytd">Tahun ini</option><option value="ly">Tahun lalu</option><option value="all">Semua</option>
+      </select>
+      <select id="fDiv"><option value="">Semua divisi</option></select>
+      <select id="fLok"><option value="">Semua lokasi</option></select>
+      <button class="btn btn-ghost btn-sm" onclick="unduh()">⬇ Excel</button>
+      <span id="info" style="font-size:11px;color:rgba(3,69,67,.5)"></span>
+    </div>
+    <div id="kartu" class="ap-kartu"></div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>📈 Tren per bulan</h3><p class="ket">Dibanding bulan yang sama tahun lalu (semua lokasi/divisi sesuai filter).</p>
+      <div class="ap-wrap" id="tren"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>🏷️ Per divisi</h3><p class="ket">Laba kotor = omzet − modal, hanya dari order yang modalnya sudah diisi.</p>
+      <div class="ap-wrap" id="perDiv"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0">🏆 Item paling laku</h3>
+        <div class="ap-bar" style="margin:0">
+          <input type="search" id="iCari" placeholder="🔍 Cari item…" style="min-width:150px">
+          <select id="iUrut"><option value="qty">Urutkan: Qty</option><option value="omzet">Urutkan: Omzet</option><option value="n">Urutkan: Jumlah order</option><option value="laba">Urutkan: Laba kotor</option></select>
+          <select id="iGabung"><option value="1">Gabung varian</option><option value="0">Pisah per varian</option></select>
+          <select id="iJml"><option value="50">Tampilkan 50</option><option value="all">Semua</option></select>
+        </div>
+      </div>
+      <p class="ket" id="iKet"></p>
+      <div class="ap-wrap" id="item"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>📅 Musim — bulan ramai</h3><p class="ket">Qty per bulan kalender dari <b>semua data</b> (tidak ikut filter periode) — makin gelap makin ramai. Pakai untuk menyiapkan bahan & kapasitas.</p>
+      <div class="tabs"><button class="tab on" data-m="div" onclick="pilihMusim('div')">Per divisi</button><button class="tab" data-m="item" onclick="pilihMusim('item')">Top 15 item</button></div>
+      <div class="ap-wrap" id="musim"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>📍 Asal order</h3>
+      <div class="tabs"><button class="tab on" data-a="lokasi" onclick="pilihAsal('lokasi')">Per lokasi</button><button class="tab" data-a="cs" onclick="pilihAsal('cs')">Per CS</button><button class="tab" data-a="sumber" onclick="pilihAsal('sumber')">Per sumber order</button></div>
+      <div class="ap-wrap" id="asal"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>👥 Customer</h3><p class="ket" id="custKet"></p>
+      <div class="ap-wrap" id="cust"></div>
+    </div>
+
+    <div class="card">
+      <h3>⏱️ Deadline</h3><p class="ket">Order aktif yang sudah lewat deadline, dan perkiraan ketepatan waktu order selesai (dari tanggal terakhir diubah — perkiraan).</p>
+      <div id="ddl"></div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import { db } from './js/config.js'
+  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+  import { DIVISION_META } from './js/utils.js'
+
+  const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
+  const num = n => Math.round(Number(n) || 0).toLocaleString('id-ID')
+  const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const namaDiv = d => DIVISION_META[d] ? `${DIVISION_META[d].icon} ${DIVISION_META[d].label}` : (d || '—')
+  const BLN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+  const SUMBER = { staff: 'Staff (langsung)', walk_in: 'Walk in', instagram: 'Instagram', wa_bot: 'WA Bot', shopee: 'Shopee', tokopedia: 'Tokopedia', tiktok: 'TikTok Shop' }
+  const tglLokal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const kunci = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim()
+  let semua = [], lokasiNama = {}, musimMode = 'div', asalMode = 'lokasi'
+
+  // Tanggal order: orderDate (YYYY-MM-DD) → createdAt
+  const tglOrder = o => {
+    if (/^\d{4}-\d{2}-\d{2}/.test(o.orderDate || '')) return o.orderDate.slice(0, 10)
+    const c = o.createdAt; const d = c?.toDate ? c.toDate() : c?.seconds ? new Date(c.seconds * 1000) : c ? new Date(c) : null
+    return d && !isNaN(d) ? tglLokal(d) : ''
+  }
+  const tglUbah = o => { const c = o.updatedAt; const d = c?.toDate ? c.toDate() : c?.seconds ? new Date(c.seconds * 1000) : c ? new Date(c) : null; return d && !isNaN(d) ? tglLokal(d) : '' }
+  const itemsOf = o => (o.orderItems || []).map(i => {
+    const qty = Number(i.qty) || 0, harga = Number(i.pricePerUnit ?? i.price) || 0
+    return { nama: String(i.name || '').toUpperCase().trim(), varian: String(i.varian || '').toUpperCase().trim(), qty, omzet: Number(i.subtotal) || qty * harga, modal: (Number(i.priceModal) || 0) * qty }
+  }).filter(i => i.nama && i.qty > 0)
+
+  requireAuth(async p => {
+    if (p.role !== 'owner') { location.href = 'dashboard.html'; return }
+    await dataAuthReady
+    document.getElementById('info').textContent = 'Memuat order…'
+    const [oS, lS] = await Promise.all([getDocs(collection(db, 'orders')).catch(() => ({ docs: [] })), getDocs(collection(db, 'lokasi')).catch(() => ({ docs: [] }))])
+    lS.docs.forEach(d => { lokasiNama[d.id] = d.data().nama || d.id; document.getElementById('fLok').insertAdjacentHTML('beforeend', `<option value="${esc(d.id)}">${esc(d.data().nama)}</option>`) })
+    semua = oS.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => !['cancelled', 'draft'].includes(o.status)).map(o => ({ o, tgl: tglOrder(o), items: itemsOf(o), jual: Number(o.totalPrice) || 0, modal: Number(o.hargaModal) || 0 })).filter(x => x.tgl)
+    const divs = [...new Set(semua.map(x => x.o.division).filter(Boolean))].sort((a, b) => namaDiv(a).localeCompare(namaDiv(b)))
+    document.getElementById('fDiv').insertAdjacentHTML('beforeend', divs.map(d => `<option value="${esc(d)}">${esc(namaDiv(d))}</option>`).join(''))
+    ;['fPer', 'fDiv', 'fLok'].forEach(id => document.getElementById(id).addEventListener('change', render))
+    ;['iUrut', 'iGabung', 'iJml'].forEach(id => document.getElementById(id).addEventListener('change', renderItem))
+    document.getElementById('iCari').addEventListener('input', renderItem)
+    render()
+  })
+
+  function rentang() {
+    const v = document.getElementById('fPer').value, now = new Date(), y = now.getFullYear()
+    if (v === 'all') return ['0000-00-00', '9999-12-31']
+    if (v === 'ytd') return [`${y}-01-01`, '9999-12-31']
+    if (v === 'ly') return [`${y - 1}-01-01`, `${y - 1}-12-31`]
+    const d = new Date(y, now.getMonth() - (+v - 1), 1); return [tglLokal(d), '9999-12-31']
+  }
+  const cocokFilter = (x, abaikanPeriode) => {
+    const dv = document.getElementById('fDiv').value, lk = document.getElementById('fLok').value, [a, b] = rentang()
+    return (!dv || x.o.division === dv) && (!lk || x.o.lokasiId === lk) && (abaikanPeriode || (x.tgl >= a && x.tgl <= b))
+  }
+  const data = () => semua.filter(x => cocokFilter(x))
+
+  function render() {
+    const t = data(), [a] = rentang()
+    document.getElementById('info').textContent = `${num(t.length)} order · ${a === '0000-00-00' ? 'semua data' : 'sejak ' + a}`
+    const omzet = t.reduce((s, x) => s + x.jual, 0), qty = t.reduce((s, x) => s + x.items.reduce((q, i) => q + i.qty, 0), 0)
+    const bm = t.filter(x => x.modal > 0), laba = bm.reduce((s, x) => s + x.jual - x.modal, 0), jualBm = bm.reduce((s, x) => s + x.jual, 0)
+    const custKey = x => kunci(x.o.customerContact || '') || kunci(x.o.customerName)
+    const custN = new Set(t.map(custKey)).size
+    const semuaCust = {}; semua.forEach(x => { const k = custKey(x); semuaCust[k] = (semuaCust[k] || 0) + 1 })
+    const ulang = [...new Set(t.map(custKey))].filter(k => semuaCust[k] > 1).length
+    document.getElementById('kartu').innerHTML = [
+      ['Omzet', rp(omzet), `${num(t.length)} order`], ['Rata-rata / order', rp(t.length ? omzet / t.length : 0)], ['Item terjual', num(qty) + ' pcs'],
+      ['Laba kotor', jualBm ? `<span style="color:${laba >= 0 ? '#059669' : '#b91c1c'}">${rp(laba)}</span>` : '—', jualBm ? `margin ${Math.round(laba / jualBm * 100)}% · ${num(bm.length)} order bermodal` : 'modal belum diisi'],
+      ['Customer', num(custN), `${num(ulang)} pernah order lebih dari sekali (${custN ? Math.round(ulang / custN * 100) : 0}%)`],
+    ].map(([l, v, s]) => `<div class="ap-k"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`).join('')
+    renderTren(); renderDiv(t); renderItem(); renderMusim(); renderAsal(); renderCust(t); renderDdl(t)
+  }
+
+  function renderTren() {
+    const t = data(), lalu = semua.filter(x => cocokFilter(x, true)), per = {}, perAll = {}
+    t.forEach(x => { const m = x.tgl.slice(0, 7); const r = per[m] = per[m] || { n: 0, o: 0, q: 0 }; r.n++; r.o += x.jual; r.q += x.items.reduce((s, i) => s + i.qty, 0) })
+    lalu.forEach(x => { const m = x.tgl.slice(0, 7); perAll[m] = (perAll[m] || 0) + x.jual })
+    const bulan = Object.keys(per).sort(), maks = Math.max(1, ...bulan.map(m => per[m].o))
+    document.getElementById('tren').innerHTML = bulan.length ? `<table class="ap"><thead><tr><th>Bulan</th><th class="r">Order</th><th class="r">Qty</th><th class="r">Omzet</th><th class="r">vs thn lalu</th><th style="min-width:120px"></th></tr></thead><tbody>
+      ${bulan.map(m => { const [y, mm] = m.split('-'), ly = perAll[`${+y - 1}-${mm}`] || 0, pc = ly ? Math.round((per[m].o - ly) / ly * 100) : null
+        return `<tr><td><b>${BLN[+mm - 1]} ${y}</b></td><td class="r">${num(per[m].n)}</td><td class="r">${num(per[m].q)}</td><td class="r">${rp(per[m].o)}</td><td class="r">${pc == null ? '<span style="color:rgba(3,69,67,.4)">—</span>' : `<span class="${pc >= 0 ? 'naik' : 'turun'}">${pc >= 0 ? '▲' : '▼'} ${Math.abs(pc)}%</span>`}</td><td><div class="bar" style="width:${Math.round(per[m].o / maks * 100)}%"></div></td></tr>` }).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">Belum ada order di periode ini.</p>'
+  }
+
+  function renderDiv(t) {
+    const per = {}, tot = t.reduce((s, x) => s + x.jual, 0)
+    t.forEach(x => { const d = x.o.division || ''; const r = per[d] = per[d] || { d, n: 0, o: 0, q: 0, mJ: 0, mM: 0 }; r.n++; r.o += x.jual; r.q += x.items.reduce((s, i) => s + i.qty, 0); if (x.modal > 0) { r.mJ += x.jual; r.mM += x.modal } })
+    const rows = Object.values(per).sort((a, b) => b.o - a.o)
+    document.getElementById('perDiv').innerHTML = rows.length ? `<table class="ap"><thead><tr><th>Divisi</th><th class="r">Order</th><th class="r">Qty</th><th class="r">Omzet</th><th class="r">Porsi</th><th class="r">Laba kotor</th><th class="r">Margin</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><a href="#" onclick="document.getElementById('fDiv').value='${esc(r.d)}';render();return false" style="color:var(--green);font-weight:700;text-decoration:none">${esc(namaDiv(r.d))}</a></td><td class="r">${num(r.n)}</td><td class="r">${num(r.q)}</td><td class="r">${rp(r.o)}</td><td class="r">${tot ? Math.round(r.o / tot * 100) : 0}%</td>
+        <td class="r">${r.mJ ? rp(r.mJ - r.mM) : '—'}</td><td class="r">${r.mJ ? Math.round((r.mJ - r.mM) / r.mJ * 100) + '%' : '—'}</td></tr>`).join('')}</tbody></table>` : ''
+  }
+
+  function agregatItem(t, gabung) {
+    const per = {}
+    t.forEach(x => x.items.forEach(i => { const k = kunci(i.nama) + (gabung ? '' : '|' + kunci(i.varian))
+      const r = per[k] = per[k] || { nama: i.nama, varian: gabung ? '' : i.varian, divisi: {}, q: 0, o: 0, m: 0, mq: 0, orders: new Set(), bulan: {} }
+      r.q += i.qty; r.o += i.omzet; if (i.modal > 0) { r.m += i.modal; r.mq += i.omzet } r.orders.add(x.o.id); r.divisi[x.o.division] = (r.divisi[x.o.division] || 0) + 1; r.bulan[+x.tgl.slice(5, 7)] = (r.bulan[+x.tgl.slice(5, 7)] || 0) + i.qty }))
+    return Object.values(per).map(r => ({ ...r, n: r.orders.size, div: Object.entries(r.divisi).sort((a, b) => b[1] - a[1])[0]?.[0] || '', laba: r.mq ? r.mq - r.m : 0 }))
+  }
+  function renderItem() {
+    const gabung = document.getElementById('iGabung').value === '1', urut = document.getElementById('iUrut').value, semuaTampil = document.getElementById('iJml').value === 'all'
+    const cari = kunci(document.getElementById('iCari').value)
+    let rows = agregatItem(data(), gabung).sort((a, b) => (b[urut] || 0) - (a[urut] || 0))
+    if (cari) rows = rows.filter(r => kunci(r.nama + ' ' + r.varian).includes(cari))
+    const musimAll = {}; agregatItem(semua.filter(x => cocokFilter(x, true)), gabung).forEach(r => { musimAll[kunci(r.nama) + (gabung ? '' : '|' + kunci(r.varian))] = r.bulan })
+    const ramai = r => { const b = musimAll[kunci(r.nama) + (gabung ? '' : '|' + kunci(r.varian))] || {}; const tot = Object.values(b).reduce((s, v) => s + v, 0); return Object.entries(b).sort((a, c) => c[1] - a[1]).slice(0, 2).filter(([, v]) => tot && v / tot >= 0.15).map(([m]) => BLN[m - 1]).join(', ') }
+    document.getElementById('iKet').textContent = `${num(rows.length)} item · ${num(rows.reduce((s, r) => s + r.q, 0))} pcs · ${rp(rows.reduce((s, r) => s + r.o, 0))}. Omzet item = qty × harga per item (bisa sedikit beda dari total order bila ada diskon).`
+    const tampil = semuaTampil ? rows : rows.slice(0, 50)
+    document.getElementById('item').innerHTML = tampil.length ? `<table class="ap"><thead><tr><th>#</th><th>Item</th><th>Divisi</th><th class="r">Qty</th><th class="r">Order</th><th class="r">Omzet</th><th class="r">Harga rata²</th><th class="r">Laba kotor</th><th>Bulan ramai</th></tr></thead><tbody>
+      ${tampil.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.nama)}</b>${r.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.55)">${esc(r.varian)}</div>` : ''}</td><td style="font-size:11px">${esc(namaDiv(r.div))}</td><td class="r"><b>${num(r.q)}</b></td><td class="r">${num(r.n)}</td><td class="r">${rp(r.o)}</td><td class="r">${rp(r.q ? r.o / r.q : 0)}</td>
+        <td class="r">${r.mq ? `${rp(r.laba)}<div style="font-size:10px;color:rgba(3,69,67,.5)">${Math.round(r.laba / r.mq * 100)}%</div>` : '<span style="color:rgba(3,69,67,.4)">—</span>'}</td><td style="font-size:11px">${esc(ramai(r)) || '—'}</td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">Tidak ada item.</p>'
+  }
+
+  window.pilihMusim = m => { musimMode = m; document.querySelectorAll('[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); renderMusim() }
+  function renderMusim() {
+    const src = semua.filter(x => cocokFilter(x, true)), baris = []
+    if (musimMode === 'div') {
+      const per = {}; src.forEach(x => { const d = x.o.division || ''; const r = per[d] = per[d] || Array(13).fill(0); const m = +x.tgl.slice(5, 7); r[m] += x.items.reduce((s, i) => s + i.qty, 0) || 1 })
+      Object.entries(per).sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0)).forEach(([d, r]) => baris.push([namaDiv(d), r]))
+    } else agregatItem(src, true).sort((a, b) => b.q - a.q).slice(0, 15).forEach(r => { const a = Array(13).fill(0); Object.entries(r.bulan).forEach(([m, v]) => a[m] = v); baris.push([r.nama, a]) })
+    document.getElementById('musim').innerHTML = baris.length ? `<table class="ap heat"><thead><tr><th>${musimMode === 'div' ? 'Divisi' : 'Item'}</th>${BLN.map(b => `<th style="text-align:center">${b}</th>`).join('')}</tr></thead><tbody>
+      ${baris.map(([n, a]) => { const mx = Math.max(1, ...a.slice(1)); return `<tr><td style="white-space:nowrap;font-size:12px"><b>${esc(n)}</b></td>${a.slice(1).map(v => { const x = v / mx; return `<td class="m" style="background:rgba(5,150,105,${(x * 0.85).toFixed(2)});color:${x > .55 ? '#fff' : 'inherit'}">${v ? num(v) : ''}</td>` }).join('')}</tr>` }).join('')}</tbody></table>` : ''
+  }
+
+  window.pilihAsal = m => { asalMode = m; document.querySelectorAll('[data-a]').forEach(b => b.classList.toggle('on', b.dataset.a === m)); renderAsal() }
+  function renderAsal() {
+    const t = data(), per = {}, tot = t.reduce((s, x) => s + x.jual, 0)
+    const label = x => asalMode === 'lokasi' ? (x.o.lokasiNama || lokasiNama[x.o.lokasiId] || x.o.branch || '— tanpa lokasi') : asalMode === 'cs' ? (x.o.createdByName || '—') : (SUMBER[x.o.sumberOrder] || x.o.sumberOrder || 'Staff (langsung)')
+    t.forEach(x => { const k = label(x); const r = per[k] = per[k] || { k, n: 0, o: 0, div: {} }; r.n++; r.o += x.jual; r.div[x.o.division] = (r.div[x.o.division] || 0) + x.jual })
+    const rows = Object.values(per).sort((a, b) => b.o - a.o), maks = Math.max(1, ...rows.map(r => r.o))
+    document.getElementById('asal').innerHTML = rows.length ? `<table class="ap"><thead><tr><th>${asalMode === 'lokasi' ? 'Lokasi' : asalMode === 'cs' ? 'CS (pembuat order)' : 'Sumber'}</th><th class="r">Order</th><th class="r">Omzet</th><th class="r">Porsi</th><th class="r">Rata² / order</th><th>Divisi terbesar</th><th style="min-width:100px"></th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><b>${esc(r.k)}</b></td><td class="r">${num(r.n)}</td><td class="r">${rp(r.o)}</td><td class="r">${tot ? Math.round(r.o / tot * 100) : 0}%</td><td class="r">${rp(r.o / r.n)}</td><td style="font-size:11px">${esc(namaDiv(Object.entries(r.div).sort((a, b) => b[1] - a[1])[0]?.[0]))}</td><td><div class="bar" style="width:${Math.round(r.o / maks * 100)}%"></div></td></tr>`).join('')}</tbody></table>` : ''
+  }
+
+  function renderCust(t) {
+    const per = {}
+    const key = x => kunci(x.o.customerContact || '') || kunci(x.o.customerName)
+    const nAll = {}; semua.forEach(x => { nAll[key(x)] = (nAll[key(x)] || 0) + 1 })
+    t.forEach(x => { const k = key(x); const r = per[k] = per[k] || { nama: x.o.customerName, kontak: x.o.customerContact || '', n: 0, o: 0, akhir: '', div: {} }; r.n++; r.o += x.jual; if (x.tgl > r.akhir) { r.akhir = x.tgl; r.nama = x.o.customerName || r.nama } r.div[x.o.division] = (r.div[x.o.division] || 0) + 1 })
+    const rows = Object.entries(per).map(([k, r]) => ({ ...r, total: nAll[k] || r.n })).sort((a, b) => b.o - a.o)
+    const ulang = rows.filter(r => r.total > 1)
+    document.getElementById('custKet').textContent = `${num(rows.length)} customer di periode ini · ${num(ulang.length)} langganan (order lebih dari sekali sepanjang data) menyumbang ${rp(ulang.reduce((s, r) => s + r.o, 0))}. 20 terbesar:`
+    document.getElementById('cust').innerHTML = rows.length ? `<table class="ap"><thead><tr><th>Customer</th><th class="r">Order (periode)</th><th class="r">Order (semua)</th><th class="r">Omzet</th><th>Terakhir</th><th>Divisi</th></tr></thead><tbody>
+      ${rows.slice(0, 20).map(r => `<tr><td><b>${esc(r.nama || '—')}</b>${r.kontak ? `<div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(r.kontak)}</div>` : ''}</td><td class="r">${num(r.n)}</td><td class="r">${num(r.total)}${r.total > 1 ? ' 🔁' : ''}</td><td class="r">${rp(r.o)}</td><td style="font-size:12px">${esc(r.akhir)}</td><td style="font-size:11px">${Object.keys(r.div).map(d => esc(namaDiv(d))).join(', ')}</td></tr>`).join('')}</tbody></table>` : ''
+  }
+
+  function renderDdl(t) {
+    const hari = tglLokal(new Date()), aktif = t.filter(x => !['done', 'delivered'].includes(x.o.status))
+    const telat = aktif.filter(x => x.o.dueDate && x.o.dueDate < hari).sort((a, b) => a.o.dueDate.localeCompare(b.o.dueDate))
+    const selesai = t.filter(x => ['done', 'delivered'].includes(x.o.status) && x.o.dueDate && tglUbah(x.o))
+    const tepat = selesai.filter(x => tglUbah(x.o) <= x.o.dueDate).length
+    const perDiv = {}; telat.forEach(x => { perDiv[x.o.division] = (perDiv[x.o.division] || 0) + 1 })
+    document.getElementById('ddl').innerHTML = `<div class="ap-kartu" style="margin-bottom:10px">
+      <div class="ap-k"><div class="l">Aktif lewat deadline</div><div class="v" style="color:${telat.length ? '#b91c1c' : '#059669'}">${num(telat.length)}</div><div class="s">dari ${num(aktif.length)} order aktif</div></div>
+      <div class="ap-k"><div class="l">Selesai tepat waktu (perkiraan)</div><div class="v">${selesai.length ? Math.round(tepat / selesai.length * 100) + '%' : '—'}</div><div class="s">${num(tepat)} dari ${num(selesai.length)} order selesai</div></div></div>
+      ${Object.keys(perDiv).length ? `<div style="font-size:12px;margin-bottom:6px">Per divisi: ${Object.entries(perDiv).sort((a, b) => b[1] - a[1]).map(([d, n]) => `<span style="display:inline-block;background:#fef2f2;color:#b91c1c;border-radius:999px;padding:2px 8px;margin:2px">${esc(namaDiv(d))} ${n}</span>`).join('')}</div>` : ''}
+      ${telat.length ? `<div class="ap-wrap"><table class="ap"><thead><tr><th>Order</th><th>Customer</th><th>Divisi</th><th>Deadline</th><th class="r">Telat</th><th>Status</th></tr></thead><tbody>${telat.slice(0, 30).map(x => `<tr><td><a href="order.html?id=${esc(x.o.id)}" style="color:var(--green);font-weight:700;text-decoration:none">${esc(x.o.orderNumber)}</a></td><td>${esc(x.o.customerName)}</td><td style="font-size:11px">${esc(namaDiv(x.o.division))}</td><td>${esc(x.o.dueDate)}</td><td class="r" style="color:#b91c1c;font-weight:700">${Math.round((new Date(hari) - new Date(x.o.dueDate)) / 864e5)} hr</td><td style="font-size:11px">${esc(x.o.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}`
+  }
+
+  window.unduh = () => {
+    if (typeof XLSX === 'undefined') { alert('Library Excel belum termuat, coba muat ulang'); return }
+    const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+    const sheet = rows => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); Object.keys(ws).forEach(a => { if (a[0] !== '!' && typeof ws[a].v === 'number' && Math.abs(ws[a].v) >= 1000) ws[a].z = fmt }); return ws }
+    const t = data(), wb = XLSX.utils.book_new(), gabung = document.getElementById('iGabung').value === '1'
+    const bulan = {}; t.forEach(x => { const m = x.tgl.slice(0, 7); const r = bulan[m] = bulan[m] || { Bulan: m, Order: 0, Qty: 0, Omzet: 0 }; r.Order++; r.Qty += x.items.reduce((s, i) => s + i.qty, 0); r.Omzet += x.jual })
+    XLSX.utils.book_append_sheet(wb, sheet(Object.values(bulan).sort((a, b) => a.Bulan.localeCompare(b.Bulan))), 'Per Bulan')
+    const div = {}; t.forEach(x => { const d = namaDiv(x.o.division); const r = div[d] = div[d] || { Divisi: d, Order: 0, Qty: 0, Omzet: 0 }; r.Order++; r.Qty += x.items.reduce((s, i) => s + i.qty, 0); r.Omzet += x.jual })
+    XLSX.utils.book_append_sheet(wb, sheet(Object.values(div).sort((a, b) => b.Omzet - a.Omzet)), 'Per Divisi')
+    XLSX.utils.book_append_sheet(wb, sheet(agregatItem(t, gabung).sort((a, b) => b.q - a.q).map(r => ({ Item: r.nama, Varian: r.varian, Divisi: namaDiv(r.div), Qty: r.q, Order: r.n, Omzet: Math.round(r.o), 'Laba kotor': r.mq ? Math.round(r.laba) : '' }))), 'Item')
+    XLSX.utils.book_append_sheet(wb, sheet(t.map(x => ({ Tanggal: x.tgl, 'No. Order': x.o.orderNumber, Customer: x.o.customerName, Divisi: namaDiv(x.o.division), Lokasi: x.o.lokasiNama || '', CS: x.o.createdByName || '', Sumber: SUMBER[x.o.sumberOrder] || x.o.sumberOrder || '', Status: x.o.status, Omzet: x.jual, Modal: x.modal || '' }))), 'Order')
+    XLSX.writeFile(wb, `Analisa_Penjualan_CO_${tglLokal(new Date())}.xlsx`)
+  }
+</script>
+</body>
+</html>

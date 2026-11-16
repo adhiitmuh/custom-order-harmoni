@@ -58,7 +58,7 @@ Approval harga: promo = manager/owner, admin = owner. Kelola user/supplier/penga
 
 ## Halaman
 Order: dashboard, orders (tab divisi), new-order, order (detail, approval, pembayaran, progress, chat internal, kabari WA manual, kwitansi), order-ulang, kalender, production-sheet (Papan Nama Sheet), crm, inbox, audit-chat.
-Uang: tagihan (follow up belum lunas), laporan-harian, kas-cabang (Tutup Kasir), cocokkan-mutasi (`js/mutasi.js`, PDF/CSV rekening koran), laporan (keuangan, multi-divisi), laba (laba & komplain), kewajiban-pemilik, komisi (target & komisi CS), upah-penjahit, kwitansi, laporan-harga.
+Uang: tagihan (follow up belum lunas), laporan-harian, kas-cabang (Tutup Kasir), cocokkan-mutasi (`js/mutasi.js`, PDF/CSV rekening koran), laporan (keuangan, multi-divisi), laba (laba & komplain), analisa-penjualan (Owner: tren bulan vs tahun lalu, per divisi, item paling laku + bulan ramai, musim per divisi/item, per lokasi/CS/sumber, customer & langganan, deadline), kewajiban-pemilik, komisi (target & komisi CS), upah-penjahit, kwitansi, laporan-harga.
 Master: knowledge (daftar harga & product knowledge), divisi, lokasi, supplier, users, settings.
 Publik (tanpa login staf): chat.html (customer), supplier-view.html, katalog-kain.html (katalog kain YH tanpa stok, cari warna dari foto `?foto=1`, pilih warna → WA).
 

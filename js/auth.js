@@ -442,6 +442,9 @@ export function renderSidebar(profile) {
       </a>
       <a href="laba.html" class="sidebar-link ${page==='laba.html'?'active':''}">
         <span class="icon">💹</span>Laba & Komplain
+      </a>
+      <a href="analisa-penjualan.html" class="sidebar-link ${page==='analisa-penjualan.html'?'active':''}">
+        <span class="icon">📈</span>Analisa Penjualan
       </a>` : ''}
       ${profile.role === 'owner' || isDivisi ? `
       <a href="laporan.html" class="sidebar-link ${page==='laporan.html'?'active':''}">
