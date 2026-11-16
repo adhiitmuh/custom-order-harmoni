@@ -30,6 +30,8 @@
     .st { font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; display:inline-block; }
     .st-menunggu { background:#fffbeb; color:#b45309; } .st-diterima { background:#ecfdf5; color:#047857; } .st-dikembalikan { background:#fef2f2; color:#b91c1c; }
     .hitung td { padding:3px 0; font-size:13px; } .hitung td:last-child { text-align:right; white-space:nowrap; } .hitung tr.t td { border-top:1px solid #cbd5e1; font-weight:800; padding-top:6px; }
+    #tab-tangan input[type=checkbox], #tab-tangan input[type=radio] { width:18px; height:18px; flex:none; margin:2px 0 0; padding:0; }
+    #tab-tangan label:has(> input[type=radio]) { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; }
     @media (max-width:600px) { .rw { grid-template-columns:1fr 110px 26px; } }
   </style>
 </head>
@@ -46,10 +48,12 @@
       <select id="lokasi"></select>
       <button class="tab on" data-tab="tutup" onclick="pilihTab('tutup')">🧾 Tutup Kasir</button>
       <button class="tab" data-tab="kas" onclick="pilihTab('kas')">💸 Kas Keluar/Masuk</button>
+      <button class="tab" data-tab="tangan" onclick="pilihTab('tangan')">💵 Uang di Tangan <span id="badgeTangan"></span></button>
       <button class="tab" data-tab="laporan" onclick="pilihTab('laporan')">📊 Laporan</button>
       <button class="btn btn-ghost btn-sm" id="btnAtur" style="display:none" onclick="aturKas()">⚙ Atur</button>
     </div>
     <div id="menunggu"></div>
+    <div id="tanganPeringatan"></div>
 
     <!-- TUTUP KASIR -->
     <div id="tab-tutup">
@@ -124,6 +128,13 @@
       <div class="wrap" id="daftarKas"></div>
     </div>
 
+    <!-- UANG DI TANGAN -->
+    <div id="tab-tangan" style="display:none">
+      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Pembayaran <b>tunai</b> yang dicatat "🤝 Saya pegang dulu" (diterima di luar toko). Uang ini <b>tidak</b> dihitung masuk laci sampai disetor: masuk laci, setor ke rekening cabang (bukti wajib), atau diserahkan ke Owner.</p>
+      <div id="tanganDaftar"></div>
+      <div class="blok"><h3>Riwayat setoran uang di tangan</h3><div class="kc-bar" style="margin-bottom:6px"><input type="month" id="sBulan"></div><div class="wrap" id="tanganRiwayat"></div></div>
+    </div>
+
     <!-- LAPORAN -->
     <div id="tab-laporan" style="display:none">
       <div class="kc-bar"><input type="month" id="lBulan"><button class="btn btn-ghost btn-sm" onclick="unduhExcel()">⬇ Excel</button></div>
@@ -151,7 +162,7 @@
   const KAT_KELUAR = ['Bahan / perlengkapan produksi', 'Operasional toko', 'Transport / bensin', 'Makan / konsumsi', 'Ongkir', 'Gaji / upah harian', 'Kasbon karyawan', 'Lainnya']
   const KAT_MASUK = ['Tambahan modal kembalian', 'Penjualan lain', 'Lainnya']
   let profile, lokasiList = [], info = {}, aturan = { modalKembalian: 300000, batasApproval: 500000, toleransi: 5000 }
-  let tutupList = [], kasList = [], bayarHari = [], editId = null
+  let tutupList = [], kasList = [], bayarHari = [], editId = null, tanganBayar = [], setorList = []
 
   const lokasiId = () => document.getElementById('lokasi').value
   const lokasiNama = () => lokasiList.find(l => l.id === lokasiId())?.nama || ''
@@ -177,7 +188,8 @@
     if (!bolehInput()) { document.getElementById('formTutup').style.display = 'none'; document.getElementById('formKas').style.display = 'none' }
     const hari = tglLokal(), bln = hari.slice(0, 7)
     document.getElementById('tTgl').value = hari; document.getElementById('kTgl').value = hari
-    document.getElementById('kBulan').value = bln; document.getElementById('lBulan').value = bln
+    document.getElementById('kBulan').value = bln; document.getElementById('lBulan').value = bln; document.getElementById('sBulan').value = bln
+    document.getElementById('sBulan').addEventListener('change', renderTangan)
     document.querySelectorAll('.ang').forEach(el => el.addEventListener('input', () => { fmt(el); hitung() }))
     ;['oKmk', 'tAlasanKmk', 'tAlasanSelisih'].forEach(id => document.getElementById(id).addEventListener('input', hitung))
     sel.addEventListener('change', muatSemua)
@@ -190,10 +202,10 @@
 
   window.pilihTab = t => {
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t))
-    ;['tutup', 'kas', 'laporan'].forEach(x => { document.getElementById('tab-' + x).style.display = x === t ? '' : 'none' })
+    ;['tutup', 'kas', 'tangan', 'laporan'].forEach(x => { document.getElementById('tab-' + x).style.display = x === t ? '' : 'none' })
     if (t === 'laporan') muatLaporan()
   }
-  async function muatSemua() { isiVia(); await Promise.all([muatTutup(), muatKas(), muatMenunggu()]) }
+  async function muatSemua() { isiVia(); await muatTangan(); await Promise.all([muatTutup(), muatKas(), muatMenunggu()]) }
 
   // ── Pilihan rekening/QRIS cabang ──
   function opsiRekening() {
@@ -209,7 +221,8 @@
 
   // ── TUTUP KASIR ──
   const barisNon = (v = '', j = '') => `<div class="rw"><select class="nonV">${opsiRekening().map(o => `<option value="${esc(o.v)}" ${o.v === v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}<option value="lain" ${v === 'lain' ? 'selected' : ''}>Lainnya</option></select><input type="text" inputmode="numeric" class="nonJ ang2" value="${j ? Number(j).toLocaleString('id-ID') : ''}" placeholder="0"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove();hitung()">✕</button></div>`
-  const barisSetor = (v = '', j = '', b = '') => `<div class="rw"><select class="setV">${opsiRekening().filter(o => o.v.startsWith('rek@')).map(o => `<option value="${esc(o.v)}" ${o.v === v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select><input type="text" inputmode="numeric" class="setJ ang2" value="${j ? Number(j).toLocaleString('id-ID') : ''}" placeholder="0"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove();hitung()">✕</button>
+  const CARA_SETOR = { setor_tunai: 'Setor tunai di bank / ATM / agen', transfer: 'Transfer m-banking (uang tunai diambil)' }
+  const barisSetor = (v = '', j = '', b = '', c = 'setor_tunai') => `<div class="rw"><select class="setC" style="grid-column:1/-1;font-size:12px">${Object.entries(CARA_SETOR).map(([k, l]) => `<option value="${k}" ${k === c ? 'selected' : ''}>${l}</option>`).join('')}</select><select class="setV">${opsiRekening().filter(o => o.v.startsWith('rek@')).map(o => `<option value="${esc(o.v)}" ${o.v === v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select><input type="text" inputmode="numeric" class="setJ ang2" value="${j ? Number(j).toLocaleString('id-ID') : ''}" placeholder="0"><button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove();hitung()">✕</button>
     <input type="file" accept="image/*" class="setB" style="grid-column:1/-1;font-size:11px" data-lama="${esc(b)}">${b ? `<a href="${esc(b)}" target="_blank" style="font-size:11px;grid-column:1/-1">bukti tersimpan</a>` : ''}</div>`
   window.tambahNon = () => { document.getElementById('oNon').insertAdjacentHTML('beforeend', barisNon()); pasangAng() }
   window.tambahSetor = () => { document.getElementById('setoran').insertAdjacentHTML('beforeend', barisSetor()); pasangAng() }
@@ -230,7 +243,7 @@
     document.getElementById('oResi').value = o.resi || ''
     document.getElementById('oKmk').value = o.kmk ? (o.kmk < 0 ? '-' : '') + Math.abs(o.kmk).toLocaleString('id-ID') : ''
     document.getElementById('oNon').innerHTML = (o.non || []).map(x => barisNon(x.v, x.jumlah)).join('') || barisNon()
-    document.getElementById('setoran').innerHTML = (t?.setoran || []).map(x => barisSetor(x.v, x.jumlah, x.bukti)).join('')
+    document.getElementById('setoran').innerHTML = (t?.setoran || []).map(x => barisSetor(x.v, x.jumlah, x.bukti, x.cara)).join('')
     document.getElementById('tAlasanKmk').value = t?.alasanKmk || ''; document.getElementById('tAlasanSelisih').value = t?.alasanSelisih || ''
     document.getElementById('tFotoLama').innerHTML = t?.foto ? `<a href="${esc(t.foto)}" target="_blank">foto struk tersimpan</a>` : ''
     document.getElementById('tCatatanKembali').innerHTML = t?.status === 'dikembalikan' ? `<div class="cek bad">↩ Dikembalikan ${esc(t.diterimaNama || '')}: ${esc(t.catatanKembali || '')} — perbaiki lalu simpan lagi.</div>` : t?.status === 'diterima' ? `<div class="cek ok">✓ Sudah diterima ${esc(t.diterimaNama || '')} — tidak bisa diubah lagi.</div>` : t ? `<div class="cek warn">⏳ Sudah dikirim, menunggu diterima Kepala Cabang / pemilik cabang. Masih bisa diubah.</div>` : ''
@@ -241,12 +254,14 @@
 
   function dataCo() {
     const per = {}
-    let tunai = 0
+    let tunai = 0, diTangan = 0
+    const tgl = document.getElementById('tTgl').value
+    const dariTangan = setorList.filter(x => x.cara === 'laci' && x.tgl === tgl && x.status !== 'ditolak').reduce((t, x) => t + (Number(x.jumlah) || 0), 0)
     // Kunci sama dengan pilihan rekening (rek@nomor / qris@nama) supaya laporan per rekening tidak dobel
-    bayarHari.forEach(p => { const j = Number(p.jumlah) || 0; if (grupMetode(p.metode) === 'tunai') { tunai += j; return }
+    bayarHari.forEach(p => { const j = Number(p.jumlah) || 0; if (grupMetode(p.metode) === 'tunai') { if (p.pegang === 'staf') diTangan += j; else tunai += j; return }
       const v = grupMetode(p.metode) === 'qris' ? (p.rekeningNo ? 'qris@' + p.rekeningNo : 'qris') : (p.rekeningNo ? 'rek@' + p.rekeningNo : labelRekening(p))
       const r = per[v] = per[v] || { v, label: opsiRekening().find(o => o.v === v)?.l || labelRekening(p), jumlah: 0 }; r.jumlah += j })
-    return { tunai, non: Object.values(per), n: bayarHari.length, total: bayarHari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0) }
+    return { tunai, diTangan, dariTangan, non: Object.values(per), n: bayarHari.length, total: bayarHari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0) }
   }
   const kasLaciHari = tgl => kasList.filter(k => k.tgl === tgl && k.via === 'laci' && k.status !== 'ditolak')
 
@@ -262,16 +277,17 @@
     // Cek struk Olsera: tunai + non tunai = total penjualan
     const cekO = document.getElementById('cekOlsera')
     cekO.innerHTML = oTotal ? (Math.abs(oTunai + tNon - oTotal) < 1 ? `<div class="cek ok">✓ Tunai + QRIS/transfer = total penjualan ${rp(oTotal)}</div>` : `<div class="cek warn">⚠ Tunai ${rp(oTunai)} + QRIS/transfer ${rp(tNon)} = ${rp(oTunai + tNon)}, beda ${rp(oTunai + tNon - oTotal)} dari total ${rp(oTotal)} di struk</div>`) : ''
-    document.getElementById('coRingkas').innerHTML = co.n ? `<div>${co.n} pembayaran · total <b>${rp(co.total)}</b></div><div>💵 Tunai <b>${rp(co.tunai)}</b>${co.non.map(x => ` · ${esc(x.label)} <b>${rp(x.jumlah)}</b>`).join('')}</div>` : '<span style="color:rgba(3,69,67,.45)">Belum ada pembayaran custom order di cabang ini pada tanggal ini.</span>'
+    document.getElementById('coRingkas').innerHTML = (co.n ? `<div>${co.n} pembayaran · total <b>${rp(co.total)}</b></div><div>💵 Tunai masuk laci <b>${rp(co.tunai)}</b>${co.non.map(x => ` · ${esc(x.label)} <b>${rp(x.jumlah)}</b>`).join('')}</div>${co.diTangan ? `<div style="color:#b45309">🤝 Tunai dipegang staf (di luar laci, tidak dihitung) <b>${rp(co.diTangan)}</b> — lihat tab 💵 Uang di Tangan</div>` : ''}` : '<span style="color:rgba(3,69,67,.45)">Belum ada pembayaran custom order di cabang ini pada tanggal ini.</span>')
+      + (co.dariTangan ? `<div style="margin-top:4px">➕ Uang di tangan yang dimasukkan ke laci hari ini <b>${rp(co.dariTangan)}</b></div>` : '')
     document.getElementById('kasLaci').innerHTML = kl.length ? kl.map(k => `<div>${k.jenis === 'masuk' ? '➕' : '➖'} ${esc(k.kategori)} — ${esc(k.ket || '')} <b>${rp(k.jumlah)}</b>${k.status === 'menunggu' ? ' <span class="st st-menunggu">menunggu</span>' : ''}</div>`).join('') + `<div style="margin-top:4px">Bersih: <b>${rp(kasNet)}</b></div>` : '<span style="color:rgba(3,69,67,.45)">Tidak ada kas laci hari ini.</span>'
     const bedaKmk = document.getElementById('oKmk').value.trim() !== '' && Math.abs(kasNet - oKmk) >= 1
     document.getElementById('cekKmk').innerHTML = document.getElementById('oKmk').value.trim() === '' ? '' : bedaKmk ? `<div class="cek warn">⚠ Struk Olsera ${rp(oKmk)}, dicatat di aplikasi ${rp(kasNet)} — beda ${rp(kasNet - oKmk)}</div>` : '<div class="cek ok">✓ Sama dengan struk Olsera</div>'
     document.getElementById('wAlasanKmk').style.display = bedaKmk ? '' : 'none'
-    const seharusnya = modal + oTunai - oRetur + co.tunai + kasNet - tSetor
+    const seharusnya = modal + oTunai - oRetur + co.tunai + co.dariTangan + kasNet - tSetor
     const fisikStr = document.getElementById('tFisik').value.trim(), fisik = ang(fisikStr)
     const selisih = fisikStr ? fisik - seharusnya : 0
     document.getElementById('hitung').innerHTML = [
-      ['Modal awal laci', modal], ['+ Tunai Olsera', oTunai], ['− Retur tunai Olsera', -oRetur], ['+ Tunai Custom Order', co.tunai], ['± Kas laci', kasNet], ['− Disetor ke rekening', -tSetor],
+      ['Modal awal laci', modal], ['+ Tunai Olsera', oTunai], ['− Retur tunai Olsera', -oRetur], ['+ Tunai Custom Order', co.tunai], ...(co.dariTangan ? [['+ Uang di tangan masuk laci', co.dariTangan]] : []), ['± Kas laci', kasNet], ['− Disetor ke rekening', -tSetor],
     ].map(([l, v]) => `<tr><td>${l}</td><td>${rp(v)}</td></tr>`).join('') + `<tr class="t"><td>Seharusnya di laci</td><td>${rp(seharusnya)}</td></tr>` + (fisikStr ? `<tr><td>Uang fisik</td><td>${rp(fisik)}</td></tr><tr class="t"><td>Selisih</td><td style="color:${Math.abs(selisih) < 1 ? '#047857' : '#b91c1c'}">${Math.abs(selisih) < 1 ? '✓ pas' : rp(selisih)}</td></tr>` : '')
     const lebih = (fisikStr ? fisik : seharusnya) - modal
     document.getElementById('cekLaci').innerHTML = lebih > aturan.toleransi ? `<div class="cek bad">⚠ Tunai di laci ${rp(lebih)} lebih dari modal kembalian — setor ke rekening cabang (tambah "Setoran" + foto bukti).</div>` : '<div class="cek ok">✓ Laci hanya berisi modal kembalian</div>'
@@ -296,7 +312,7 @@
       // Setoran tunai ke rekening wajib ada foto bukti setor (slip setoran / bukti transfer)
       const tanpaBukti = rows.filter(r => ang(r.querySelector('.setJ').value) && !r.querySelector('.setB').files[0] && !r.querySelector('.setB').dataset.lama)
       if (tanpaBukti.length) { alert('Setiap setoran tunai ke rekening wajib dilampiri foto bukti setor (slip setoran / bukti transfer).'); btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang'; return }
-      for (const r of rows) { const j = ang(r.querySelector('.setJ').value); if (!j) continue; const f = r.querySelector('.setB').files[0]; setoran.push({ v: r.querySelector('.setV').value, label: r.querySelector('.setV').selectedOptions[0]?.textContent || '', jumlah: j, bukti: f ? await unggah(f, 'kas_cabang') : (r.querySelector('.setB').dataset.lama || '') }) }
+      for (const r of rows) { const j = ang(r.querySelector('.setJ').value); if (!j) continue; const f = r.querySelector('.setB').files[0]; setoran.push({ v: r.querySelector('.setV').value, label: r.querySelector('.setV').selectedOptions[0]?.textContent || '', jumlah: j, cara: r.querySelector('.setC').value, caraLabel: CARA_SETOR[r.querySelector('.setC').value], bukti: f ? await unggah(f, 'kas_cabang') : (r.querySelector('.setB').dataset.lama || '') }) }
       if (t.lebih > aturan.toleransi && !confirm(`Masih ada tunai ${rp(t.lebih)} di atas modal kembalian yang belum disetor. Tetap simpan?`)) { btn.disabled = false; btn.textContent = '💾 Simpan & kirim ke Kepala Cabang'; return }
       const f = document.getElementById('tFoto').files[0]
       const lama = editId ? (await getDoc(doc(db, 'tutup_kasir_cabang', editId))).data() : null
@@ -321,8 +337,11 @@
       getDocs(query(collection(db, 'kas_cabang'), where('lokasiId', '==', lok), where('status', '==', 'menunggu'))).catch(() => ({ docs: [] })),
     ])
     const tk = tS.docs.map(d => ({ id: d.id, ...d.data() })), ks = kS.docs.map(d => ({ id: d.id, ...d.data() }))
-    if (!tk.length && !ks.length) { el.innerHTML = ''; return }
-    el.innerHTML = `<div class="blok" style="border-color:#fde68a;background:#fffbeb"><h3 style="color:#b45309">⏳ Perlu diperiksa (${tk.length + ks.length})</h3>
+    const st = profile.role === 'owner' ? setorList.filter(x => x.status === 'menunggu') : []
+    if (!tk.length && !ks.length && !st.length) { el.innerHTML = ''; return }
+    el.innerHTML = `<div class="blok" style="border-color:#fde68a;background:#fffbeb"><h3 style="color:#b45309">⏳ Perlu diperiksa (${tk.length + ks.length + st.length})</h3>
+      ${st.map(x => `<div style="padding:8px 0;border-top:1px solid #fde68a;font-size:13px"><b>🤝 Uang diserahkan ke Owner ${esc(x.tgl)}</b> dari ${esc(x.pemegangNama)} <b>${rp(x.jumlah)}</b> · ${x.items?.length || 0} pembayaran (${(x.items || []).map(i => esc(i.orderNumber)).join(', ')})
+        <div style="margin-top:6px;display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="terimaSetor('${x.id}', true)">✓ Sudah saya terima</button><button class="btn btn-ghost btn-sm" onclick="terimaSetor('${x.id}', false)">✕ Belum / tolak</button></div></div>`).join('')}
       ${tk.map(t => `<div style="padding:8px 0;border-top:1px solid #fde68a;font-size:13px"><b>Tutup kasir ${esc(t.tgl)}</b> oleh ${esc(t.dibuatOleh)} · Olsera ${rp(t.olsera?.total)} · Custom Order ${rp(t.co?.total)} · setor ${rp((t.setoran || []).reduce((s, x) => s + x.jumlah, 0))} · laci ${rp(t.fisik)} ${Math.abs(t.selisih || 0) >= 1 ? `<b style="color:#b91c1c">selisih ${rp(t.selisih)}</b> (${esc(t.alasanSelisih)})` : '✓ pas'}
         ${t.foto ? ` · <a href="${esc(t.foto)}" target="_blank">struk</a>` : ''}${(t.setoran || []).filter(x => x.bukti).map(x => ` · <a href="${esc(x.bukti)}" target="_blank">bukti setor</a>`).join('')}
         <div style="margin-top:6px;display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="putusTutup('${t.id}','diterima')">✓ Terima</button><button class="btn btn-ghost btn-sm" onclick="putusTutup('${t.id}','dikembalikan')">↩ Kembalikan</button><button class="btn btn-ghost btn-sm" onclick="lihatTutup('${esc(t.tgl)}')">Lihat</button></div></div>`).join('')}
@@ -373,9 +392,87 @@
   }
   window.hapusKas = async id => { if (!confirm('Hapus catatan kas ini?')) return; await deleteDoc(doc(db, 'kas_cabang', id)); muatKas() }
 
+  // ── UANG DI TANGAN (tunai dipegang staf, belum disetor) ──
+  const umurHari = tgl => Math.max(0, Math.round((new Date(tglLokal() + 'T00:00:00') - new Date(tgl + 'T00:00:00')) / 864e5))
+  async function muatTangan() {
+    const lok = lokasiId()
+    const [bS, sS] = await Promise.all([
+      getDocs(query(collection(db, 'pembayaran'), where('pegang', '==', 'staf'))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'setor_tunai'), where('lokasiId', '==', lok))).catch(() => ({ docs: [] })),
+    ])
+    setorList = sS.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.tgl.localeCompare(a.tgl) || (b.at?.seconds || 0) - (a.at?.seconds || 0))
+    // Sudah disetor = ada di setoran lokasi ini yang tidak ditolak
+    const sudah = new Set(); setorList.filter(x => x.status !== 'ditolak').forEach(x => (x.pembayaranIds || []).forEach(i => sudah.add(i)))
+    tanganBayar = bS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => (p.lokasiId || '') === lok && !sudah.has(p.id) && (Number(p.jumlah) || 0) > 0)
+      .sort((a, b) => a.tgl.localeCompare(b.tgl))
+    renderTangan()
+  }
+  function renderTangan() {
+    const lok = lokasiId(), tot = tanganBayar.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+    const lama = tanganBayar.filter(p => umurHari(p.tgl) >= 1)
+    document.getElementById('badgeTangan').innerHTML = tanganBayar.length ? `<span class="st ${lama.length ? 'st-dikembalikan' : 'st-menunggu'}" style="margin-left:4px">${tanganBayar.length}</span>` : ''
+    document.getElementById('tanganPeringatan').innerHTML = lama.length ? `<div class="cek bad" style="margin-bottom:12px;cursor:pointer" onclick="pilihTab('tangan')">🤝 Ada tunai <b>${rp(lama.reduce((t, p) => t + (Number(p.jumlah) || 0), 0))}</b> dipegang staf lebih dari sehari & belum disetor (${[...new Set(lama.map(p => p.olehNama))].map(esc).join(', ')}) — buka 💵 Uang di Tangan</div>` : ''
+    const grup = {}; tanganBayar.forEach(p => { const g = grup[p.olehUid] = grup[p.olehUid] || { uid: p.olehUid, nama: p.olehNama, list: [] }; g.list.push(p) })
+    const opsiRek = opsiRekening().filter(o => o.v.startsWith('rek@'))
+    document.getElementById('tanganDaftar').innerHTML = !tanganBayar.length ? '<div class="cek ok" style="margin-bottom:12px">✓ Tidak ada tunai yang dipegang staf — semua sudah masuk laci / disetor.</div>'
+      : `<div class="blok" style="border-color:#fde68a;background:#fffbeb"><b>Total belum disetor: ${rp(tot)}</b> · ${tanganBayar.length} pembayaran</div>` + Object.values(grup).map(g => {
+        const bisa = g.uid === profile.id || bolehTerima(lok), sub = g.list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), k = g.uid.replace(/\W/g, '')
+        return `<div class="blok"><h3>🤝 ${esc(g.nama)} — ${rp(sub)}</h3>
+          ${g.list.map(p => { const u = umurHari(p.tgl); return `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid rgba(3,69,67,.06);font-size:13px">${bisa ? `<input type="checkbox" class="tg-${k}" value="${esc(p.id)}" checked onchange="totalPilihTangan('${k}')" style="margin-top:3px">` : ''}
+            <span style="flex:1"><b>${esc(p.orderNumber)}</b> · ${esc(p.customerName)}<div style="font-size:11px;color:rgba(3,69,67,.55)">${esc(p.tgl)} · ${esc(p.jenis || '')}${p.catatan ? ' · ' + esc(p.catatan) : ''}${p.bukti ? ` · <a href="${esc(p.bukti)}" target="_blank">bukti</a>` : ''}</div></span>
+            <span style="text-align:right;white-space:nowrap"><b>${rp(p.jumlah)}</b><div class="st ${u >= 1 ? 'st-dikembalikan' : 'st-menunggu'}">${u ? u + ' hari' : 'hari ini'}</div></span></label>` }).join('')}
+          ${bisa ? `<div style="border-top:1px dashed rgba(3,69,67,.15);margin-top:6px;padding-top:10px">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px">Setor yang dicentang (<span id="tgTot-${k}">${rp(sub)}</span>) dengan cara:</div>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+              <label><input type="radio" name="tgC-${k}" value="laci" checked onchange="caraTangan('${k}')"> 💰 Masuk laci kasir hari ini <span style="font-size:11px;color:rgba(3,69,67,.5)">(ikut dihitung di Tutup Kasir ${esc(tglLokal())})</span></label>
+              <label><input type="radio" name="tgC-${k}" value="rekening" onchange="caraTangan('${k}')"> 🏦 Setor ke rekening cabang <span style="font-size:11px;color:rgba(3,69,67,.5)">(foto bukti wajib)</span></label>
+              <label><input type="radio" name="tgC-${k}" value="owner" onchange="caraTangan('${k}')"> 👤 ${profile.role === 'owner' ? 'Sudah saya (Owner) terima' : 'Serahkan langsung ke Owner <span style="font-size:11px;color:rgba(3,69,67,.5)">(Owner mengonfirmasi)</span>'}</label>
+            </div>
+            <div id="tgRek-${k}" style="display:none;margin-top:8px" class="g">
+              <div class="form-group"><label>Ke rekening</label><select id="tgV-${k}">${opsiRek.map(o => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')}</select></div>
+              <div class="form-group"><label>Cara</label><select id="tgS-${k}">${Object.entries(CARA_SETOR).map(([c, l]) => `<option value="${c}">${l}</option>`).join('')}</select></div>
+              <div class="form-group"><label>Foto bukti setor *</label><input type="file" id="tgB-${k}" accept="image/*,.pdf"></div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="margin-top:10px" id="tgBtn-${k}" onclick="setorTangan('${esc(g.uid)}','${k}')">💾 Simpan setoran</button></div>` : `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Hanya ${esc(g.nama)}, Kepala Cabang, pemilik cabang, atau Owner yang bisa mencatat setorannya.</div>`}</div>` }).join('')
+    const bln = document.getElementById('sBulan').value, CARA = { laci: '💰 masuk laci', rekening: '🏦 ke rekening', owner: '👤 ke Owner' }
+    const r = setorList.filter(x => x.tgl.startsWith(bln))
+    document.getElementById('tanganRiwayat').innerHTML = r.length ? `<table class="kc"><thead><tr><th>Tgl</th><th>Pemegang</th><th>Cara</th><th>Pembayaran</th><th class="r">Jumlah</th><th>Status</th></tr></thead><tbody>
+      ${r.map(x => `<tr><td>${esc(x.tgl)}</td><td>${esc(x.pemegangNama)}${x.olehUid !== x.pemegangUid ? `<div style="font-size:10px;color:rgba(3,69,67,.5)">dicatat ${esc(x.olehNama)}</div>` : ''}</td><td>${CARA[x.cara] || x.cara}${x.cara === 'rekening' ? `<div style="font-size:11px">${esc(x.rekening?.label || '')} · ${esc(CARA_SETOR[x.caraSetor] || '')}${x.bukti ? ` · <a href="${esc(x.bukti)}" target="_blank">bukti</a>` : ''}</div>` : ''}</td>
+        <td style="font-size:11px">${(x.items || []).map(i => esc(i.orderNumber)).join(', ')}</td><td class="r">${rp(x.jumlah)}</td><td><span class="st st-${x.status === 'ok' ? 'diterima' : x.status === 'ditolak' ? 'dikembalikan' : 'menunggu'}">${x.status === 'ok' ? 'selesai' : x.status === 'menunggu' ? 'menunggu Owner' : x.status}</span>${x.diterimaNama ? `<div style="font-size:10px">${esc(x.diterimaNama)}</div>` : ''}</td></tr>`).join('')}</tbody></table>` : '<p style="font-size:13px;color:rgba(3,69,67,.45)">Belum ada setoran bulan ini.</p>'
+  }
+  window.totalPilihTangan = k => { const ids = [...document.querySelectorAll('.tg-' + k + ':checked')].map(i => i.value); document.getElementById('tgTot-' + k).textContent = rp(tanganBayar.filter(p => ids.includes(p.id)).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)) }
+  window.caraTangan = k => { document.getElementById('tgRek-' + k).style.display = document.querySelector(`input[name="tgC-${k}"]:checked`).value === 'rekening' ? '' : 'none' }
+  window.setorTangan = async (uid, k) => {
+    const ids = [...document.querySelectorAll('.tg-' + k + ':checked')].map(i => i.value), pilih = tanganBayar.filter(p => ids.includes(p.id))
+    if (!pilih.length) { alert('Centang pembayaran yang disetor'); return }
+    const cara = document.querySelector(`input[name="tgC-${k}"]:checked`).value, jumlah = pilih.reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+    const f = document.getElementById('tgB-' + k).files[0]
+    if (cara === 'rekening' && !f) { alert('Foto bukti setor ke rekening wajib dilampirkan (slip setoran / bukti transfer).'); return }
+    if (cara === 'rekening' && !document.getElementById('tgV-' + k).value) { alert('Belum ada rekening cabang di Pengaturan'); return }
+    const teks = { laci: 'dimasukkan ke laci kasir hari ini', rekening: 'disetor ke rekening', owner: profile.role === 'owner' ? 'sudah diterima Owner' : 'diserahkan ke Owner (menunggu konfirmasi)' }[cara]
+    if (!confirm(`${rp(jumlah)} dari ${pilih[0].olehNama} ${teks}?`)) return
+    const btn = document.getElementById('tgBtn-' + k); btn.disabled = true; btn.textContent = 'Menyimpan…'
+    try {
+      const sel = document.getElementById('tgV-' + k)
+      await addDoc(collection(db, 'setor_tunai'), { lokasiId: lokasiId(), lokasiNama: lokasiNama(), tgl: tglLokal(), cara, jumlah,
+        ...(cara === 'rekening' ? { rekening: { v: sel.value, label: sel.selectedOptions[0]?.textContent || '' }, caraSetor: document.getElementById('tgS-' + k).value, bukti: await unggah(f, 'kas_cabang') } : {}),
+        pembayaranIds: pilih.map(p => p.id), items: pilih.map(p => ({ id: p.id, orderNumber: p.orderNumber || '', customerName: p.customerName || '', jumlah: Number(p.jumlah) || 0, tgl: p.tgl })),
+        pemegangUid: uid, pemegangNama: pilih[0].olehNama || '', olehUid: profile.id, olehNama: profile.name,
+        status: cara === 'owner' && profile.role !== 'owner' ? 'menunggu' : 'ok', ...(cara === 'owner' && profile.role === 'owner' ? { diterimaNama: profile.name, diterimaAt: Timestamp.now() } : {}), at: Timestamp.now() })
+      await muatTangan(); muatTutup(); muatMenunggu()
+    } catch (e) { alert('Gagal menyimpan: ' + e.message); btn.disabled = false; btn.textContent = '💾 Simpan setoran' }
+  }
+  window.terimaSetor = async (id, ok) => {
+    if (profile.role !== 'owner') return
+    if (!ok && !confirm('Tandai belum diterima? Uangnya kembali tercatat dipegang staf.')) return
+    await updateDoc(doc(db, 'setor_tunai', id), { status: ok ? 'ok' : 'ditolak', diterimaNama: profile.name, diterimaUid: profile.id, diterimaAt: Timestamp.now() })
+    await muatTangan(); muatMenunggu()
+  }
+
   // ── LAPORAN ──
   let lap = null
   async function muatLaporan() {
+    await muatTangan()
     const lok = lokasiId(), bln = document.getElementById('lBulan').value
     const [tS, kS] = await Promise.all([
       getDocs(query(collection(db, 'tutup_kasir_cabang'), where('lokasiId', '==', lok))).catch(() => ({ docs: [] })),
@@ -403,6 +500,8 @@
     const add = (x, kol, v) => { const k = x.v || x.label; if (x.label && !label[k]) label[k] = x.label; const r = per[k] = per[k] || { olsera: 0, co: 0, setor: 0, keluar: 0, masuk: 0 }; r[kol] += Number(v) || 0 }
     tk.forEach(t => { (t.olsera?.non || []).forEach(x => add(x, 'olsera', x.jumlah)); (t.co?.non || []).forEach(x => add(x, 'co', x.jumlah)); (t.setoran || []).forEach(x => add(x, 'setor', x.jumlah)) })
     ks.filter(k => k.via !== 'laci').forEach(k => add({ v: k.via, label: k.viaLabel }, k.jenis === 'keluar' ? 'keluar' : 'masuk', k.jumlah))
+    const stBln = setorList.filter(x => x.cara === 'rekening' && x.status !== 'ditolak' && x.tgl.startsWith(bln)); lap.stBln = stBln
+    stBln.forEach(x => add({ v: x.rekening?.v, label: x.rekening?.label }, 'setor', x.jumlah))
     opsiRekening().forEach(o => { label[o.v] = o.l })
     lap.label = label
     lap.per = per
@@ -420,10 +519,11 @@
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, sheet(lap.tk.map(t => ({ Tanggal: t.tgl, Resi: t.olsera?.resi || '', 'Olsera total': t.olsera?.total || 0, 'Olsera tunai': t.olsera?.tunai || 0, 'Olsera QRIS/TF': s(t.olsera?.non || [], x => x.jumlah), 'Retur tunai': t.olsera?.retur || 0,
       'CO total': t.co?.total || 0, 'CO tunai': t.co?.tunai || 0, 'Kas laci': t.kasLaci || 0, Setor: s(t.setoran || [], x => x.jumlah), 'Modal awal': t.modal || 0, Seharusnya: t.seharusnya || 0, 'Uang fisik': t.fisik || 0, Selisih: t.selisih || 0,
+      'Tunai dipegang staf': t.co?.diTangan || 0, 'Uang di tangan masuk laci': t.co?.dariTangan || 0,
       'Alasan selisih': t.alasanSelisih || '', 'Ditutup oleh': t.dibuatOleh || '', Status: t.status, 'Diterima oleh': t.diterimaNama || '' }))), 'Tutup Kasir')
     XLSX.utils.book_append_sheet(wb, sheet(Object.entries(lap.per || {}).map(([k, r]) => ({ 'Rekening / QRIS': lap.label?.[k] || k, Olsera: r.olsera, 'Custom Order': r.co, 'Setor tunai': r.setor, 'Kas masuk': r.masuk, 'Kas keluar': r.keluar, Bersih: r.olsera + r.co + r.setor + r.masuk - r.keluar }))), 'Per Rekening')
     XLSX.utils.book_append_sheet(wb, sheet(lap.ks.map(k => ({ Tanggal: k.tgl, Jenis: k.jenis, Kategori: k.kategori, Keterangan: k.ket, Jumlah: k.jumlah, 'Dari/ke': k.viaLabel || k.via, Status: k.status, Oleh: k.olehNama, Bukti: k.bukti || '' }))), 'Kas Keluar-Masuk')
-    XLSX.utils.book_append_sheet(wb, sheet(lap.tk.flatMap(t => [...(t.olsera?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Olsera', Rekening: x.label || x.v, Jumlah: x.jumlah })), ...(t.co?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Custom Order', Rekening: x.label, Jumlah: x.jumlah })), ...(t.setoran || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Setor tunai', Rekening: x.label || x.v, Jumlah: x.jumlah }))])), 'Uang ke Rekening')
+    XLSX.utils.book_append_sheet(wb, sheet(lap.tk.flatMap(t => [...(t.olsera?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Olsera', Rekening: x.label || x.v, Jumlah: x.jumlah })), ...(t.co?.non || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Custom Order', Rekening: x.label, Jumlah: x.jumlah })), ...(t.setoran || []).map(x => ({ Tanggal: t.tgl, Sumber: 'Setor tunai laci · ' + (x.caraLabel || CARA_SETOR[x.cara] || 'setor tunai'), Rekening: x.label || x.v, Jumlah: x.jumlah }))]).concat((lap.stBln || []).map(x => ({ Tanggal: x.tgl, Sumber: 'Uang di tangan ' + x.pemegangNama + ' · ' + (CARA_SETOR[x.caraSetor] || ''), Rekening: x.rekening?.label || '', Jumlah: x.jumlah })))), 'Uang ke Rekening')
     XLSX.writeFile(wb, `Kas_Cabang_${lokasiNama().replace(/\s+/g, '_')}_${lap.bln}.xlsx`)
   }
 

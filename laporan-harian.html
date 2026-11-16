@@ -75,6 +75,7 @@
     <div class="card" style="margin-bottom:14px" id="kartuKirim">
       <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">💵 Tunai di tangan CS</h2>
       <div class="lh-tunai" id="tunai"></div>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Tunai yang diterima di luar toko & dipegang staf (🤝) dipantau per orang di <a href="kas-cabang.html" style="color:var(--green);font-weight:700">Kas Cabang → 💵 Uang di Tangan</a>.</p>
       <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:10px" id="isianLaporan">
         <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Tunai diserahkan ke Adi hari ini (Rp)</label><input type="text" inputmode="numeric" id="setor" placeholder="0" oninput="fmtAngka(this);hitungTunai()"></div>
         <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label><input type="text" id="catatan" placeholder="cth: tunai dititip ke pengurus"></div>
@@ -226,7 +227,7 @@
     document.getElementById('tbody').innerHTML = hari.length ? hari.map(p => `<tr>
       <td>${p.at?.toDate ? p.at.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}</td>
       <td><a href="order.html?id=${esc(p.orderId)}" style="color:var(--green);font-weight:700">${esc(p.orderNumber)}</a></td>
-      <td>${esc(p.customerName)}</td><td>${esc(JENIS[p.jenis] || p.jenis || '')}</td><td>${esc(labelRekening(p))}</td>
+      <td>${esc(p.customerName)}</td><td>${esc(JENIS[p.jenis] || p.jenis || '')}</td><td>${esc(labelRekening(p))}${p.pegang === 'staf' ? '<div style="font-size:10px;color:#b45309">🤝 dipegang pencatat (di luar laci)</div>' : ''}</td>
       <td class="r" style="font-weight:700;color:${p.jumlah < 0 ? '#b91c1c' : '#059669'}">${p.jumlah < 0 ? '−' : ''}${rp(Math.abs(p.jumlah))}</td>
       <td>${esc(p.olehNama)}${!lok ? `<div style="font-size:10px;color:rgba(3,69,67,.45)">${esc(namaLok(kunciLok(p)))}</div>` : ''}</td><td>${esc(p.orderOleh || '-')}</td></tr>`).join('')
       : '<tr><td colspan="8" style="text-align:center;color:rgba(3,69,67,.4);padding:18px">Belum ada pembayaran yang dicatat di tanggal ini</td></tr>'

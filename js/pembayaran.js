@@ -91,7 +91,7 @@ export function lokasiPembayaran(profile, order) {
 }
 
 // Dokumen pembayaran siap ditulis (batch.set(ref, data)). jumlah boleh minus untuk koreksi.
-export function entriPembayaran(order, orderId, profile, { jumlah, metode: metodeRaw, jenis, catatan = '' }) {
+export function entriPembayaran(order, orderId, profile, { jumlah, metode: metodeRaw, jenis, catatan = '', pegang = 'laci' }) {
   const ref = doc(collection(db, 'pembayaran'))
   const { metode, rekeningNo } = pisahMetode(metodeRaw)
   const now = Timestamp.now()
@@ -102,7 +102,28 @@ export function entriPembayaran(order, orderId, profile, { jumlah, metode: metod
     tgl: tglLokal(), at: now,
     olehUid: profile?.id || '', olehNama: profile?.name || '',
     ...lokasiPembayaran(profile, order),
+    // Tunai: 'laci' = masuk laci kasir (dihitung di Tutup Kasir), 'staf' = dipegang pencatat dulu (wajib disetor, lihat setor_tunai)
+    ...(metode === 'cash' && Number(jumlah) > 0 ? { pegang: pegang === 'staf' ? 'staf' : 'laci' } : {}),
   } }
 }
 // Jenis pembayaran dari perubahan DP
 export const jenisDari = (lama, baru, total) => baru < lama ? 'koreksi' : (lama <= 0 ? (baru >= total && total > 0 ? 'lunas' : 'dp') : (baru >= total ? 'pelunasan' : 'cicilan'))
+
+// ── Uang tunai dipegang di mana ─────────────────────────────────────────
+// Pilihan saat mencatat pembayaran TUNAI. Ditampilkan hanya bila metode = Tunai.
+export const htmlPegang = (id, lokasiNama = '') => `<div id="${id}Wrap" style="display:none;margin:0 0 10px">
+  <label style="font-size:11px;color:rgba(3,69,67,.5)">Uang tunainya sekarang di mana? *</label>
+  <select id="${id}" style="font-size:13px">
+    <option value="laci">💰 Masuk laci kasir${lokasiNama ? ' ' + lokasiNama : ''}</option>
+    <option value="staf">🤝 Saya pegang dulu (diterima di luar toko) — wajib disetor</option>
+  </select>
+  <div style="font-size:11px;color:#b45309;margin-top:3px" id="${id}Info"></div></div>`
+// Tampilkan pilihan pegang bila metode tunai; panggil saat metode berubah
+export function aturPegang(id, metodeRaw) {
+  const w = document.getElementById(id + 'Wrap'); if (!w) return
+  const tunai = grupMetode(pisahMetode(metodeRaw).metode) === 'tunai'
+  w.style.display = tunai ? '' : 'none'
+  const sel = document.getElementById(id), info = document.getElementById(id + 'Info')
+  if (sel && info) { const f = () => { info.textContent = sel.value === 'staf' ? 'Tercatat sebagai uang di tangan Anda sampai disetor (Kas Cabang → 💵 Uang di Tangan).' : '' }; sel.onchange = f; f() }
+}
+export const nilaiPegang = id => document.getElementById(id + 'Wrap')?.style.display === 'none' ? 'laci' : (document.getElementById(id)?.value || 'laci')

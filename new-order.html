@@ -166,6 +166,7 @@
           </select>
           <p class="form-hint">Akan ditampilkan di invoice untuk informasi pembayaran</p>
         </div>
+        <div id="pegangDpBox" style="margin-top:12px"></div>
         <div class="form-group" id="buktiDpWrap" style="margin-top:14px;margin-bottom:0">
           <label>Foto Bukti Bayar DP <span style="color:#b91c1c">* wajib bila ada DP</span></label>
           <input type="file" id="buktiDp" accept="image/*,.pdf">
@@ -263,7 +264,7 @@
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
-  import { entriPembayaran, pisahMetode, opsiMetode } from './js/pembayaran.js?v=20261108a'
+  import { entriPembayaran, pisahMetode, opsiMetode, htmlPegang, aturPegang, nilaiPegang } from './js/pembayaran.js?v=20261116a'
   import { nilaiTierOrder, bolehSetujui, LABEL_TIER, simpanDaftarHarga, cariMirip, kunciNama, skorMirip } from './js/hargaList.js?v=20261110a'
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon', 'tailor', 'butik', 'jilbab', 'sewa-kostum']
@@ -587,6 +588,10 @@
       const lokasiId = document.getElementById('lokasiId')?.value || ''
       // Rekening & QRIS mengikuti lokasi (cabang) order
       sel.innerHTML = opsiMetode(info, sel.value, { lokasiId, division })
+      const box = document.getElementById('pegangDpBox')
+      if (box) { const lo = document.getElementById('lokasiId')?.selectedOptions?.[0], ln = lo?.value ? lo.textContent : ''; const lama = document.getElementById('pegangDp')?.value
+        box.innerHTML = htmlPegang('pegangDp', ln.replace(/^[^A-Za-z0-9]+/, '').trim()); if (lama) document.getElementById('pegangDp').value = lama; aturPegang('pegangDp', sel.value)
+        if (!sel._pegang) { sel._pegang = 1; sel.addEventListener('change', () => aturPegang('pegangDp', sel.value)) } }
     } catch(e) { console.error(e) }
   }
 
@@ -1348,6 +1353,7 @@
     if (dp) { dp.disabled = mp; if (mp) dp.value = document.getElementById('totalPrice').value }
     if (pm) pm.disabled = mp
     const bw = document.getElementById('buktiDpWrap'); if (bw) bw.style.display = mp ? 'none' : ''
+    const pb = document.getElementById('pegangDpBox'); if (pb) pb.style.display = mp ? 'none' : ''
   }
   document.getElementById('orderForm').addEventListener('submit', async e => {
     e.preventDefault()
@@ -1491,7 +1497,7 @@
           try {
             const e = entriPembayaran({ orderNumber, customerName: document.getElementById('customerName').value.trim().toUpperCase(), division: selectedDiv,
               lokasiId: selectedLokasi?.id || '', lokasiNama: selectedLokasi?.nama || '', createdByName: profile.name },
-              orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', jenis: dpAwal >= parsePrice(document.getElementById('totalPrice').value) ? 'lunas' : 'dp' })
+              orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', pegang: nilaiPegang('pegangDp'), jenis: dpAwal >= parsePrice(document.getElementById('totalPrice').value) ? 'lunas' : 'dp' })
             if (buktiDp) e.data.bukti = buktiDp
             await setDoc(e.ref, e.data)
           } catch (err) { console.warn('Riwayat pembayaran gagal dicatat:', err) }

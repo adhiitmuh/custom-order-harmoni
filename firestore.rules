@@ -230,6 +230,20 @@ service cloud.firestore {
             && request.resource.data.status in ['ok', 'ditolak'] && request.resource.data.diff(resource.data).affectedKeys().hasOnly(kunciSetuju()));
       allow delete: if isOwner() || (isStaffAuth() && resource.data.olehUid == request.auth.uid && resource.data.status == 'menunggu');
     }
+    // Setoran tunai yang dipegang staf (pembayaran tunai pegang:'staf') → masuk laci / setor ke rekening (bukti wajib) / serahkan ke Owner.
+    // Dibuat oleh pemegang uang (atau Kepala Cabang/pemilik cabang/Owner atas namanya); serah ke Owner menunggu konfirmasi Owner.
+    match /setor_tunai/{id} {
+      allow read: if bacaCabang(resource.data.lokasiId) || (isStaffAuth() && resource.data.pemegangUid == request.auth.uid);
+      allow create: if isStaffAuth() && role() in ['owner', 'manager', 'cs']
+        && request.resource.data.jumlah is number && request.resource.data.jumlah > 0
+        && request.resource.data.olehUid == request.auth.uid
+        && (request.resource.data.pemegangUid == request.auth.uid || penerimaCabang(request.resource.data.lokasiId))
+        && request.resource.data.cara in ['laci', 'rekening', 'owner']
+        && (request.resource.data.cara != 'rekening' || request.resource.data.bukti is string && request.resource.data.bukti != '')
+        && request.resource.data.status == (request.resource.data.cara == 'owner' && !isOwner() ? 'menunggu' : 'ok');
+      allow update: if isOwner();
+      allow delete: if isOwner();
+    }
     // Catatan follow up order ulang per customer (id = nomor WA) — staf non pemilik divisi
     match /customer_followup/{id} {
       allow read, write: if isStaffAuth() && !isDivisiOwner();

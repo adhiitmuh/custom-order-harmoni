@@ -94,7 +94,7 @@
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
   import { hitungNama, labelNama } from './js/namaPapan.js?v=20261112d'
   import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER, cariMirip, skorMirip } from './js/hargaList.js?v=20261110a'
-  import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer } from './js/pembayaran.js?v=20261108a'
+  import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer, htmlPegang, aturPegang, nilaiPegang } from './js/pembayaran.js?v=20261116a'
 
   const params = new URLSearchParams(location.search)
   const orderId = params.get('id')
@@ -2355,6 +2355,7 @@
       <input type="text" inputmode="numeric" id="tbJumlah" value="${prefill ? fmtPrice(prefill) : ''}" oninput="this.value=fmtInputPrice(this.value)" style="font-size:15px;font-weight:700;margin-bottom:10px">
       <label style="font-size:11px;color:rgba(3,69,67,.5)">Metode *</label>
       <select id="tbMetode" style="font-size:13px;margin-bottom:10px">${opsiMetode(paymentInfo, order.paymentMethod || '', { lokasiId: getProfile().lokasiId || order.lokasiId || '', division: order.division })}</select>
+      ${htmlPegang('tbPegang', getProfile().lokasiNama || order.lokasiNama || '')}
       <label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label>
       <input type="text" id="tbCatatan" placeholder="cth: pelunasan ambil barang" style="font-size:13px;margin-bottom:10px">
       <label style="display:block;border:2px dashed rgba(3,69,67,.2);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:rgba(3,69,67,.6);cursor:pointer">
@@ -2367,6 +2368,7 @@
       </div></div>`
     document.body.appendChild(bg)
     const fileEl = bg.querySelector('#tbBukti')
+    const mEl = bg.querySelector('#tbMetode'); aturPegang('tbPegang', mEl.value); mEl.addEventListener('change', () => aturPegang('tbPegang', mEl.value))
     fileEl.addEventListener('change', () => { bg.querySelector('#tbBuktiTeks').textContent = fileEl.files[0] ? '✓ ' + fileEl.files[0].name : '📷 Foto bukti bayar (WAJIB)' })
     bg.querySelector('#tbBatal').onclick = () => bg.remove()
     bg.querySelector('#tbSimpan').onclick = async () => {
@@ -2390,7 +2392,7 @@
         const updates = { depositPaid: baruDp, paymentMethod: pisahMetode(metode).metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
         if (bukti) updates.paymentProofs = arrayUnion(bukti)
         if (order.status === 'draft' && lamaDp === 0) Object.assign(updates, calcDraftShift())
-        const e = entriPembayaran(order, orderId, profile, { jumlah, metode, jenis: jenisDari(lamaDp, baruDp, order.totalPrice||0), catatan: bg.querySelector('#tbCatatan').value.trim() })
+        const e = entriPembayaran(order, orderId, profile, { jumlah, metode, jenis: jenisDari(lamaDp, baruDp, order.totalPrice||0), catatan: bg.querySelector('#tbCatatan').value.trim(), pegang: nilaiPegang('tbPegang') })
         if (bukti) e.data.bukti = bukti
         const batch = writeBatch(db)
         batch.update(doc(db,'orders',orderId), updates)
@@ -2419,7 +2421,7 @@
       el.innerHTML = fu + `<p style="font-size:12px;font-weight:600;color:rgba(3,69,67,.5);margin-bottom:6px;display:flex;justify-content:space-between">Riwayat Pembayaran <a href="kwitansi.html?id=${orderId}" style="color:var(--green);font-weight:700;text-decoration:none">🧾 Kwitansi</a></p>
         ${tanpaRiwayat && list.length !== 0 || (!list.length && order.depositPaid > 0) ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">${fmtCurrency(tanpaRiwayat)} tercatat sebelum ada riwayat pembayaran</div>` : ''}
         ${list.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(3,69,67,.06)">
-          <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelRekening(p))}
+          <div><b>${esc(p.tgl)}</b> · ${esc(JENIS_BAYAR[p.jenis] || p.jenis || '')} · ${esc(labelRekening(p))}${p.pegang === 'staf' ? ' · <span style="color:#b45309">🤝 dipegang ' + esc(p.olehNama || '') + '</span>' : ''}
             <div style="font-size:10px;color:rgba(3,69,67,.45)">diterima ${esc(p.olehNama || '-')}${p.lokasiNama ? ' · ' + esc(p.lokasiNama) : ''}${p.catatan ? ' · ' + esc(p.catatan) : ''}${p.bukti ? ` · <a href="${esc(p.bukti)}" target="_blank" rel="noopener" style="color:var(--green)">bukti</a>` : ''}</div></div>
           <b style="color:${p.jumlah < 0 ? '#b91c1c' : '#059669'};white-space:nowrap">${p.jumlah < 0 ? '−' : ''}${fmtCurrency(Math.abs(p.jumlah))}</b></div>`).join('')}`
     } catch { el.innerHTML = '' }
