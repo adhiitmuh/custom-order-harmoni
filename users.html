@@ -108,6 +108,7 @@
 </div>
 
 <script type="module">
+  const escH = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   import { auth, db, authDb } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -213,7 +214,7 @@
       <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:14px">
         <div class="avatar" style="width:40px;height:40px;font-size:16px;background:rgba(3,69,67,.1);color:var(--green)">${(u.name||'U')[0].toUpperCase()}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px">${u.name||'—'}${u.belumLogin ? ' <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:#fffbeb;color:#b45309">belum pernah login</span>' : ''}</div>
+          <div style="font-weight:700;font-size:14px">${escH(u.name||'—')}${u.belumLogin ? ' <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:#fffbeb;color:#b45309">belum pernah login</span>' : ''}</div>
           <div style="font-size:12px;color:rgba(3,69,67,.5);font-family:monospace">${u.email||''}</div>
           ${u.lokasiNama ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.lokasiNama}</div>` : (u.branch ? `<div style="font-size:11px;color:rgba(3,69,67,.4);margin-top:1px">📍 ${u.branch}</div>` : '')}
           ${u.role === 'divisi' && u.divisi ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">🏭 ${DIVISION_META[u.divisi]?.icon||''} ${DIVISION_META[u.divisi]?.label||u.divisi}</div>` : (() => { const dd = u.divisions?.length ? u.divisions : (u.division ? [u.division] : []); if (!dd.length) return ''; const prefix = u.merangkapProduction ? '+ Prod: ' : ''; return `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:1px">${prefix}${dd.map(d=>`${DIVISION_META[d]?.icon||''} ${DIVISION_META[d]?.label||d}`).join(' · ')}</div>` })()}
@@ -222,7 +223,7 @@
         ${u.id !== getProfile()?.id ? `
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             ${u.role !== 'owner' ? `<button onclick="editLokasi('${u.id}','${u.lokasiId||''}')" class="btn btn-ghost btn-sm">📍 Lokasi</button>` : ''}
-            <button onclick="deleteUser('${u.id}','${u.name}')" class="btn btn-danger btn-sm">Hapus</button>
+            <button onclick="deleteUser(this.dataset.id,this.dataset.nama)" data-id="${escH(u.id)}" data-nama="${escH(u.name)}" class="btn btn-danger btn-sm">Hapus</button>
           </div>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
       </div>`).join('')
   }

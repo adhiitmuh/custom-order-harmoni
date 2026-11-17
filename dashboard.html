@@ -52,6 +52,7 @@
 </div>
 
 <script type="module">
+  const escH = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   import { db } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, canSeeOrder, ordersQuery } from './js/auth.js'
   import { collection, query, orderBy, limit, getDocs, doc, getDoc, setDoc, where, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -335,7 +336,7 @@
               ${(() => { const n = (o.internalChatCount||0)-(o.lastReadInternalChatCount?.[getProfile()?.id]||0); return n>0?`<span style="background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">🔒 ${n}</span>`:''; })()}
               ${o.unreadSupplierChat > 0 ? `<span style="background:#d97706;color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">📦 ${o.unreadSupplierChat}</span>` : ''}
             </div>
-            <div style="font-weight:700;font-size:14px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.customerName}</div>
+            <div style="font-weight:700;font-size:14px;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(o.customerName)}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div style="font-size:11px;font-weight:700;color:${isLate?'#b91c1c':'rgba(3,69,67,.4)'}">${isLate?`⚠ ${Math.abs(dLeft)}h`:dLeft===0?'⏰ Hari ini':`${dLeft}h lagi`}</div>

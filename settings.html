@@ -264,7 +264,7 @@
   import { requireAuth } from './js/auth.js'
   import { doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
-  import { banksCustomer, qrisCustomer, banksPemilikDivisi } from './js/pembayaran.js?v=20261108a'
+  import { banksCustomer, qrisCustomer, banksPemilikDivisi } from './js/pembayaran.js?v=20261116a'
 
   const WORKER_URL = 'https://harmoni-order-api.adhiitmuh.workers.dev'
 
@@ -791,7 +791,9 @@
   }
 
   // ===== BACKUP & RECOVERY =====
-  const BACKUP_COLS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
+  const BACKUP_COLS = ['orders', 'product_knowledge', 'price_list', 'price_list_usulan', 'lokasi', 'divisions', 'settings', 'users', 'order_counters',
+    'pembayaran', 'laporan_harian', 'tutup_kasir_cabang', 'kas_cabang', 'setor_tunai', 'setoran_pemilik', 'pengajuan_upah', 'penjahit', 'upah_jahit',
+    'suppliers', 'supplier_tokens', 'public_order_info', 'customer_followup', 'feedback']
 
   function toJSON(data) {
     if (data === null || data === undefined) return data

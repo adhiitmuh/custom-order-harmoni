@@ -70,7 +70,7 @@
   import { getDocs, getDoc, doc, updateDoc, collection, Timestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, STATUS_LABEL } from './js/utils.js'
   import { statusTagihan, pesanTagihan, pesanTagihanGabung, linkWaCustomer, HASIL_TAGIH, ULANG_HARI } from './js/tagihan.js?v=20261108a'
-  import { tglLokal, banksCustomer } from './js/pembayaran.js?v=20261108a'
+  import { tglLokal, banksCustomer } from './js/pembayaran.js?v=20261116a'
 
   const APP = 'https://adhiitmuh.github.io/custom-order-harmoni/'
   const rp = n => { const v = Math.round(Number(n) || 0); return (v < 0 ? '−Rp' : 'Rp') + Math.abs(v).toLocaleString('id-ID') }
@@ -165,7 +165,7 @@
           </div>
           <span class="tg-alasan">${esc(s.alasan)}</span>
         </div>
-        <div class="tg-angka"><span>Total <b>${rp(s.total)}</b></span><span>Dibayar <b style="color:#059669">${rp(s.bayar)}</b></span><span>Sisa <b style="color:#b91c1c">${rp(s.sisa)}</b></span>${o.customerContact ? `<span>📞 ${esc(o.customerContact)}</span>` : ''}</div>
+        <div class="tg-angka"><span>Total <b>${rp(s.total)}</b></span><span>Dibayar <b style="color:#059669">${rp(s.bayar)}</b></span><span>Sisa <b style="color:#b91c1c">${rp(s.sisa)}</b></span>${profile.role === 'owner' && o.customerContact ? `<span>📞 ${esc(o.customerContact)}</span>` : ''}</div>
         ${t ? `<div class="tg-fu">${h?.ikon || '📝'} <b>${esc(h?.label || t.hasil)}</b>${t.janjiTgl ? ' — janji bayar ' + tglTampil(t.janjiTgl) : ''}${t.catatan ? ' · “' + esc(t.catatan) + '”' : ''}<div style="font-size:10px;color:rgba(3,69,67,.45)">${esc(t.oleh || '')} · ${tglTampil(s.terakhir)}${(o.tagihRiwayat || []).length > 1 ? ` · ${o.tagihRiwayat.length}× follow up` : ''}${s.ditunda ? ' · ' + esc(s.ditunda) : ''}</div></div>`
           : '<div class="tg-fu" style="color:#b91c1c">Belum pernah di-follow up</div>'}
         ${t?.hasil === 'sudahbayar' ? '<div style="font-size:11px;color:#b45309;margin-top:6px">⚠️ Customer bilang sudah bayar — cek mutasi rekening, lalu catat lewat <b>Catat Pembayaran</b>. Kalau belum masuk, follow up lagi.</div>' : ''}
@@ -192,7 +192,7 @@
     el.innerHTML = g.length ? g.map((c, i) => { const o = c.xs[0].o
       return `<div class="tg-card l${Math.min(...c.xs.map(x => x.s.level))}">
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
-          <div><b style="font-size:14px">${esc(o.customerName || '')}</b>${o.customerContact ? ` <span style="font-size:12px;color:rgba(3,69,67,.5)">📞 ${esc(o.customerContact)}</span>` : ''}
+          <div><b style="font-size:14px">${esc(o.customerName || '')}</b>${profile.role === 'owner' && o.customerContact ? ` <span style="font-size:12px;color:rgba(3,69,67,.5)">📞 ${esc(o.customerContact)}</span>` : ''}
             <div style="font-size:11px;color:rgba(3,69,67,.5)">${c.xs.length} nota belum lunas</div></div>
           <div style="text-align:right"><div style="font-size:10px;font-weight:700;color:rgba(3,69,67,.5)">TOTAL SISA</div><b style="font-size:18px;color:#b91c1c">${rp(c.sisa)}</b></div>
         </div>

@@ -74,7 +74,7 @@
   import { ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { compressImage } from './js/image.js'
   import { DIVISION_META, DIVISIONS } from './js/utils.js'
-  import { banksPemilikDivisi, labelRekening, tglLokal } from './js/pembayaran.js?v=20261108a'
+  import { banksPemilikDivisi, labelRekening, tglLokal } from './js/pembayaran.js?v=20261116a'
 
   const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -130,10 +130,11 @@
     transfer = semuaTf.filter(t => (t.tgl || '').startsWith(bln))
     const semuaBaris = []
     bayar.forEach(p => {
-      const ke = pemilik[p.division] || 'Adi'
+      const o = _orders[p.orderId] || {}
+      if (o.status === 'cancelled') return                      // order batal tidak menimbulkan kewajiban
+      const ke = pemilik[o.division || p.division] || 'Adi'     // divisi terbaru (order bisa dipindah divisi)
       const dari = penerima(p)
       if (norm(dari.nama) === norm(ke)) return
-      const o = _orders[p.orderId] || {}
       const total = Number(o.totalPrice) || 0, modal = Number(o.hargaModal) || 0
       const rasio = total > 0 && modal > 0 ? Math.min(1, modal / total) : null
       semuaBaris.push({ p, dari: dari.nama, lewat: dari.lewat, ke, rasio, modal: rasio == null ? 0 : Math.round((Number(p.jumlah) || 0) * rasio) })

@@ -152,7 +152,7 @@
   import { collection, getDocs, getDoc, doc, setDoc, addDoc, updateDoc, deleteDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { compressImage } from './js/image.js'
-  import { labelRekening, grupMetode, tglLokal, banksCustomer, qrisCustomer, kunciQris } from './js/pembayaran.js?v=20261108a'
+  import { labelRekening, grupMetode, tglLokal, banksCustomer, qrisCustomer, kunciQris } from './js/pembayaran.js?v=20261116a'
 
   const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -453,6 +453,11 @@
     if (!confirm(`${rp(jumlah)} dari ${pilih[0].olehNama} ${teks}?`)) return
     const btn = document.getElementById('tgBtn-' + k); btn.disabled = true; btn.textContent = 'Menyimpan…'
     try {
+      // Cek ulang: jangan sampai pembayaran yang sama disetor dua kali (mis. staf & Kepala Cabang bersamaan)
+      const sudahSn = await getDocs(query(collection(db, 'setor_tunai'), where('lokasiId', '==', lokasiId())))
+      const sudah = new Set(); sudahSn.docs.map(d => d.data()).filter(x => x.status !== 'ditolak').forEach(x => (x.pembayaranIds || []).forEach(i => sudah.add(i)))
+      const dobel = pilih.filter(p => sudah.has(p.id))
+      if (dobel.length) { alert(`${dobel.length} pembayaran sudah disetor oleh orang lain barusan. Daftar dimuat ulang.`); await muatTangan(); btn.disabled = false; btn.textContent = '💾 Simpan setoran'; return }
       const sel = document.getElementById('tgV-' + k)
       await addDoc(collection(db, 'setor_tunai'), { lokasiId: lokasiId(), lokasiNama: lokasiNama(), tgl: tglLokal(), cara, jumlah,
         ...(cara === 'rekening' ? { rekening: { v: sel.value, label: sel.selectedOptions[0]?.textContent || '' }, caraSetor: document.getElementById('tgS-' + k).value, bukti: await unggah(f, 'kas_cabang') } : {}),

@@ -14,7 +14,8 @@ service firebase.storage {
     // Customer chat — boleh upload foto tanpa login, max 10MB, hanya gambar & PDF
     match /chats/{allPaths=**} {
       allow read: if true;
-      allow write: if gambarAtauPdf();
+      // Customer (sesi anonim) boleh upload file baru, tidak boleh menimpa/menghapus file yang sudah ada
+      allow create: if request.auth != null && gambarAtauPdf();
     }
     // Supplier (supplier-view.html, sesi anonim) — foto progress & chat vendor
     match /supplier_progress/{allPaths=**} {

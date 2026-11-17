@@ -215,6 +215,7 @@
         <div class="form-group">
           <label>DP Masuk (Rp)</label>
           <input type="number" id="om_dp" min="0" placeholder="0 (opsional)">
+          <div style="font-size:11px;color:#b45309;margin-top:3px">Hanya dicatat di catatan order. Uang DP dicatat lewat “+ Tambah Pembayaran” di detail order (wajib foto bukti).</div>
         </div>
       </div>
       <div class="form-group">
@@ -709,7 +710,7 @@ window.openOrderModal = function() {
   // Default due date: 7 hari ke depan
   const due = new Date()
   due.setDate(due.getDate() + 7)
-  document.getElementById('om_due').value = due.toISOString().split('T')[0]
+  document.getElementById('om_due').value = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`
 
   // Isi dropdown divisi
   document.getElementById('om_div').innerHTML =
@@ -774,7 +775,7 @@ window.submitOrder = async function() {
     openThread(activeThreadId) // Refresh panel — header sekarang tampilkan "📋 HRM-xxx"
 
     // Toast sukses singkat
-    showToast(`✅ ${result.orderNumber} berhasil dibuat! Customer sudah dikirimi notif WA.`)
+    showToast(`✅ ${result.orderNumber} berhasil dibuat! Kabari customer lewat tombol WA di detail order.`)
   } catch (err) {
     alertEl.innerHTML = `<div class="alert alert-error" style="margin-top:10px">${err.message}</div>`
     btn.disabled = false; btn.textContent = 'Buat Order'

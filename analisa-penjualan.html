@@ -95,7 +95,7 @@
     </div>
 
     <div class="card">
-      <h3>⏱️ Deadline</h3><p class="ket">Order aktif yang sudah lewat deadline, dan perkiraan ketepatan waktu order selesai (dari tanggal terakhir diubah — perkiraan).</p>
+      <h3>⏱️ Deadline</h3><p class="ket">Order aktif yang sudah lewat deadline, dan ketepatan waktu order selesai (dari tanggal status terakhir diubah; order lama memakai tanggal terakhir diubah).</p>
       <div id="ddl"></div>
     </div>
   </main>
@@ -124,7 +124,7 @@
     const c = o.createdAt; const d = c?.toDate ? c.toDate() : c?.seconds ? new Date(c.seconds * 1000) : c ? new Date(c) : null
     return d && !isNaN(d) ? tglLokal(d) : ''
   }
-  const tglUbah = o => { const c = o.updatedAt; const d = c?.toDate ? c.toDate() : c?.seconds ? new Date(c.seconds * 1000) : c ? new Date(c) : null; return d && !isNaN(d) ? tglLokal(d) : '' }
+  const tglUbah = o => { const c = o.statusChangedAt || o.updatedAt; const d = c?.toDate ? c.toDate() : c?.seconds ? new Date(c.seconds * 1000) : c ? new Date(c) : null; return d && !isNaN(d) ? tglLokal(d) : '' }
   const itemsOf = o => (o.orderItems || []).map(i => {
     const qty = Number(i.qty) || 0, harga = Number(i.pricePerUnit ?? i.price) || 0
     return { nama: String(i.name || '').toUpperCase().trim(), varian: String(i.varian || '').toUpperCase().trim(), qty, omzet: Number(i.subtotal) || qty * harga, modal: (Number(i.priceModal) || 0) * qty }

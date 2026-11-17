@@ -40,7 +40,8 @@ service cloud.firestore {
       let o = resource.data;
       let ubahApproval = n.diff(o).affectedKeys().hasAny(kunciApproval());
       let ubahStatus = n.get('status', '') != o.get('status', '');
-      let menunggu = o.get('priceApprovalStatus', '') == 'pending' || n.get('priceApprovalStatus', '') == 'pending';
+      // Harga ditolak (rejected) diperlakukan sama dengan menunggu: belum boleh masuk produksi
+      let menunggu = o.get('priceApprovalStatus', '') in ['pending', 'rejected'] || n.get('priceApprovalStatus', '') in ['pending', 'rejected'];
       let tierLama = o.get('priceApprovalTier', null);
       let tierBaru = n.get('priceApprovalTier', tierLama);
       let dv = o.get('division', '');
@@ -181,7 +182,7 @@ service cloud.firestore {
     // tidak bisa diubah/dihapus selain Owner supaya jejak uang masuk tetap utuh
     match /pembayaran/{id} {
       allow read: if isStaffAuth() && !isDivisiOwner();
-      allow create: if isOwnerOrCS()
+      allow create: if isStaffAuth() && role() in ['owner', 'cs', 'manager']
         && request.resource.data.olehUid == request.auth.uid
         && request.resource.data.jumlah is number
         && request.resource.data.tgl is string
@@ -283,7 +284,9 @@ service cloud.firestore {
 
     // Public order info for customer chat (token-based access)
     match /public_order_info/{chatToken} {
-      allow read: if true;
+      // Hanya bisa dibuka satu per satu dengan token (get) — tidak bisa didaftar (list) oleh publik
+      allow get: if true;
+      allow list: if isStaffAuth();
       allow write: if isStaffAuth();
     }
 
@@ -303,21 +306,28 @@ service cloud.firestore {
     }
 
     match /supplier_tokens/{token} {
-      allow read: if true; // Supplier akses via token tanpa login
+      allow get: if true; // Supplier akses via token tanpa login (satu dokumen, tidak bisa didaftar)
+      allow list: if isStaffAuth();
       allow write: if isStaffAuth();
     }
 
     // Chat messages — public read/write (token = password)
     match /chat_messages/{chatToken}/messages/{msgId} {
-      allow read: if true;
-      allow create: if true; // Anyone with token can send
+      allow read: if true;   // perlu token (path) — tidak bisa dicari tanpa token
+      // Customer (tanpa login staf) hanya boleh mengirim sebagai customer token itu sendiri
+      allow create: if isStaffAuth()
+        || (request.resource.data.get('senderRole', '') == 'customer' && request.resource.data.get('senderId', '') == chatToken
+            && request.resource.data.get('type', '') in ['text', 'image', 'file']);
+      // Customer boleh mengedit teks pesannya sendiri (fitur ✏ Edit di chat.html)
+      allow update: if isOwner() || (resource.data.get('senderRole', '') == 'customer' && resource.data.get('senderId', '') == chatToken
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedAt']));
       allow delete: if isOwner();
     }
 
     // Chat inbox threads — readable by all staff, writable by owner/cs
     match /chat_threads/{threadId} {
       allow read: if isStaffAuth() && !isDivisiOwner();
-      allow write: if isOwnerOrCS();
+      allow write: if isStaffAuth() && role() in ['owner', 'cs', 'manager'];
     }
     match /chat_threads/{threadId}/messages/{msgId} {
       allow read: if isStaffAuth() && !isDivisiOwner();
@@ -348,8 +358,11 @@ service cloud.firestore {
 
     // Konsultasi pra-order (sebelum ada order) — dibuat oleh WA Bot via service account
     match /consultations/{token} {
-      allow read: if true;   // public — customer akses via token
-      allow write: if false; // hanya backend (service account bypass rules)
+      allow get: if true;    // public — customer akses via token (satu dokumen)
+      allow list: if isStaffAuth() && !isDivisiOwner();
+      // Dibuat backend; staf Inbox hanya boleh menandai dibaca, status & pesan terakhir
+      allow update: if isStaffAuth() && role() in ['owner', 'cs', 'manager']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCount', 'status', 'updatedAt', 'lastMessage', 'lastMessageAt']);
     }
 
     // Flag pesan mencurigakan — staff menulis, owner yang baca & tinjau

@@ -83,14 +83,14 @@
 
 <script type="module">
   import { db, storage } from './js/config.js'
-  import { requireAuth, getProfile, dataAuthReady, hasProductionAccess, divisiSaya } from './js/auth.js'
+  import { requireAuth, getProfile, dataAuthReady, hasProductionAccess, divisiSaya, canSeeOrder } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
   import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { DIVISIONS, DIVISION_META, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, paymentStatus, timeAgo, hasContactInfo, detectSuspiciousMsg, generateChatToken } from './js/utils.js'
   import { attachMentionAutocomplete, loadStaff, parseMentions, writeMentionNotifs, highlightMentions } from './js/mentions.js'
   import { tawarkanWaDivisi, linkOrder } from './js/notifwa.js'
-  import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js'
+  import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js?v=20261117a'
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
   import { hitungNama, labelNama } from './js/namaPapan.js?v=20261112d'
   import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER, cariMirip, skorMirip } from './js/hargaList.js?v=20261110a'
@@ -209,7 +209,8 @@
     order = { id: snap.id, ...snap.data() }
 
     // Cabang guard — non-owner hanya bisa akses order dari cabang mereka
-    if (profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) {
+    // Sama dengan daftar order (canSeeOrder); pembuat order selalu boleh membuka order buatannya
+    if ((profile.role !== 'owner' && order.branch && profile.branch && order.branch !== profile.branch) || (!canSeeOrder(order, profile) && order.createdBy !== profile.id)) {
       document.getElementById('pageContent').innerHTML = `
         <div style="text-align:center;padding:60px 20px">
           <div style="font-size:40px;margin-bottom:12px">🔒</div>
@@ -280,7 +281,7 @@
               <span class="mono" style="font-size:12px;color:rgba(3,69,67,.4)">${order.orderNumber}</span>
               <span class="badge ${STATUS_CLASS[order.status]}">${STATUS_LABEL[order.status]}</span>
             </div>
-            <h1 style="font-size:20px;font-weight:800;color:var(--black)">${order.customerName}</h1>
+            <h1 style="font-size:20px;font-weight:800;color:var(--black)">${esc(order.customerName)}</h1>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap" class="no-print">
@@ -302,7 +303,7 @@
               ${order.priceApprovalTier==='admin'?'🔒 Menunggu Approval Owner':'⚠ Menunggu Approval Kepala Cabang'}
             </div>
             <div style="font-size:12px;color:rgba(3,69,67,.6);margin-top:3px">
-              Alasan diskon: <em>${order.priceApprovalReason||'—'}</em>
+              Alasan diskon: <em>${esc(order.priceApprovalReason||'—')}</em>
             </div>
             <div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:2px">
               ${order.priceApprovalTier==='admin'?'Hanya Owner / Pemilik Divisi yang dapat menyetujui harga ini':'Hanya Kepala Cabang, Pemilik Divisi atau Owner yang dapat menyetujui'}
@@ -376,8 +377,8 @@
                   <div style="font-size:16px;font-weight:800;color:#FFFBD5">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div>
                 </div>
               </div>` : ''}
-            ${order.varian ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Varian / Spesifikasi</p><p style="font-size:13px;font-weight:600">${order.varian}</p>` : ''}
-            ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p>` : ''}
+            ${order.varian ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Varian / Spesifikasi</p><p style="font-size:13px;font-weight:600">${esc(order.varian)}</p>` : ''}
+            ${order.notes ? `<hr class="sep"><p style="font-size:11px;color:rgba(3,69,67,.45);margin-bottom:4px">Catatan</p><p style="font-size:13px;white-space:pre-wrap">${esc(order.notes)}</p>` : ''}
           </div>
 
           <!-- Ukuran -->
@@ -443,7 +444,7 @@
                 ${order.orderItems.map((it, i) => `
                 <tr style="border-bottom:1px solid rgba(3,69,67,.06)">
                   <td style="padding:9px 0">
-                    <div style="font-weight:500">${it.name||'-'}</div>
+                    <div style="font-weight:500">${esc(it.name||'-')}</div>
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
                     ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean); const q = Number(it.qty) || 0, h = hitungNama(it.namaCustom, q), curiga = !h.ok || (!h.baris.some(x => x.jml > 1 && h.perRata == null) && q > 3 && q / ns.length > 3); return `<div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px">🏷 ${(l => esc(l.judul) + l.daftar.map(esc).join(' · '))(labelNama(it.namaCustom, q))}</div>${curiga ? `<div style="font-size:10px;color:#b45309">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — lengkapi daftar nama' : esc(h.pesan)}</div>` : ''}` })() : ''}
                     ${(profile.role === 'owner' || profile.role === 'cs' || profile.role === 'manager') && (order.division === 'papan-nama' || /papan/i.test(it.name || '')) ? `<button onclick="editNamaPapan(${i})" class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:10px;margin-top:3px">✏️ Daftar nama${it.namaCustom ? '' : ' (belum diisi)'}</button>` : ''}
@@ -712,11 +713,11 @@
                       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <span style="font-size:12px;font-weight:700;color:var(--green)">${u.percentage}%</span>
                         <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(u.createdAt)}</span>
-                        <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${u.updatedByName||'tim'}</span>
+                        <span style="font-size:11px;color:rgba(3,69,67,.4)">oleh ${esc(u.updatedByName||'tim')}</span>
                         ${canEditEntry ? `<button onclick="startEditProgress('${u.id}')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:13px;color:rgba(3,69,67,.35);padding:1px 4px;border-radius:4px;line-height:1" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='rgba(3,69,67,.35)'">✏</button>` : ''}
                         ${canDelEntry  ? `<button onclick="deleteProgressEntry('${u.id}')" title="Hapus" style="border:none;background:none;cursor:pointer;font-size:13px;color:rgba(3,69,67,.25);padding:1px 4px;border-radius:4px;line-height:1" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='rgba(3,69,67,.25)'">✕</button>` : ''}
                       </div>
-                      <p style="font-size:13px;margin-top:2px;word-break:break-word">${u.note}</p>
+                      <p style="font-size:13px;margin-top:2px;word-break:break-word">${safeNote}</p>
                       ${u.photos?.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${u.photos.map(p=>`<a href="${p}" target="_blank"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid rgba(3,69,67,.1)"></a>`).join('')}</div>` : ''}
                     </div>
                     <!-- Edit mode -->
@@ -876,6 +877,7 @@
           ${canEdit ? `
           <div class="card" style="margin-bottom:14px">
             <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">Ubah Status</h2>
+            ${['pending', 'rejected'].includes(order.priceApprovalStatus) ? `<div style="font-size:12px;color:#b45309;background:#fffbeb;border-radius:8px;padding:8px 10px;margin-bottom:8px">Harga ${order.priceApprovalStatus === 'rejected' ? 'ditolak' : 'belum disetujui'} — order belum bisa masuk produksi.</div>` : ''}
             ${[
               ['pending','⏳ Menunggu Konfirmasi'],
               ['in-progress','🔧 Sedang Dikerjakan'],
@@ -883,7 +885,7 @@
               ['done','✅ Selesai'],
               ['delivered','📦 Sudah Dikirim'],
               ['cancelled','❌ Dibatalkan'],
-            ].map(([v,l]) => `
+            ].filter(([v]) => !['pending', 'rejected'].includes(order.priceApprovalStatus) || ['pending', 'cancelled'].includes(v) || v === order.status).map(([v,l]) => `
               <button onclick="changeStatus('${v}')" class="sidebar-link" style="${order.status===v?'background:rgba(3,69,67,.08);color:var(--green);font-weight:700;opacity:1':'color:var(--black);opacity:.65'};width:100%;border-radius:8px;padding:8px 10px;margin-bottom:4px;font-size:12.5px">
                 ${l}
               </button>`).join('')}
@@ -1022,15 +1024,14 @@
     if (method && method.startsWith('transfer_')) {
       const bankName = method.replace('transfer_','')
       const byName = b => b.bankName.toLowerCase().replace(/\s+/g,'_') === bankName
+      // Hanya rekening penerima customer untuk lokasi order — tidak jatuh ke rekening pribadi/pemilik divisi
       const bank = banksCustomer(paymentInfo, { lokasiId: order.lokasiId, division: order.division }).find(byName)
-                 || (paymentInfo.banks || []).find(b => byName(b) && bankTerimaCustomer(b))
-                 || (paymentInfo.banks || []).find(byName)
       if (!bank) return ''
       return `<div style="background:var(--beige-soft);border-radius:12px;padding:14px 18px;margin-bottom:18px">
         <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:8px">TRANSFER BANK</p>
-        <div style="font-size:15px;font-weight:800;color:var(--green)">${bank.bankName}</div>
+        <div style="font-size:15px;font-weight:800;color:var(--green)">${esc(bank.bankName)}</div>
         <div style="font-family:monospace;font-size:18px;font-weight:700;letter-spacing:.04em;margin-top:4px">${bank.accountNumber}</div>
-        <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">a.n. ${bank.accountHolder}</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.5);margin-top:4px">a.n. ${esc(bank.accountHolder)}</div>
       </div>`
     }
 
@@ -1048,10 +1049,10 @@
       html += activeBanks.map(b => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(3,69,67,.08)">
           <div>
-            <div style="font-weight:800;font-size:14px;color:var(--green)">${b.bankName}</div>
+            <div style="font-weight:800;font-size:14px;color:var(--green)">${esc(b.bankName)}</div>
             <div style="font-size:11px;color:rgba(3,69,67,.5)">a.n. ${b.accountHolder}</div>
           </div>
-          <div style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:.04em">${b.accountNumber}</div>
+          <div style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:.04em">${esc(b.accountNumber)}</div>
         </div>`).join('')
     }
 
@@ -1100,9 +1101,9 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:22px">
             <div>
               <p style="font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em;margin-bottom:6px">DITAGIHKAN KEPADA</p>
-              <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${order.customerName}</div>
+              <div style="font-weight:800;font-size:17px;letter-spacing:-.02em">${esc(order.customerName)}</div>
               ${showContact && order.customerContact ? `<div style="font-family:monospace;font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">${order.customerContact}</div>` : ''}
-              ${(order.lokasiNama || order.branch) ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${order.lokasiNama || order.branch}</div>` : ''}
+              ${(order.lokasiNama || order.branch) ? `<div style="font-size:11px;color:rgba(3,69,67,.5);margin-top:3px">📍 ${esc(order.lokasiNama || order.branch)}</div>` : ''}
             </div>
             <div style="text-align:right">
               <div style="margin-bottom:6px"><span style="font-size:10px;color:rgba(3,69,67,.4)">Tanggal Pesan</span><div style="font-weight:600;font-size:12px">${fmtDate(order.orderDate)}</div></div>
@@ -1117,8 +1118,8 @@
                 <div style="text-align:center;padding:5px 10px;border:1.5px solid #034543;border-radius:6px;min-width:44px"><div style="font-size:9px;font-weight:700;color:#034543">TOTAL</div><div style="font-size:14px;font-weight:800;color:#034543">${Object.values(order.sizeBreakdown).reduce((a,b)=>a+b,0)}</div></div>
               </div>
             </div>` : ''}
-          ${order.varian ? `<div style="background:var(--beige-soft);border-radius:10px;padding:10px 14px;margin-bottom:10px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:3px">VARIAN / SPESIFIKASI</p><p style="font-size:13px;font-weight:600">${order.varian}</p></div>` : ''}
-          ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${order.notes}</p></div>` : ''}
+          ${order.varian ? `<div style="background:var(--beige-soft);border-radius:10px;padding:10px 14px;margin-bottom:10px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:3px">VARIAN / SPESIFIKASI</p><p style="font-size:13px;font-weight:600">${esc(order.varian)}</p></div>` : ''}
+          ${order.notes ? `<div style="background:var(--beige-soft);border-radius:10px;padding:12px 14px;margin-bottom:22px"><p style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:4px">KETERANGAN</p><p style="font-size:13px;white-space:pre-wrap">${esc(order.notes)}</p></div>` : ''}
           <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
             <thead><tr style="border-bottom:1.5px solid rgba(3,69,67,.12)">
               <th style="text-align:left;padding-bottom:8px;font-size:10px;color:rgba(3,69,67,.4);letter-spacing:.06em">KETERANGAN</th>
@@ -1128,7 +1129,7 @@
             <tbody>
               ${order.orderItems?.length ? order.orderItems.map(it => `
               <tr style="border-bottom:1px solid rgba(3,69,67,.06)">
-                <td style="padding:9px 0;font-size:13px">${it.name||'-'}</td>
+                <td style="padding:9px 0;font-size:13px">${esc(it.name||'-')}</td>
                 <td style="padding:9px 0;text-align:center;font-size:12px;color:rgba(3,69,67,.6)">${it.qty||0}</td>
                 <td style="padding:9px 0;text-align:right;font-size:12px;color:rgba(3,69,67,.6)">${fmtCurrency(it.pricePerUnit)}</td>
                 <td style="padding:9px 0;text-align:right;font-weight:600;font-size:13px">${fmtCurrency(it.subtotal)}</td>
@@ -1295,11 +1296,18 @@
       }
       const lamaDp = order.depositPaid || 0
       if (editUpdates.depositPaid > lamaDp) { alert('DP bertambah harus dicatat lewat tombol "+ Tambah Pembayaran" (wajib foto bukti bayar, termasuk tunai).\n\nKembalikan DP ke ' + fmtCurrency(lamaDp) + ' di form ini.'); return }
+      const dpBaru = editUpdates.depositPaid
+      if (dpBaru !== lamaDp) editUpdates.depositPaid = increment(dpBaru - lamaDp); else delete editUpdates.depositPaid
+      // Total berubah → cek ulang tier harga (sama seperti Edit Pembayaran), supaya harga tidak turun tanpa approval
+      if (editUpdates.totalPrice !== (order.totalPrice || 0)) {
+        try { Object.assign(editUpdates, await cekUlangHarga(order.orderItems || [], editUpdates.totalPrice)) }
+        catch (e) { alert(e.message); return }
+      }
       const batchEdit = writeBatch(db)
       batchEdit.update(doc(db,'orders',orderId), editUpdates)
-      if (editUpdates.depositPaid !== lamaDp) {
-        const e = entriPembayaran(order, orderId, profile, { jumlah: editUpdates.depositPaid - lamaDp, metode: order.paymentMethod || '',
-          jenis: editUpdates.depositPaid < lamaDp ? 'koreksi' : jenisDari(lamaDp, editUpdates.depositPaid, editUpdates.totalPrice),
+      if (dpBaru !== lamaDp) {
+        const e = entriPembayaran(order, orderId, profile, { jumlah: dpBaru - lamaDp, metode: order.paymentMethod || '',
+          jenis: dpBaru < lamaDp ? 'koreksi' : jenisDari(lamaDp, dpBaru, editUpdates.totalPrice),
           catatan: `Diubah lewat Edit Order${approvedBy?.name ? ' (disetujui ' + approvedBy.name + ')' : ''}` })
         batchEdit.set(e.ref, e.data)
       }
@@ -1635,9 +1643,13 @@
         updatedByName: profile.name,
         createdAt: now,
       })
+      // Harga belum disetujui / ditolak → progres dicatat, status order tidak dimajukan
+      const bolehMaju = !['pending', 'rejected'].includes(order.priceApprovalStatus)
+      const statusBaru = !bolehMaju ? order.status : pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status)
       await updateDoc(doc(db,'orders',orderId), {
         progressPercentage: pct,
-        status: pct===100 ? 'done' : (pct>0 && order.status==='pending' ? 'in-progress' : order.status),
+        status: statusBaru,
+        ...(statusBaru !== order.status ? { statusChangedBy: profile.name, statusChangedAt: now } : {}),
         updatedAt: now,
       })
       // Kirim progress ke chat customer + update public info
@@ -1647,10 +1659,11 @@
           senderName: profile.name, senderRole: profile.role,
           createdAt: now,
         }).catch(() => {})
-        updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct }).catch(() => {})
+        updateDoc(doc(db,'public_order_info',order.chatToken), { progressPercentage: pct, status: statusBaru }).catch(() => {})
       }
       await loadOrder(profile)
-    } finally { btn.disabled=false; btn.textContent='Simpan' }
+    } catch (e) { alert('Gagal menyimpan progres: ' + e.message) }
+    finally { btn.disabled=false; btn.textContent='Simpan' }
   }
 
   window.startEditProgress = function(uid) {
@@ -2245,7 +2258,7 @@
       if (newDp > lamaDp) { alert('Uang masuk dicatat lewat tombol "+ Tambah Pembayaran" (wajib foto bukti bayar, termasuk tunai).\n\nDi sini DP hanya bisa tetap atau dikurangi (koreksi). Kembalikan DP ke ' + fmtCurrency(lamaDp) + ' lalu simpan.'); return }
       const updates = {
         totalPrice: parsePrice(document.getElementById('editTotal').value),
-        depositPaid: newDp,
+        ...(newDp !== lamaDp ? { depositPaid: increment(newDp - lamaDp) } : {}),
         paymentMethod: pm || null,
         updatedAt: now,
         paymentEditBy: getProfile().name,
@@ -2269,7 +2282,8 @@
       }
       await batch.commit()
       await loadOrder(getProfile())
-    } finally { btn.disabled=false; btn.textContent='Simpan' }
+    } catch (e) { alert('Gagal menyimpan: ' + e.message) }
+    finally { btn.disabled=false; btn.textContent='Simpan' }
   }
 
   window.uploadPaymentProof = async function(input) {
@@ -2389,7 +2403,8 @@
           bukti = await getDownloadURL(r)
         }
         const lamaDp = order.depositPaid || 0, baruDp = lamaDp + jumlah
-        const updates = { depositPaid: baruDp, paymentMethod: pisahMetode(metode).metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
+        // increment: aman bila dua orang mencatat pembayaran di order yang sama bersamaan
+        const updates = { depositPaid: increment(jumlah), paymentMethod: pisahMetode(metode).metode, updatedAt: now, paymentEditBy: profile.name, paymentEditAt: now }
         if (bukti) updates.paymentProofs = arrayUnion(bukti)
         if (order.status === 'draft' && lamaDp === 0) Object.assign(updates, calcDraftShift())
         const e = entriPembayaran(order, orderId, profile, { jumlah, metode, jenis: jenisDari(lamaDp, baruDp, order.totalPrice||0), catatan: bg.querySelector('#tbCatatan').value.trim(), pegang: nilaiPegang('tbPegang') })
@@ -2753,10 +2768,11 @@
         priceApprovalBy: profile.id,
         priceApprovalByName: profile.name,
         priceApprovalAt: Timestamp.now(),
-        status: 'pending',
+        // Status hanya maju dari 'pending-approval' (draft tetap draft sampai ada DP; order yang sudah dikerjakan tidak mundur)
+        ...(order.status === 'pending-approval' ? { status: 'pending' } : {}),
         updatedAt: Timestamp.now(),
       })
-      if (order.chatToken) updateDoc(doc(db, 'public_order_info', order.chatToken), { status: 'pending' }).catch(() => {})
+      if (order.chatToken && order.status === 'pending-approval') updateDoc(doc(db, 'public_order_info', order.chatToken), { status: 'pending' }).catch(() => {})
       await loadOrder(profile)
     } catch { if (btn) { btn.disabled=false; btn.textContent='✓ Setujui Harga' } }
   }
@@ -2965,9 +2981,9 @@
         const bg = isCustomer ? '#f0fdf4' : isMe ? 'var(--green)' : 'var(--beige-soft)'
         const color = isMe ? 'white' : 'var(--black)'
         const align = isMe ? 'flex-end' : 'flex-start'
-        const staffLabel = m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName
+        const staffLabel = esc(m.senderBranch ? `${m.senderName} • ${m.senderBranch}` : m.senderName)
         const name = isCustomer
-          ? `👤 ${m.senderName}`
+          ? `👤 ${esc(m.senderName)}`
           : m.senderRole === 'production'
             ? `🎨 Tim Desain — ${staffLabel}`
             : `💬 CS Harmoni — ${staffLabel}`
@@ -2975,9 +2991,9 @@
           <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px;${isMe?'text-align:right':''}">${name} · ${timeAgo(m.createdAt)}</span>
           <div style="background:${bg};color:${color};padding:8px 12px;border-radius:${isMe?'12px 12px 2px 12px':'12px 12px 12px 2px'};font-size:13px;line-height:1.5;word-break:break-word">
             ${m.type==='file'&&m.imageUrl
-              ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${m.fileName||'File'}</a>`
+              ? `<a href="${m.imageUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,.08);border-radius:8px;text-decoration:none;font-size:12px;font-weight:600">📎 ${esc(m.fileName||'File')}</a>`
               : m.imageUrl ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:6px;display:block"></a>` : ''}
-            ${m.text ? m.text.replace(/\n/g,'<br>') : ''}
+            ${m.text ? esc(m.text).replace(/\n/g,'<br>') : ''}
           </div>
         </div>`
       }).join('')
@@ -3257,7 +3273,7 @@
       const bg     = isSupplier ? '#fef3c7' : 'var(--green)'
       const color  = isSupplier ? '#1a1a1a' : 'white'
       const radius = isSupplier ? '12px 12px 12px 2px' : '12px 12px 2px 12px'
-      const name   = isSupplier ? `📦 ${m.senderName}` : `💬 ${m.senderName}`
+      const name   = isSupplier ? `📦 ${esc(m.senderName)}` : `💬 ${esc(m.senderName)}`
       const editedTag = m.edited ? ' · <span style="opacity:.5">diedit</span>' : ''
       const imgHtml = m.imageUrl
         ? `<a href="${m.imageUrl}" target="_blank"><img src="${m.imageUrl}" style="max-width:200px;max-height:160px;border-radius:8px;display:block;${m.text?'margin-bottom:6px':''}"></a>`
@@ -3270,7 +3286,7 @@
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
         <span style="font-size:10px;color:rgba(3,69,67,.4);margin-bottom:2px">${name} · ${timeAgo(m.createdAt)}${editedTag}</span>
         <div id="vcmsg-${m.id}" style="background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.5;word-break:break-word;max-width:80%">
-          ${imgHtml}${m.text ? m.text.replace(/\n/g,'<br>') : ''}
+          ${imgHtml}${m.text ? esc(m.text).replace(/\n/g,'<br>') : ''}
         </div>
         ${actionBtns}
       </div>`

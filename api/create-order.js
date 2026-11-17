@@ -245,7 +245,7 @@ async function handleCreateOrder(request, env, token) {
   const orderId   = crypto.randomUUID()
   const chatToken = generateChatToken()
   const now       = new Date().toISOString()
-  const today     = now.split('T')[0]
+  const today     = new Date(Date.now() + 8 * 3600e3).toISOString().split('T')[0]   // tanggal WITA
 
   const orderNumber = await generateOrderNumber(projectId, token, division)
 
@@ -952,7 +952,7 @@ async function handleCreateOrderFromChat(request, env) {
   const token = await getFirebaseToken(env)
   const projectId = env.FIREBASE_PROJECT_ID
   const now = new Date().toISOString()
-  const today = now.split('T')[0]
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().split('T')[0]   // tanggal WITA
 
   // Ambil data thread
   const threadDoc = await firestoreGet(projectId, token, `chat_threads/${threadId}`).catch(() => null)
@@ -986,8 +986,11 @@ async function handleCreateOrderFromChat(request, env) {
     status:              { stringValue: 'pending' },
     progressPercentage:  { integerValue: '0' },
     totalPrice:          { doubleValue: Number(totalPrice) },
-    depositPaid:         { doubleValue: Number(dp) },
-    notes:               { stringValue: notes },
+    // DP tidak dicatat dari sini: semua uang masuk wajib lewat "+ Tambah Pembayaran" (foto bukti, riwayat pembayaran)
+    depositPaid:         { doubleValue: 0 },
+    notes:               { stringValue: Number(dp) > 0 ? `${notes}${notes ? '\n' : ''}[DP disebut di chat: Rp${Number(dp).toLocaleString('id-ID')} — catat lewat + Tambah Pembayaran]` : notes },
+    createdBy:           { stringValue: staff.uid || '' },
+    createdByName:       { stringValue: staff.nama || '' },
     designFiles:         { arrayValue: { values: [] } },
     chatToken:           { stringValue: chatToken },
     sumberOrder:         { stringValue: 'inbox' },
@@ -1317,7 +1320,9 @@ function json(data, status = 200) {
 
 // ── Backup & Recovery ─────────────────────────────────────────────────────────
 
-const BACKUP_COLLECTIONS = ['orders', 'product_knowledge', 'price_list', 'lokasi', 'settings', 'users', 'order_counters']
+const BACKUP_COLLECTIONS = ['orders', 'product_knowledge', 'price_list', 'price_list_usulan', 'lokasi', 'divisions', 'settings', 'users', 'order_counters',
+  'pembayaran', 'laporan_harian', 'tutup_kasir_cabang', 'kas_cabang', 'setor_tunai', 'setoran_pemilik', 'pengajuan_upah', 'penjahit', 'upah_jahit',
+  'suppliers', 'supplier_tokens', 'public_order_info', 'customer_followup', 'feedback']
 const BACKUP_RETAIN = 12 // simpan 12 backup terakhir (~3 bulan)
 
 async function handleBackupRequest(request, url, env, token) {

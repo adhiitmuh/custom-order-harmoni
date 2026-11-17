@@ -126,7 +126,7 @@
     }
 
     el.innerHTML = list.map(f => `
-      <div class="flag-card flag-${f.flagType} ${f.reviewed ? 'reviewed' : ''}">
+      <div class="flag-card flag-${esc(String(f.flagType||'').replace(/\W/g,''))} ${f.reviewed ? 'reviewed' : ''}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="flag-badge ${f.flagType === 'blocked' ? 'badge-blocked' : 'badge-suspicious'}">
@@ -136,7 +136,7 @@
             <span style="font-size:11px;color:rgba(3,69,67,.4)">${timeAgo(f.createdAt)}</span>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
-            ${f.orderId ? `<a href="order.html?id=${f.orderId}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${esc(f.orderNumber || 'Order')}</a>` : `<span style="font-size:11px;color:rgba(3,69,67,.4)">Konsultasi</span>`}
+            ${f.orderId ? `<a href="order.html?id=${encodeURIComponent(f.orderId)}" class="btn btn-ghost btn-sm" style="font-size:11px">📋 ${esc(f.orderNumber || 'Order')}</a>` : `<span style="font-size:11px;color:rgba(3,69,67,.4)">Konsultasi</span>`}
             ${!f.reviewed ? `<button onclick="markReviewed('${f.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Tandai Ditinjau</button>` : ''}
           </div>
         </div>

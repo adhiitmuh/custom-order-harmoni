@@ -264,7 +264,7 @@
   import { ref, uploadBytesResumable, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js'
   import { Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META, DIVISIONS, fmtCurrency, generateChatToken, PRODUKSI_UNIT, LOKASI_TIPE_ICON } from './js/utils.js'
-  import { entriPembayaran, pisahMetode, opsiMetode, htmlPegang, aturPegang, nilaiPegang } from './js/pembayaran.js?v=20261116a'
+  import { entriPembayaran, pisahMetode, opsiMetode, htmlPegang, aturPegang, nilaiPegang, tglLokal, jenisDari } from './js/pembayaran.js?v=20261116a'
   import { nilaiTierOrder, bolehSetujui, LABEL_TIER, simpanDaftarHarga, cariMirip, kunciNama, skorMirip } from './js/hargaList.js?v=20261110a'
 
   const SIZE_DIVISIONS = ['jersey', 'konveksi', 'sablon', 'tailor', 'butik', 'jilbab', 'sewa-kostum']
@@ -1263,7 +1263,7 @@
   }
 
   // Set today
-  const today = new Date().toISOString().split('T')[0]
+  const today = tglLokal()   // tanggal WITA (bukan UTC)
   document.getElementById('orderDate').value = today
   document.getElementById('dueDate').min = today
 
@@ -1456,7 +1456,7 @@
           division: selectedDiv,
           customerName: document.getElementById('customerName').value.trim().toUpperCase(),
           customerContact: document.getElementById('customerContact').value.trim(),
-          orderDate: document.getElementById('orderDate').value || new Date().toISOString().split('T')[0],
+          orderDate: document.getElementById('orderDate').value || tglLokal(),
           dueDate,
           designFiles,
           status: isDraft ? 'draft' : (lolos ? 'pending' : 'pending-approval'),
@@ -1497,10 +1497,10 @@
           try {
             const e = entriPembayaran({ orderNumber, customerName: document.getElementById('customerName').value.trim().toUpperCase(), division: selectedDiv,
               lokasiId: selectedLokasi?.id || '', lokasiNama: selectedLokasi?.nama || '', createdByName: profile.name },
-              orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', pegang: nilaiPegang('pegangDp'), jenis: dpAwal >= parsePrice(document.getElementById('totalPrice').value) ? 'lunas' : 'dp' })
+              orderId, profile, { jumlah: dpAwal, metode: document.getElementById('paymentMethod').value || '', pegang: nilaiPegang('pegangDp'), jenis: jenisDari(0, dpAwal, parsePrice(document.getElementById('totalPrice').value)) })
             if (buktiDp) e.data.bukti = buktiDp
             await setDoc(e.ref, e.data)
-          } catch (err) { console.warn('Riwayat pembayaran gagal dicatat:', err) }
+          } catch (err) { console.warn('Riwayat pembayaran gagal dicatat:', err); alert('⚠ Order tersimpan, tetapi DP belum tercatat di riwayat pembayaran (' + err.message + ').\nBuka order ini lalu catat DP lewat "+ Tambah Pembayaran".') }
         }
 
         await setDoc(doc(db,'public_order_info', chatToken), {
@@ -1508,7 +1508,7 @@
           orderNumber,
           division: selectedDiv,
           customerName: document.getElementById('customerName').value.trim().toUpperCase(),
-          status: 'pending',
+          status: isDraft ? 'draft' : (lolos ? 'pending' : 'pending-approval'),
           chatToken,
           createdAt: now,
           designFiles: designFiles || [],

@@ -2,6 +2,7 @@ import { db } from './config.js'
 import {
   collection, doc, getDocs, addDoc, setDoc, increment, Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+const escM = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 
 let _staffCache = null
 let _staffCacheAt = 0
@@ -39,7 +40,7 @@ export function highlightMentions(escapedHtml, staffList, myId) {
     const isMe = s.id === myId
     result = result.replace(
       new RegExp('@' + safe, 'g'),
-      `<span class="mention${isMe ? ' mention-me' : ''}">@${s.name}</span>`
+      `<span class="mention${isMe ? ' mention-me' : ''}">@${escM(s.name)}</span>`
     )
   }
   return result
@@ -98,7 +99,7 @@ export function attachMentionAutocomplete(textarea, staffList) {
     dropdown.className = 'mention-dropdown'
     dropdown.innerHTML = matches.map((s, i) =>
       `<div class="mention-item${i === 0 ? ' hover' : ''}" data-name="${s.name.replace(/"/g, '&quot;')}">
-        ${s.name}<span class="mention-item-role">${s.role}</span>
+        ${escM(s.name)}<span class="mention-item-role">${escM(s.role)}</span>
       </div>`
     ).join('')
 

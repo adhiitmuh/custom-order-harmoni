@@ -363,7 +363,8 @@
     try {
       await addDoc(collection(db, 'orders', orderId, 'progress_updates'), {
         percentage: pct,
-        notes,
+        notes, note: notes,                                   // 'note' & 'updatedByName' dibaca halaman order staf
+        updatedByName: '📦 ' + (supplierNama || 'Supplier'),
         createdBy: supplierNama || 'Supplier',
         createdByType: 'supplier',
         supplierToken: token,

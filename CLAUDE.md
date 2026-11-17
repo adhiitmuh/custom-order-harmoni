@@ -16,6 +16,10 @@ Detail lama (rencana bot WA, Fonnte/WA Cloud API, strategi token Claude) sudah d
 - **WA hanya manual**: tombol membuka `api.whatsapp.com/send?...` (bukan `wa.me` — emoji rusak). Tidak ada Fonnte/kirim otomatis; jangan klaim "WA terkirim". Sisa kode Fonnte/bot di Worker tidak dikembangkan.
 - **Kontak customer hanya Owner** (`canViewContact`). Modal/profit tidak pernah tampil di invoice/halaman customer; `price_list` diblokir untuk anonymous (customer pakai `price_list_public`).
 - **Semua uang masuk wajib foto bukti** (termasuk tunai; DP di order baru kecuali marketplace). Setoran tunai di Tutup Kasir wajib bukti. Naik DP hanya lewat "+ Tambah Pembayaran", bukan edit order.
+- **Teks dari customer/staf wajib di-escape** sebelum masuk `innerHTML` (`esc`/`escH`/`escN`); id ke handler lewat `data-` atribut, bukan string `onclick`.
+- Koleksi publik (`public_order_info`, `supplier_tokens`, `consultations`) hanya `get` per token, tidak bisa `list`. Pesan customer di `chat_messages` wajib `senderRole:'customer'` & `senderId==token`.
+- `depositPaid` diubah dengan `increment()` (aman bila dua orang mencatat bersamaan). Status order tidak maju selama `priceApprovalStatus` pending/rejected (rules + UI).
+- Tanggal selalu WITA (`tglLokal()`), jangan `toISOString().split('T')[0]` (UTC).
 - Upload foto selalu lewat `compressImage()` (`js/image.js`). Tempel/seret file: `js/tempel-file.js`.
 - Sort di JS bila perlu, hindari query butuh composite index. Filter halaman disimpan di `sessionStorage` (`orders_filters`, dst).
 - `knowledge.html` `flushInlineSave` membuang item tanpa Nama. Safari tidak memicu `change` pada kolom angka terformat → simpan saat mengetik.

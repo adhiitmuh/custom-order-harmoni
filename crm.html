@@ -55,6 +55,7 @@
 </div>
 
 <script type="module">
+  const escH = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
@@ -85,8 +86,7 @@
         }
         const c = map.get(key)
         c.orders.push(o)
-        c.totalSpent += o.totalPrice || 0
-        c.totalPaid += o.depositPaid || 0
+        if (!['cancelled', 'draft'].includes(o.status)) { c.totalSpent += o.totalPrice || 0; c.totalPaid += o.depositPaid || 0 }
         if (!c.lastOrder || new Date(o.createdAt?.toDate?.() || o.createdAt) > new Date(c.lastOrder?.toDate?.() || c.lastOrder)) {
           c.lastOrder = o.createdAt
           c.name = o.customerName
@@ -115,8 +115,8 @@
           <div style="display:flex;align-items:center;gap:14px">
             <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,rgba(3,69,67,.12),rgba(3,69,67,.06));display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:var(--green);flex-shrink:0">${c.name?.[0]?.toUpperCase()||'?'}</div>
             <div style="flex:1;min-width:0">
-              <div style="font-weight:700;font-size:15px;color:var(--black)">${c.name}</div>
-              ${showContact && c.contact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace">${c.contact}</div>` : ''}
+              <div style="font-weight:700;font-size:15px;color:var(--black)">${escH(c.name)}</div>
+              ${showContact && c.contact ? `<div style="font-size:12px;color:rgba(3,69,67,.45);font-family:monospace">${escH(c.contact)}</div>` : ''}
               <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
                 <span style="font-size:11px;background:rgba(3,69,67,.07);color:var(--green);padding:2px 8px;border-radius:999px;font-weight:600">${c.orders.length} order</span>
                 ${activeOrders > 0 ? `<span style="font-size:11px;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:999px;font-weight:600">${activeOrders} aktif</span>` : ''}

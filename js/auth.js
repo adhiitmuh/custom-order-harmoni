@@ -38,6 +38,7 @@ async function signInDataAuth(portalUser) {
 }
 
 // Promise supaya halaman bisa tunggu sesi data siap sebelum query Firestore
+const escN = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 export const dataAuthReady = Promise.race([
   new Promise(resolve => {
     const unsub = onAuthStateChanged(auth, (portalUser) => {
@@ -683,7 +684,7 @@ function initNotifications(profile) {
               </span>
               <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.updatedAt)}</span>
             </div>
-            <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.customerName}</span> menunggu balasan — klik untuk balas</div>
+            <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${escN(n.customerName)}</span> menunggu balasan — klik untuk balas</div>
           </div>`
         }
         if (n._isVendor) {
@@ -725,7 +726,7 @@ function initNotifications(profile) {
             <span style="font-size:11px;font-weight:700;color:#034543">${isMention ? '💬' : isApproval ? '🔔' : '🔔'} ${label}${countBadge}</span>
             <span style="font-size:10px;color:rgba(3,69,67,.35)">${timeAgo(n.createdAt)}</span>
           </div>
-          <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${n.fromName}</span>: ${n.preview || ''}</div>
+          <div style="font-size:12px;color:rgba(3,69,67,.6);line-height:1.4"><span style="font-weight:600">${escN(n.fromName)}</span>: ${escN(n.preview || '')}</div>
         </div>`
       }).join('')
     }

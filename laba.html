@@ -52,7 +52,7 @@
   import { requireAuth, dataAuthReady } from './js/auth.js'
   import { collection, getDocs, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { DIVISION_META } from './js/utils.js'
-  import { daftarPenjahit } from './js/penjahit.js'
+  import { daftarPenjahit } from './js/penjahit.js?v=20261117a'
 
   const rp = n => (n < 0 ? '−Rp' : 'Rp') + Math.abs(Math.round(Number(n) || 0)).toLocaleString('id-ID')
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -126,7 +126,7 @@
     const fmt = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
     const sheet = rows => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]); Object.keys(ws).forEach(a => { if (a[0] !== '!' && typeof ws[a].v === 'number' && ws[a].v >= 1000) ws[a].z = fmt }); return ws }
     const t = tampil(), per = {}
-    t.forEach(x => { const d = namaDiv(x.o.division); const r = per[d] = per[d] || { Divisi: d, Order: 0, Omzet: 0, Modal: 0, Upah: 0, 'Biaya lain': 0, Komplain: 0, Laba: 0 }; r.Order++; r.Omzet += x.jual; r.Modal += x.modal; r.Upah += x.upah; r['Biaya lain'] += x.biaya; r.Komplain += x.komp; r.Laba += x.laba })
+    t.forEach(x => { const d = namaDiv(x.o.division); const r = per[d] = per[d] || { Divisi: d, Order: 0, Omzet: 0, Modal: 0, Upah: 0, 'Biaya lain': 0, Komplain: 0, Laba: 0 }; r.Order++; r.Omzet += x.jual; r.Modal += x.modal; r.Upah += x.upah; if (x.tanpaModal) r.Laba -= x.laba; r['Biaya lain'] += x.biaya; r.Komplain += x.komp; r.Laba += x.laba })
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, sheet(Object.values(per)), 'Per Divisi')
     XLSX.utils.book_append_sheet(wb, sheet(t.map(x => ({ 'No. Order': x.o.orderNumber, Customer: x.o.customerName, Divisi: namaDiv(x.o.division), Lokasi: x.o.lokasiNama || '', Jual: x.jual, Modal: x.modal, Upah: x.upah, 'Biaya lain': x.biaya, Komplain: x.komp, Laba: x.laba, Catatan: x.tanpaModal ? 'modal belum diisi' : '' }))), 'Per Order')

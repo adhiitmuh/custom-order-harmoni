@@ -150,11 +150,12 @@
 </div>
 
 <script type="module">
+  const escH = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   import { db } from './js/config.js'
   import { requireAuth, dataAuthReady, getProfile, ordersQuery, divisiSaya } from './js/auth.js'
-  import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js'
+  import { DIVISI_PENJAHIT, statusUpahPenjahit, badgeUpahPenjahit } from './js/penjahit.js?v=20261117a'
   import { collection, getDocs, query, orderBy, doc, getDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { banksPemilikDivisi } from './js/pembayaran.js?v=20261108a'
+  import { banksPemilikDivisi } from './js/pembayaran.js?v=20261116a'
   import { DIVISION_META, DIVISIONS, STATUS_LABEL, STATUS_CLASS, fmtCurrency, fmtDate, LOKASI_TIPE_LABEL, LOKASI_TIPE_ICON } from './js/utils.js'
 
   let allOrders = []
@@ -265,7 +266,7 @@
     const from = document.getElementById('dateFrom').value
     const to = document.getElementById('dateTo').value
     if (!from || !to) return
-    currentFrom = new Date(from)
+    currentFrom = new Date(from + 'T00:00:00')   // tengah malam WITA, bukan UTC
     currentTo = new Date(to + 'T23:59:59')
     document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'))
     render(currentFrom, currentTo)
@@ -305,7 +306,7 @@
   }
   function filterOrders(from, to) {
     return allOrders.filter(o => {
-      if (o.status === 'cancelled') return false
+      if (['cancelled', 'draft'].includes(o.status)) return false   // sama dengan Laba/Komisi/Analisa
       if (divTerpilih.size && !divTerpilih.has(o.division)) return false
       const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt)
       return d >= from && d <= to
@@ -387,7 +388,7 @@
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
         <div style="width:24px;height:24px;border-radius:50%;background:rgba(3,69,67,.08);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--green);flex-shrink:0">${i+1}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--black);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(c.name)}</div>
           <div class="bar-track" style="margin-top:4px"><div class="bar-fill" style="width:${Math.round((c.total/maxCust)*100)}%;background:rgba(3,69,67,.4)"></div></div>
         </div>
         <div style="text-align:right;flex-shrink:0">
@@ -532,7 +533,7 @@
             const margin = profit !== null && (o.totalPrice||0) > 0 ? Math.round((profit/(o.totalPrice||0))*100) : null
             return `<tr style="border-bottom:1px solid rgba(3,69,67,.05)" onmouseover="this.style.background='rgba(3,69,67,.02)'" onmouseout="this.style.background=''">
               <td style="padding:8px 6px"><a href="order.html?id=${o.id}" style="font-family:monospace;font-size:10px;color:var(--green);text-decoration:none">${o.orderNumber}</a></td>
-              <td style="padding:8px 6px;font-weight:600;color:var(--black)">${o.customerName}</td>
+              <td style="padding:8px 6px;font-weight:600;color:var(--black)">${escH(o.customerName)}</td>
               <td style="padding:8px 6px">${DIVISION_META[o.division]?.icon} ${DIVISION_META[o.division]?.label||o.division}</td>
               <td style="padding:8px 6px"><span class="badge ${STATUS_CLASS[o.status]}">${STATUS_LABEL[o.status]}</span></td>
               <td style="padding:8px 6px;text-align:right;font-weight:700">${fmtCurrency(o.totalPrice)}</td>

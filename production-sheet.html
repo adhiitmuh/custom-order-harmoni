@@ -463,7 +463,7 @@
           ${o.marketplace ? `<div style="font-size:10px;font-weight:800;color:#7c3aed;background:#f5f3ff;border-radius:4px;padding:1px 6px;margin-top:3px;display:inline-block" title="No. pesanan ${esc(o.noPesananMarketplace || '')}">🛒 ${esc(o.marketplace)}</div>` : ''}
         </td>
         <td>
-          <div style="font-weight:600;color:var(--black)">${o.customerName || '—'}</div>
+          <div style="font-weight:600;color:var(--black)">${esc(o.customerName || '—')}</div>
           ${relevantItems.length
             ? relevantItems.map((it, ri) =>
                 `<div style="font-size:11px;color:rgba(3,69,67,.6);margin-top:2px">
