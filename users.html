@@ -37,55 +37,6 @@
     <div id="error" class="alert alert-error" style="display:none"></div>
     <div id="success" class="alert alert-success" style="display:none"></div>
 
-    <!-- Add user form -->
-    <div id="addForm" class="card" style="display:none;margin-bottom:20px">
-      <h2 style="font-size:14px;font-weight:700;margin-bottom:14px">Tambah Pengguna Baru</h2>
-      <div class="grid-2">
-        <div class="form-group"><label>Nama Lengkap <span class="req">*</span></label><input type="text" id="newName" placeholder="Nama pengguna"></div>
-        <div class="form-group">
-          <label>Role <span class="req">*</span></label>
-          <select id="newRole" onchange="onRoleChange(this.value)">
-            <option value="cs">CS (Customer Service)</option>
-            <option value="manager">Kepala Cabang</option>
-            <option value="production">Tim Produksi</option>
-            <option value="divisi">Pemilik Divisi</option>
-            <option value="data">Data Entry (input modal, perlu approval)</option>
-            <option value="owner">Owner</option>
-          </select>
-        </div>
-        <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" id="newEmail" placeholder="email@harmoni.id"></div>
-        <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="newPassword" placeholder="Min. 6 karakter"></div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label>Lokasi</label>
-          <select id="newLokasiId">
-            <option value="">— Tidak ditentukan (akses semua) —</option>
-          </select>
-          <p class="form-hint">CS dan Tim Produksi hanya melihat order & chat dari lokasi yang dipilih</p>
-        </div>
-        <div class="form-group" id="divisiWrap" style="grid-column:1/-1;display:none">
-          <label>Divisi <span class="req">*</span> <span style="font-size:11px;font-weight:400;color:rgba(3,69,67,.4)">(boleh lebih dari satu)</span></label>
-          <div id="divisionCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
-          <p class="form-hint">Tim produksi hanya melihat order dari divisi yang dipilih</p>
-        </div>
-        <div class="form-group" id="divisiOwnerWrap" style="grid-column:1/-1;display:none">
-          <label>Divisi yang Dimiliki <span class="req">*</span></label>
-          <select id="newDivisi">
-            <option value="">— Pilih divisi —</option>
-          </select>
-          <p class="form-hint">Pemilik divisi hanya bisa melihat order dan laporan kewajiban untuk divisi ini</p>
-        </div>
-        <div class="form-group" id="pinWrap" style="grid-column:1/-1;display:none">
-          <label>PIN Approval <span class="req">*</span></label>
-          <input type="password" id="newPin" placeholder="4–6 digit angka" maxlength="6" inputmode="numeric">
-          <p class="form-hint">Digunakan untuk approve edit & void order dari staff</p>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="hideAddForm()" class="btn btn-ghost" style="flex:1;justify-content:center">Batal</button>
-        <button onclick="addUser()" class="btn btn-primary" style="flex:1;justify-content:center" id="addBtn">Buat Akun</button>
-      </div>
-    </div>
-
     <!-- User list -->
     <div id="userList"><div class="loading">Memuat…</div></div>
   </main>
@@ -112,7 +63,6 @@
   import { auth, db, authDb } from './js/config.js'
   import { requireAuth, getProfile } from './js/auth.js'
   import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, Timestamp, query, orderBy, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-  import { createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
   import { DIVISIONS, DIVISION_META } from './js/utils.js'
 
   const ROLE_LABEL = { owner: 'Owner', manager: 'Kepala Cabang', cs: 'CS', production: 'Tim Produksi', data: 'Data Entry', divisi: 'Pemilik Divisi' }
@@ -125,44 +75,9 @@
       lokasiOptions = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(l => l.aktif !== false)
         .sort((a, b) => (a.tipe || '').localeCompare(b.tipe || ''))
-      const sel = document.getElementById('newLokasiId')
-      lokasiOptions.forEach(l => {
-        const opt = document.createElement('option')
-        opt.value = l.id
-        const icon = l.tipe === 'pusat' ? '🏢' : l.tipe === 'cabang' ? '🏬' : '📍'
-        opt.textContent = `${icon} ${l.nama}`
-        sel.appendChild(opt)
-      })
     } catch(e) { console.warn('loadLokasiOptions:', e.message) }
   }
 
-  // Populate division checkboxes (multi-select for production/cs)
-  const divContainer = document.getElementById('divisionCheckboxes')
-  DIVISIONS.forEach(d => {
-    const lbl = document.createElement('label')
-    lbl.style.cssText = 'display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid rgba(3,69,67,.15);border-radius:8px'
-    lbl.innerHTML = `<input type="checkbox" class="div-check" value="${d}" style="width:14px;height:14px;accent-color:var(--green)"> ${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-    divContainer.appendChild(lbl)
-  })
-
-  // Populate divisi owner single-select
-  const divOwnerSel = document.getElementById('newDivisi')
-  DIVISIONS.forEach(d => {
-    const opt = document.createElement('option')
-    opt.value = d
-    opt.textContent = `${DIVISION_META[d].icon} ${DIVISION_META[d].label}`
-    divOwnerSel.appendChild(opt)
-  })
-
-  window.onRoleChange = function(role) {
-    document.getElementById('divisiWrap').style.display = (role === 'production' || role === 'cs') ? '' : 'none'
-    document.getElementById('divisiOwnerWrap').style.display = role === 'divisi' ? '' : 'none'
-    document.getElementById('pinWrap').style.display = role === 'manager' ? '' : 'none'
-    const hint = document.querySelector('#divisiWrap .form-hint')
-    if (hint) hint.textContent = role === 'production'
-      ? 'Tim produksi hanya melihat order dari divisi yang dipilih'
-      : 'CS Pusat — kosongkan jika CS ini handle semua divisi (untuk cabang/titik)'
-  }
 
   requireAuth(async (profile) => {
     if (profile.role !== 'owner') { window.location.href = 'dashboard.html'; return }
@@ -223,66 +138,23 @@
         ${u.id !== getProfile()?.id ? `
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             ${u.role !== 'owner' ? `<button onclick="editLokasi('${u.id}','${u.lokasiId||''}')" class="btn btn-ghost btn-sm">📍 Lokasi</button>` : ''}
+            ${u.role === 'manager' ? `<button onclick="aturPin(this.dataset.id,this.dataset.nama)" data-id="${escH(u.id)}" data-nama="${escH(u.name)}" class="btn btn-ghost btn-sm">🔑 Atur PIN</button>` : ''}
             <button onclick="deleteUser(this.dataset.id,this.dataset.nama)" data-id="${escH(u.id)}" data-nama="${escH(u.name)}" class="btn btn-danger btn-sm">Hapus</button>
           </div>` : '<span style="font-size:11px;color:rgba(3,69,67,.3)">(Anda)</span>'}
       </div>`).join('')
   }
 
-  window.showAddForm = () => { document.getElementById('addForm').style.display = ''; document.getElementById('newName').focus() }
-  window.hideAddForm = () => { document.getElementById('addForm').style.display = 'none' }
-
-  window.addUser = async function() {
-    const name = document.getElementById('newName').value.trim()
-    const email = document.getElementById('newEmail').value.trim()
-    const password = document.getElementById('newPassword').value
-    const role = document.getElementById('newRole').value
-    const errEl = document.getElementById('error')
-    const sucEl = document.getElementById('success')
-    errEl.style.display='none'; sucEl.style.display='none'
-
-    if (!name||!email||!password) { errEl.textContent='Semua field harus diisi'; errEl.style.display=''; return }
-    if (password.length<6) { errEl.textContent='Password minimal 6 karakter'; errEl.style.display=''; return }
-
-    const btn = document.getElementById('addBtn')
-    btn.disabled=true; btn.textContent='Membuat akun…'
-
-    // Save current session
-    const currentUser = auth.currentUser
-    const currentEmail = currentUser?.email
-
+  // PIN approval Kepala Cabang: disimpan sebagai hash di server (pin_kepala), tidak bisa dibaca dari aplikasi
+  window.aturPin = async (id, nama) => {
+    const pin = prompt(`PIN approval baru untuk ${nama} (4–8 angka):`); if (pin === null) return
+    if (!/^\d{4,8}$/.test(pin.trim())) { alert('PIN harus 4–8 angka'); return }
     try {
-      // Create new user (this signs in as new user)
-      const cred = await createUserWithEmailAndPassword(auth, email, password)
-      const newUid = cred.user.uid
-
-      // Save to Firestore
-      const lokasiId = document.getElementById('newLokasiId').value
-      const lokasiObj = lokasiId ? lokasiOptions.find(l => l.id === lokasiId) : null
-      const lokasiNama = lokasiObj?.nama || ''
-      const lokasiTipe = lokasiObj?.tipe || ''
-      const divisions = (role === 'production' || role === 'cs') ? [...document.querySelectorAll('.div-check:checked')].map(el => el.value) : []
-      const divisi = role === 'divisi' ? document.getElementById('newDivisi').value : ''
-      const pin = role === 'manager' ? document.getElementById('newPin').value.trim() : ''
-      if (role === 'production' && !divisions.length) throw new Error('Pilih minimal satu divisi untuk tim produksi')
-      if (role === 'divisi' && !divisi) throw new Error('Pilih divisi yang dimiliki')
-      if (role === 'manager' && (!pin || pin.length < 4)) throw new Error('PIN kepala cabang minimal 4 digit')
-      await setDoc(doc(db,'users',newUid), { name, email, role, lokasiId, lokasiNama, lokasiTipe, divisions, divisi, pin, createdAt: Timestamp.now() })
-
-      // createUserWithEmailAndPassword otomatis sign-in sebagai user baru
-      // → harus sign out lalu owner login ulang
-      sessionStorage.clear()
-      await signOut(auth)
-      sessionStorage.setItem('flash_success', `Akun ${name} berhasil dibuat. Silakan login kembali.`)
-      window.location.href = 'index.html'
-    } catch(err) {
-      const msgs = {
-        'auth/email-already-in-use': 'Email sudah digunakan',
-        'auth/invalid-email': 'Format email tidak valid',
-        'auth/weak-password': 'Password terlalu lemah',
-      }
-      errEl.textContent = msgs[err.code] || err.message
-      errEl.style.display=''
-    } finally { btn.disabled=false; btn.textContent='Buat Akun' }
+      const idToken = await auth.currentUser?.getIdToken()
+      const res = await fetch('https://harmoni-order-api.adhiitmuh.workers.dev/set-pin', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ managerId: id, pin: pin.trim(), nama }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || res.status)
+      alert(`✅ PIN ${nama} tersimpan. Beritahu langsung ke yang bersangkutan.`)
+    } catch (e) { alert('Gagal menyimpan PIN: ' + e.message) }
   }
 
   let _editLokasiUid = null

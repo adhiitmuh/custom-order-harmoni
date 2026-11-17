@@ -182,3 +182,8 @@ export function checkPriceTier(totalPrice, priceList) {
   if (minAdmin && totalPrice < minAdmin) return 'blocked'
   return 'promo'
 }
+
+// Escape teks untuk innerHTML / atribut (pakai di halaman baru; halaman lama punya salinan lokal)
+export function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}

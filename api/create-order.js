@@ -127,6 +127,11 @@ export default {
     if (request.method === 'POST' && url.pathname === '/price-list-save') {
       return handlePriceListSave(request, env)
     }
+    // PIN Kepala Cabang dicek di server (hash di pin_kepala, tidak bisa dibaca dari aplikasi)
+    if (request.method === 'POST' && url.pathname === '/cek-pin') return handleCekPin(request, env)
+    if (request.method === 'POST' && url.pathname === '/set-pin') return handleSetPin(request, env)
+    // Halaman supplier: data pesanan versi bersih (tanpa harga, kontak & nama customer)
+    if (request.method === 'GET' && url.pathname === '/supplier-order') return handleSupplierOrder(url, env)
 
     // /qris-img: ambil gambar QRIS (Firebase Storage / ImgBB) supaya bisa dibagikan
     // sebagai file lewat tombol Bagikan (Storage tidak mengizinkan fetch lintas-domain).
@@ -265,9 +270,9 @@ async function handleCreateOrder(request, env, token) {
     chatToken:            { stringValue: chatToken },
     sumberOrder:          { stringValue: sumberOrder },
     agentSessionId:       { stringValue: agentSessionId },
-    priceApprovalStatus:  { stringValue: 'approved' },
-    priceApprovalTier:    { nullValue: null },
-    priceApprovalReason:  { stringValue: '' },
+    priceApprovalStatus:  { stringValue: 'pending' },
+    priceApprovalTier:    { stringValue: 'admin' },
+    priceApprovalReason:  { stringValue: 'Order dari bot tanpa rincian item' },
     priceApprovalBy:      { nullValue: null },
     priceApprovalAt:      { nullValue: null },
     createdBy:            { stringValue: 'wa_bot' },
@@ -983,7 +988,7 @@ async function handleCreateOrderFromChat(request, env) {
     orderDate:           { stringValue: today },
     dueDate:             { stringValue: dueDate },
     originalDueDate:     { stringValue: dueDate },
-    status:              { stringValue: 'pending' },
+    status:              { stringValue: 'pending-approval' },
     progressPercentage:  { integerValue: '0' },
     totalPrice:          { doubleValue: Number(totalPrice) },
     // DP tidak dicatat dari sini: semua uang masuk wajib lewat "+ Tambah Pembayaran" (foto bukti, riwayat pembayaran)
@@ -999,9 +1004,10 @@ async function handleCreateOrderFromChat(request, env) {
     lokasiId:            { stringValue: '' },
     lokasiNama:          { stringValue: '' },
     lokasiTipe:          { stringValue: '' },
-    priceApprovalStatus: { stringValue: 'approved' },
-    priceApprovalTier:   { nullValue: null },
-    priceApprovalReason: { stringValue: '' },
+    // Order dari Inbox belum punya rincian item → harga wajib disetujui Owner sebelum produksi
+    priceApprovalStatus: { stringValue: 'pending' },
+    priceApprovalTier:   { stringValue: 'admin' },
+    priceApprovalReason: { stringValue: 'Order dari Chat Inbox tanpa rincian item — lengkapi item lewat Edit lalu setujui' },
     priceApprovalBy:     { nullValue: null },
     priceApprovalAt:     { nullValue: null },
     chatInboxThreadId:   { stringValue: threadId },
@@ -1016,10 +1022,10 @@ async function handleCreateOrderFromChat(request, env) {
     orderNumber:  { stringValue: orderNumber },
     division:     { stringValue: division },
     customerName: { stringValue: customerName },
-    status:       { stringValue: 'pending' },
+    status:       { stringValue: 'pending-approval' },
     dueDate:      { stringValue: dueDate },
     totalPrice:   { doubleValue: Number(totalPrice) },
-    depositPaid:  { doubleValue: Number(dp) },
+    depositPaid:  { doubleValue: 0 },
     notes:        { stringValue: notes },
     createdAt:    { timestampValue: now },
   })
@@ -1229,25 +1235,90 @@ async function firestoreQuery(projectId, token, collectionId, filters) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Nomor order: counter per divisi per TAHUN (order_counters/{divisi}_{tahun}), ditulis dengan precondition
+// (updateTime / belum ada) supaya dua order bersamaan tidak mendapat nomor sama. Tahun 2026 melanjutkan counter lama.
 async function generateOrderNumber(projectId, token, division) {
   const code = DIVISION_CODES[division] || 'ORD'
-  const year = new Date().getFullYear()
-  const docPath = `order_counters/${division}`
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${docPath}`
+  const year = Number(new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 4))   // tahun WITA
+  const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  for (let coba = 0; coba < 8; coba++) {
+    const r = await fetch(`${base}/order_counters/${division}_${year}`, { headers: h })
+    let current = 0, pre
+    if (r.ok) { const d = await r.json(); current = Number(d.fields?.counter?.integerValue || 0); pre = { updateTime: d.updateTime } }
+    else {
+      if (year === 2026) { const l = await fetch(`${base}/order_counters/${division}`, { headers: h }); if (l.ok) current = Number((await l.json()).fields?.counter?.integerValue || 0) }
+      pre = { exists: false }
+    }
+    const next = current + 1
+    const res = await fetch(`${base}:commit`, { method: 'POST', headers: h, body: JSON.stringify({ writes: [{
+      update: { name: `projects/${projectId}/databases/(default)/documents/order_counters/${division}_${year}`, fields: { counter: { integerValue: String(next) }, year: { integerValue: String(year) } } },
+      currentDocument: pre }] }) })
+    if (res.ok) return `HRM-${code}-${year}-${String(next).padStart(4, '0')}`
+    await new Promise(ok => setTimeout(ok, 80 + Math.random() * 200))
+  }
+  throw new Error('Nomor order sedang dipakai bersamaan — coba lagi')
+}
 
-  const readRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  const current = readRes.ok
-    ? Number((await readRes.json())?.fields?.counter?.integerValue || 0)
-    : 0
-  const next = current + 1
-
-  await fetch(`${url}?updateMask.fieldPaths=counter`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { counter: { integerValue: String(next) } } }),
-  })
-
-  return `HRM-${code}-${year}-${String(next).padStart(4, '0')}`
+async function sha256Hex(teks) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(teks))
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('')
+}
+async function staffDariRequest(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return null
+  const firebaseUser = await verifyFirebaseIdToken(idToken, env)
+  if (!firebaseUser) return null
+  return getPortalStaff(idToken, firebaseUser)
+}
+async function handleCekPin(request, env) {
+  const staff = await staffDariRequest(request, env)
+  if (!staff) return json({ error: 'Sesi login habis — muat ulang halaman' }, 401)
+  const body = await request.json().catch(() => null)
+  const managerId = String(body?.managerId || ''), pin = String(body?.pin || '').trim()
+  if (!managerId || !pin || !/^[\w-]{1,128}$/.test(managerId)) return json({ error: 'Data tidak lengkap' }, 400)
+  const projectId = env.FIREBASE_PROJECT_ID, token = await getFirebaseToken(env)
+  const [pk, u] = await Promise.all([firestoreGet(projectId, token, `pin_kepala/${managerId}`).catch(() => null), firestoreGet(projectId, token, `users/${managerId}`).catch(() => null)])
+  const user = u?.fields ? parseFields(u.fields) : {}
+  const hash = pk?.fields?.hash?.stringValue
+  let cocok = false
+  if (hash) cocok = (await sha256Hex(`${managerId}:${pin}`)) === hash
+  else if (user.pin) cocok = String(user.pin) === pin          // PIN lama (belum dipindah) — tetap dicek di server
+  else return json({ error: 'PIN Kepala Cabang ini belum diatur Owner' }, 404)
+  if (!cocok) return json({ error: 'PIN salah' }, 403)
+  return json({ ok: true, manager: { id: managerId, name: user.name || pk?.fields?.nama?.stringValue || '' } })
+}
+async function handleSetPin(request, env) {
+  const staff = await staffDariRequest(request, env)
+  if (!staff || staff.role !== 'owner') return json({ error: 'Khusus Owner' }, 403)
+  const body = await request.json().catch(() => null)
+  const managerId = String(body?.managerId || ''), pin = String(body?.pin || '').trim(), nama = String(body?.nama || '').slice(0, 80)
+  if (!/^[\w-]{1,128}$/.test(managerId) || !/^\d{4,8}$/.test(pin)) return json({ error: 'PIN harus 4–8 angka' }, 400)
+  const projectId = env.FIREBASE_PROJECT_ID, token = await getFirebaseToken(env)
+  await firestoreSet(projectId, token, `pin_kepala/${managerId}`, { hash: { stringValue: await sha256Hex(`${managerId}:${pin}`) }, nama: { stringValue: nama }, diubah: { timestampValue: new Date().toISOString() } })
+  // Hapus PIN lama yang tersimpan terbuka di users/{id}
+  await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${managerId}?updateMask.fieldPaths=pin`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: {} }) }).catch(() => {})
+  return json({ ok: true })
+}
+// Data pesanan untuk supplier: hanya item yang ditugaskan, tanpa harga/modal/kontak/nama customer
+async function handleSupplierOrder(url, env) {
+  const tk = String(url.searchParams.get('token') || '')
+  if (!/^[\w-]{8,128}$/.test(tk)) return json({ error: 'Link tidak valid' }, 400)
+  const projectId = env.FIREBASE_PROJECT_ID, token = await getFirebaseToken(env)
+  const t = await firestoreGet(projectId, token, `supplier_tokens/${tk}`).catch(() => null)
+  if (!t?.fields) return json({ error: 'Link tidak valid atau sudah kedaluwarsa' }, 404)
+  const td = parseFields(t.fields)
+  const o = await firestoreGet(projectId, token, `orders/${td.orderId}`).catch(() => null)
+  if (!o?.fields) return json({ error: 'Data pesanan tidak ditemukan' }, 404)
+  const od = parseFields(o.fields)
+  const idx = Array.isArray(td.itemIndexes) ? td.itemIndexes.map(Number) : []
+  const sensor = x => String(x || '').replace(/(\+?62|0)8[\d\s-]{7,13}/g, '[nomor disembunyikan]')
+  const items = (od.orderItems || []).map((it, i) => ({ i, it })).filter(x => idx.includes(x.i)).map(({ it }) => ({
+    name: it.name || '', varian: it.varian || '', qty: Number(it.qty) || 0, namaCustom: it.namaCustom || null, ukuran: it.ukuran || it.sizes || null, notes: sensor(it.notes || it.catatan || it.note || '') }))
+  return json({ ok: true, orderId: td.orderId, supplierId: td.supplierId || '', supplierNama: td.supplierNama || '', orderCode: td.orderCode || '', divisiLabel: td.divisiLabel || '',
+    dueDate: od.dueDate || '', varian: od.varian || '', notes: sensor(od.notes), fileUrls: Array.isArray(td.fileUrls) ? td.fileUrls : [], sizeBreakdown: od.sizeBreakdown || null, designFiles: od.designFiles || [], items,
+    progressPercentage: Number(od.progressPercentage) || 0, status: od.status || '' })
 }
 
 async function firestoreSet(projectId, token, docPath, fields) {

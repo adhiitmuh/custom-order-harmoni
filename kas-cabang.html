@@ -258,7 +258,9 @@
     const tgl = document.getElementById('tTgl').value
     const dariTangan = setorList.filter(x => x.cara === 'laci' && x.tgl === tgl && x.status !== 'ditolak').reduce((t, x) => t + (Number(x.jumlah) || 0), 0)
     // Kunci sama dengan pilihan rekening (rek@nomor / qris@nama) supaya laporan per rekening tidak dobel
-    bayarHari.forEach(p => { const j = Number(p.jumlah) || 0; if (grupMetode(p.metode) === 'tunai') { if (p.pegang === 'staf') diTangan += j; else tunai += j; return }
+    // Koreksi "salah input" tidak mengubah uang di laci/rekening hari ini; koreksi atas uang yang dipegang staf dihitung di Uang di Tangan
+    // Salah input yang asalnya hari sebelumnya tidak mengubah laci hari ini (selisihnya sudah tampil di Tutup Kasir hari itu)
+    bayarHari.filter(p => !(p.salahInput && p.koreksiTgl !== p.tgl) && !(Number(p.jumlah) < 0 && p.pegang === 'staf')).forEach(p => { const j = Number(p.jumlah) || 0; if (grupMetode(p.metode) === 'tunai') { if (p.pegang === 'staf') diTangan += j; else tunai += j; return }
       const v = grupMetode(p.metode) === 'qris' ? (p.rekeningNo ? 'qris@' + p.rekeningNo : 'qris') : (p.rekeningNo ? 'rek@' + p.rekeningNo : labelRekening(p))
       const r = per[v] = per[v] || { v, label: opsiRekening().find(o => o.v === v)?.l || labelRekening(p), jumlah: 0 }; r.jumlah += j })
     return { tunai, diTangan, dariTangan, non: Object.values(per), n: bayarHari.length, total: bayarHari.reduce((t, p) => t + (Number(p.jumlah) || 0), 0) }
@@ -403,7 +405,10 @@
     setorList = sS.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.tgl.localeCompare(a.tgl) || (b.at?.seconds || 0) - (a.at?.seconds || 0))
     // Sudah disetor = ada di setoran lokasi ini yang tidak ditolak
     const sudah = new Set(); setorList.filter(x => x.status !== 'ditolak').forEach(x => (x.pembayaranIds || []).forEach(i => sudah.add(i)))
-    tanganBayar = bS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => (p.lokasiId || '') === lok && !sudah.has(p.id) && (Number(p.jumlah) || 0) > 0)
+    const semuaStaf = bS.docs.map(d => ({ id: d.id, ...d.data() }))
+    const koreksi = {}; semuaStaf.filter(p => p.koreksiDari && Number(p.jumlah) < 0).forEach(p => { koreksi[p.koreksiDari] = (koreksi[p.koreksiDari] || 0) + Number(p.jumlah) })
+    tanganBayar = semuaStaf.filter(p => (Number(p.jumlah) || 0) > 0).map(p => koreksi[p.id] ? { ...p, jumlahAsli: p.jumlah, jumlah: Number(p.jumlah) + koreksi[p.id] } : p)
+      .filter(p => (p.lokasiId || '') === lok && !sudah.has(p.id) && (Number(p.jumlah) || 0) > 0)
       .sort((a, b) => a.tgl.localeCompare(b.tgl))
     renderTangan()
   }

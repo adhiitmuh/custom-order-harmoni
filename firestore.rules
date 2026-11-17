@@ -70,7 +70,8 @@ service cloud.firestore {
     match /orders/{orderId} {
       // Customer (chat.html) & supplier (supplier-view.html) memakai sesi anonim dan
       // hanya membuka satu order lewat ID; daftar semua order khusus staff.
-      allow get: if isAuth() && bolehOrderData(resource.data);
+      // Sesi anonim (customer/supplier) tidak bisa membaca order: supplier memakai Worker /supplier-order (data bersih)
+      allow get: if isStaffAuth() && bolehOrderData(resource.data);
       allow list: if isStaffAuth() && bolehOrderData(resource.data);
       allow create: if isStaffAuth() && bolehOrderData(request.resource.data) && approvalSahBaru(request.resource.data);
       // Sesi anonim hanya boleh menyentuh penghitung chat & persentase progress
@@ -114,7 +115,10 @@ service cloud.firestore {
       allow write: if isOwner() || isData() || isDivisiOwnerOf(id);
     }
     match /order_counters/{div} {
-      allow read, write: if isStaffAuth();
+      // Hanya boleh naik +1 (mencegah nomor order ditimpa/mundur); dokumen baru per tahun boleh dibuat staf
+      allow read: if isStaffAuth();
+      allow create: if isStaffAuth() && request.resource.data.counter is int && request.resource.data.counter >= 1;
+      allow update: if isOwner() || (isStaffAuth() && request.resource.data.counter == resource.data.counter + 1);   // Owner: pemulihan backup
     }
     // Daftar harga lengkap (harga modal/promo/admin) — hanya staf.
     // Hanya Owner yang menulis langsung. Staf lain (CS: Normal/Cabang yang kosong & item baru,
@@ -357,6 +361,10 @@ service cloud.firestore {
     }
 
     // Konsultasi pra-order (sebelum ada order) — dibuat oleh WA Bot via service account
+    // Hash PIN approval Kepala Cabang — hanya Worker (service account)
+    match /pin_kepala/{uid} {
+      allow read, write: if false;
+    }
     match /consultations/{token} {
       allow get: if true;    // public — customer akses via token (satu dokumen)
       allow list: if isStaffAuth() && !isDivisiOwner();

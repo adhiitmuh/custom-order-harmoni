@@ -1312,12 +1312,16 @@
   async function generateOrderNumber(division) {
     const divMeta = (_activeDivisions || []).find(d => d.key === division) || DIVISION_META[division]
     const code = divMeta?.code || 'ORD'
-    const year = new Date().getFullYear()
-    const counterRef = fsDoc(db, 'order_counters', division)
+    const year = Number(tglLokal().slice(0, 4))   // tahun WITA
+    // Counter per divisi per tahun (sama dengan Worker). Tahun 2026 melanjutkan counter lama.
+    const counterRef = fsDoc(db, 'order_counters', `${division}_${year}`)
+    const legacyRef = fsDoc(db, 'order_counters', division)
     const count = await runTransaction(db, async tx => {
       const snap = await tx.get(counterRef)
-      const next = (snap.exists() ? snap.data().counter : 0) + 1
-      tx.set(counterRef, { counter: next }, { merge: true })
+      let cur = snap.exists() ? (snap.data().counter || 0) : 0
+      if (!snap.exists() && year === 2026) { const l = await tx.get(legacyRef); cur = l.exists() ? (l.data().counter || 0) : 0 }
+      const next = cur + 1
+      tx.set(counterRef, { counter: next, year }, { merge: true })
       return next
     })
     return `HRM-${code}-${year}-${String(count).padStart(4,'0')}`
@@ -1395,6 +1399,10 @@
     if (!isMarketplace() && parsePrice(document.getElementById('depositPaid').value) > 0) {
       if (!document.getElementById('paymentMethod').value) { errEl.textContent = 'Pilih metode pembayaran DP (Tunai / QRIS / Transfer)'; errEl.style.display=''; return }
       if (!document.getElementById('buktiDp').files[0]) { errEl.textContent = 'Foto bukti bayar DP wajib dilampirkan — termasuk pembayaran tunai (foto uang yang diterima / nota).'; errEl.style.display=''; return }
+    }
+    // Order (bukan draft) wajib punya minimal 1 item dengan qty & harga — tanpa item, harga tidak bisa dicek tier-nya
+    if (!document.getElementById('isDraft').checked && !getItemRows().some(i => i.qty > 0 && i.pricePerUnit > 0)) {
+      errEl.textContent = 'Isi minimal 1 item dengan jumlah dan harga (supaya harga bisa dicek dengan daftar harga). Simpan sebagai draft bila rincian belum lengkap.'; errEl.style.display=''; return
     }
     if (currentPriceTier === 'blocked') { errEl.textContent = 'Harga di bawah batas minimum! Tidak dapat disimpan.'; errEl.style.display=''; return }
     // Approval hanya karena item baru → alasan terisi otomatis

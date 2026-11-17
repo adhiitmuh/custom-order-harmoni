@@ -73,12 +73,12 @@
     </div>
 
     <div class="card" style="margin-bottom:14px" id="kartuKirim">
-      <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">💵 Tunai di tangan CS</h2>
+      <h2 style="font-size:14px;font-weight:700;margin-bottom:8px">💵 Tunai hari ini</h2>
       <div class="lh-tunai" id="tunai"></div>
-      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Tunai yang diterima di luar toko & dipegang staf (🤝) dipantau per orang di <a href="kas-cabang.html" style="color:var(--green);font-weight:700">Kas Cabang → 💵 Uang di Tangan</a>.</p>
-      <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:10px" id="isianLaporan">
-        <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Tunai diserahkan ke Adi hari ini (Rp)</label><input type="text" inputmode="numeric" id="setor" placeholder="0" oninput="fmtAngka(this);hitungTunai()"></div>
-        <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label><input type="text" id="catatan" placeholder="cth: tunai dititip ke pengurus"></div>
+      <p style="font-size:11px;color:rgba(3,69,67,.5);margin-top:6px">Tunai di laci dihitung & disetor lewat <a href="kas-cabang.html" style="color:var(--green);font-weight:700">Kas Cabang → Tutup Kasir</a>. Tunai yang dipegang staf (🤝) dipantau per orang di <a href="kas-cabang.html" style="color:var(--green);font-weight:700">Kas Cabang → 💵 Uang di Tangan</a>.</p>
+      <div style="margin-top:10px" id="isianLaporan">
+        <input type="hidden" id="setor" value="">
+        <div><label style="font-size:11px;color:rgba(3,69,67,.5)">Catatan (opsional)</label><input type="text" id="catatan" placeholder="cth: ada pembayaran yang dikoreksi"></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="aksi"></div>
     </div>
@@ -125,7 +125,7 @@
 
   const atasNama = {}
   const pemilikRek = p => p.rekeningNo && atasNama[p.rekeningNo] ? ' (a.n. ' + atasNama[p.rekeningNo] + ')' : ''
-  let profile, lokasiList = [], bulanData = [], tunaiSemua = [], laporan = [], waAdi = '', bulanDimuat = ''
+  let profile, lokasiList = [], bulanData = [], laporan = [], waAdi = '', bulanDimuat = ''
   const isOwner = () => profile.role === 'owner'
 
   requireAuth(async p => {
@@ -164,13 +164,11 @@
     const tgl = document.getElementById('tgl').value || tglLokal()
     const bulan = tgl.slice(0, 7)
     if (paksa || bulan !== bulanDimuat) {
-      const [bSnap, cSnap, lpSnap] = await Promise.all([
+      const [bSnap, lpSnap] = await Promise.all([
         getDocs(query(collection(db, 'pembayaran'), where('tgl', '>=', bulan + '-01'), where('tgl', '<=', bulan + '-31'))),
-        getDocs(query(collection(db, 'pembayaran'), where('metode', '==', 'cash'))),
         getDocs(collection(db, 'laporan_harian')),
       ])
       bulanData = bSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      tunaiSemua = cSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       laporan = lpSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       bulanDimuat = bulan
       isiPilihanDivisi()
@@ -201,13 +199,6 @@
     list.forEach(p => { g[grupMetode(p.metode)] += Number(p.jumlah) || 0 })
     return { total: list.reduce((t, p) => t + (Number(p.jumlah) || 0), 0), per, g, n: list.length }
   }
-  // Tunai dipegang CS di satu lokasi sampai akhir tanggal tsb: semua tunai masuk − semua setoran ke Adi
-  function sisaTunai(lok, tgl, setorHariIni = null) {
-    const masuk = tunaiSemua.filter(p => kunciLok(p) === lok && p.tgl <= tgl).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
-    const setor = laporan.filter(l => l.lokasiKey === lok && l.tgl <= tgl && !(setorHariIni !== null && l.tgl === tgl)).reduce((t, l) => t + (Number(l.setorTunai) || 0), 0)
-    return masuk - setor - (setorHariIni || 0)
-  }
-
   function render() {
     const tgl = document.getElementById('tgl').value
     const lok = lokasiDipilih()
@@ -240,7 +231,6 @@
     const lp = laporanDari(lok, tgl)
     const setorEl = document.getElementById('setor'), catEl = document.getElementById('catatan')
     if (setorEl.dataset.untuk !== idLaporan(lok, tgl)) {
-      setorEl.value = lp?.setorTunai ? Number(lp.setorTunai).toLocaleString('id-ID') : ''
       catEl.value = lp?.catatan || ''
       setorEl.dataset.untuk = idLaporan(lok, tgl)
     }
@@ -258,43 +248,43 @@
     renderRekap()
   }
 
+  // Tunai hari ini: masuk laci (Tutup Kasir) vs dipegang staf (Uang di Tangan)
+  function tunaiHari(lok, tgl) {
+    const list = bulanData.filter(p => kunciLok(p) === lok && p.tgl === tgl && grupMetode(p.metode) === 'tunai')
+    const jml = f => list.filter(f).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
+    return { laci: jml(p => p.pegang !== 'staf'), staf: jml(p => p.pegang === 'staf') }
+  }
   window.hitungTunai = function() {
     const tgl = document.getElementById('tgl').value, lok = lokasiDipilih(); if (!lok) return
-    const kemarin = (() => { const x = new Date(tgl + 'T00:00:00'); x.setDate(x.getDate() - 1); return tglLokal(x) })()
-    const awal = sisaTunai(lok, kemarin)
-    const hariIni = tunaiSemua.filter(p => kunciLok(p) === lok && p.tgl === tgl).reduce((t, p) => t + (Number(p.jumlah) || 0), 0)
-    const setor = angka(document.getElementById('setor').value)
-    const akhir = awal + hariIni - setor
+    const t = tunaiHari(lok, tgl)
     document.getElementById('tunai').innerHTML = `<table style="width:100%">
-      <tr><td>Sisa tunai sebelumnya</td><td>${rp(awal)}</td></tr>
-      <tr><td>+ Tunai masuk hari ini</td><td>${rp(hariIni)}</td></tr>
-      <tr><td>− Diserahkan ke Adi hari ini</td><td>${rp(setor)}</td></tr>
-      <tr class="g"><td>= Tunai masih dipegang CS</td><td>${rp(akhir)}</td></tr></table>`
+      <tr><td>Tunai masuk laci</td><td>${rp(t.laci)}</td></tr>
+      <tr><td>🤝 Tunai dipegang staf</td><td>${rp(t.staf)}</td></tr>
+      <tr class="g"><td>= Total tunai hari ini</td><td>${rp(t.laci + t.staf)}</td></tr></table>`
   }
 
-  function pesanWa(lok, tgl, r, setor, sisa, catatan) {
+  function pesanWa(lok, tgl, r, catatan) {
     const per = Object.entries(r.per).map(([k, v]) => `• ${k}: ${rp(v)}`).join('\n') || '• (tidak ada)'
-    return `📊 *Laporan Harian Custom Order*\n${namaLok(lok)} · ${new Date(tgl + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n\n*Total masuk: ${rp(r.total)}* (${r.n} pembayaran)\n${per}\n\n💵 Tunai diserahkan: ${rp(setor)}\n💵 Tunai masih dipegang: ${rp(sisa)}${catatan ? '\nCatatan: ' + catatan : ''}\n\nDilaporkan: ${profile.name}\nRincian: ${APP_URL}laporan-harian.html?tgl=${tgl}&lokasi=${encodeURIComponent(lok)}`
+    return `📊 *Laporan Harian Custom Order*\n${namaLok(lok)} · ${new Date(tgl + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n\n*Total masuk: ${rp(r.total)}* (${r.n} pembayaran)\n${per}\n\n💵 Tunai masuk laci: ${rp(tunaiHari(lok, tgl).laci)}${tunaiHari(lok, tgl).staf ? '\n🤝 Tunai dipegang staf: ' + rp(tunaiHari(lok, tgl).staf) : ''}${catatan ? '\nCatatan: ' + catatan : ''}\n\nDilaporkan: ${profile.name}\nRincian: ${APP_URL}laporan-harian.html?tgl=${tgl}&lokasi=${encodeURIComponent(lok)}`
   }
 
   window.kirimLaporan = async function() {
     const tgl = document.getElementById('tgl').value, lok = lokasiDipilih(); if (!lok) return
     const hari = bulanData.filter(p => p.tgl === tgl && kunciLok(p) === lok)
     const r = ringkas(hari)
-    const setor = angka(document.getElementById('setor').value), catatan = document.getElementById('catatan').value.trim()
-    const sisa = sisaTunai(lok, tgl, setor)
-    if (!r.n && !setor && !confirm('Tidak ada pembayaran di tanggal ini. Tetap kirim laporan kosong?')) return
+    const catatan = document.getElementById('catatan').value.trim(), th = tunaiHari(lok, tgl)
+    if (!r.n && !confirm('Tidak ada pembayaran di tanggal ini. Tetap kirim laporan kosong?')) return
     // Buka jendela WA lebih dulu (langsung dari ketukan) supaya tidak diblokir Safari/iPad
     const w = window.open('', '_blank')
     const now = Timestamp.now(), lama = laporanDari(lok, tgl)
     const data = { tgl, lokasiKey: lok, lokasiId: lok === TANPA ? '' : lok, lokasiNama: namaLok(lok),
       total: r.total, jumlahTransaksi: r.n, perMetode: r.per, tunai: r.g.tunai, qris: r.g.qris, transfer: r.g.transfer,
-      setorTunai: setor, sisaTunai: sisa, catatan, pembayaranIds: hari.map(p => p.id),
+      tunaiLaci: th.laci, tunaiStaf: th.staf, catatan, pembayaranIds: hari.map(p => p.id),
       dikirimOleh: profile.name || '', dikirimOlehUid: profile.id || '', dikirimAt: now, updatedAt: now }
     try {
       if (lama) await updateDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), data)
       else await setDoc(doc(db, 'laporan_harian', idLaporan(lok, tgl)), { ...data, dibuatOlehUid: profile.id || '', createdAt: now })
-      const url = `https://api.whatsapp.com/send?phone=${normalNoWa(waAdi)}&text=${encodeURIComponent(pesanWa(lok, tgl, r, setor, sisa, catatan))}`
+      const url = `https://api.whatsapp.com/send?phone=${normalNoWa(waAdi)}&text=${encodeURIComponent(pesanWa(lok, tgl, r, catatan))}`
       if (w) w.location.href = url; else location.href = url
       await muat(true)
     } catch (err) { if (w) w.close(); alert('Gagal menyimpan laporan: ' + err.message) }
@@ -396,7 +386,7 @@
       const r = ringkas(list)
       const row = { Tanggal: tgl, Lokasi: namaLok(k) }
       metodeAll.forEach(m => { row[m] = r.per[m] || 0 })
-      Object.assign(row, { Total: r.total, 'Jumlah Pembayaran': r.n, 'Tunai Diserahkan': lp?.setorTunai || 0, 'Sisa Tunai Dipegang': lp?.sisaTunai ?? sisaTunai(k, tgl),
+      Object.assign(row, { Total: r.total, 'Jumlah Pembayaran': r.n, 'Tunai Laci': tunaiHari(k, tgl).laci, 'Tunai Dipegang Staf': tunaiHari(k, tgl).staf,
         Status: lp?.dicekAt ? 'Dicek ' + (lp.dicekOleh || '') : lp ? (lp.total !== r.total ? 'Berubah sejak dilaporkan' : 'Dilaporkan') : 'Belum dilaporkan',
         'Dilaporkan Oleh': lp?.dikirimOleh || '', Catatan: lp?.catatan || '' })
       rekap.push(row)

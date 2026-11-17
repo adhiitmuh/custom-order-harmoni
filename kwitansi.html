@@ -73,22 +73,31 @@
     if (!s.exists()) { document.getElementById('kw').innerHTML = '<p>Order tidak ditemukan</p>'; return }
     order = s.data()
     const b = await getDocs(query(collection(db, 'pembayaran'), where('orderId', '==', id))).catch(() => ({ docs: [] }))
-    bayar = b.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => Number(x.jumlah) > 0).sort((a, c) => (a.tgl || '').localeCompare(c.tgl || ''))
+    // Koreksi yang menunjuk pembayaran asal (koreksiDari) dinettokan ke pembayaran itu; koreksi lain tampil sebagai baris pengembalian
+    const semua = b.docs.map(d => ({ id: d.id, ...d.data() }))
+    const kor = {}; semua.filter(x => x.koreksiDari && Number(x.jumlah) < 0).forEach(x => { kor[x.koreksiDari] = (kor[x.koreksiDari] || 0) + Number(x.jumlah) })
+    bayar = semua.filter(x => !(x.koreksiDari && Number(x.jumlah) < 0)).map(x => ({ ...x, jumlah: Number(x.jumlah) + (kor[x.id] || 0) })).filter(x => x.jumlah !== 0)
+      .sort((a, c) => (a.tgl || '').localeCompare(c.tgl || '') || (a.at?.seconds || 0) - (c.at?.seconds || 0))
     const sel = document.getElementById('pilih')
-    sel.innerHTML = `<option value="semua">Kwitansi total (${fmtCurrency(order.depositPaid || 0)})</option>` + bayar.map((x, i) => `<option value="${i}">Pembayaran ${esc(x.tgl)} — ${fmtCurrency(x.jumlah)}</option>`).join('')
+    sel.innerHTML = `<option value="semua">Kwitansi total (${fmtCurrency(order.depositPaid || 0)})</option>` + bayar.map((x, i) => x.jumlah > 0 ? `<option value="${i}">Pembayaran ${esc(x.tgl)} — ${fmtCurrency(x.jumlah)}</option>` : '').join('')
     sel.onchange = render
     render()
   })
 
   function data() {
     const v = document.getElementById('pilih').value
-    if (v === 'semua') return { jumlah: Number(order.depositPaid) || 0, tgl: bayar.length ? bayar[bayar.length - 1].tgl : '', untuk: 'Pembayaran', no: order.orderNumber, rincian: bayar }
-    const x = bayar[+v]
-    return { jumlah: Number(x.jumlah), tgl: x.tgl, untuk: { dp: 'DP', cicilan: 'Cicilan', pelunasan: 'Pelunasan', lunas: 'Pelunasan' }[x.jenis] || 'Pembayaran', no: `${order.orderNumber}-${+v + 1}`, rincian: [x] }
+    const total = Number(order.totalPrice) || 0
+    if (v === 'semua') {
+      const dibayar = Number(order.depositPaid) || 0
+      return { jumlah: dibayar, dibayar, sisa: total - dibayar, tgl: bayar.length ? bayar[bayar.length - 1].tgl : '', untuk: 'Pembayaran', no: order.orderNumber, rincian: bayar, penerima: profile?.name || 'Harmoni' }
+    }
+    // Per pembayaran: "sudah dibayar" & LUNAS dihitung sampai pembayaran ini saja
+    const x = bayar[+v], dibayar = bayar.slice(0, +v + 1).reduce((t, y) => t + y.jumlah, 0)
+    return { jumlah: x.jumlah, dibayar, sisa: total - dibayar, tgl: x.tgl, untuk: { dp: 'DP', cicilan: 'Cicilan', pelunasan: 'Pelunasan', lunas: 'Pelunasan' }[x.jenis] || 'Pembayaran', no: `${order.orderNumber}-${+v + 1}`, rincian: [x], penerima: x.olehNama || profile?.name || 'Harmoni' }
   }
 
   function render() {
-    const d = data(), sisa = (Number(order.totalPrice) || 0) - (Number(order.depositPaid) || 0), lunas = sisa <= 0 && (order.totalPrice || 0) > 0
+    const d = data(), sisa = d.sisa, lunas = sisa <= 0 && (order.totalPrice || 0) > 0
     const items = (order.orderItems || []).filter(i => i.name)
     document.getElementById('kw').innerHTML = `
       <div class="kop">
@@ -100,24 +109,24 @@
       <div class="baris"><span class="l">Uang sejumlah</span><span class="terbilang">${esc(rapih(terbilang(d.jumlah) + ' rupiah'))}</span></div>
       <div class="baris"><span class="l">Untuk pembayaran</span><span>${esc(d.untuk)} pesanan <b>${esc(order.orderNumber)}</b>${items.length ? ': ' + esc(items.map(i => `${i.name}${i.varian ? ' (' + i.varian + ')' : ''} ${i.qty || ''} pcs`).join(', ')) : ''}</span></div>
       <table><thead><tr><th>Tanggal</th><th>Metode</th><th class="r">Jumlah</th></tr></thead><tbody>
-        ${d.rincian.map(x => `<tr><td>${esc(tglPanjang(x.tgl))}</td><td>${esc(labelRekening(x))}</td><td class="r">${fmtCurrency(x.jumlah)}</td></tr>`).join('') || `<tr><td colspan="3" style="color:rgba(3,69,67,.5)">—</td></tr>`}
+        ${d.rincian.map(x => `<tr><td>${esc(tglPanjang(x.tgl))}</td><td>${esc(labelRekening(x))}${x.jumlah < 0 ? ' (pengembalian)' : ''}</td><td class="r">${x.jumlah < 0 ? '−' + fmtCurrency(-x.jumlah) : fmtCurrency(x.jumlah)}</td></tr>`).join('') || `<tr><td colspan="3" style="color:rgba(3,69,67,.5)">—</td></tr>`}
       </tbody></table>
       <table style="margin-top:4px"><tbody>
         <tr><td>Total pesanan</td><td class="r">${fmtCurrency(order.totalPrice || 0)}</td></tr>
-        <tr><td>Sudah dibayar</td><td class="r">${fmtCurrency(order.depositPaid || 0)}</td></tr>
+        <tr><td>Sudah dibayar${d.rincian.length === 1 && bayar.length > 1 ? ' (s.d. pembayaran ini)' : ''}</td><td class="r">${fmtCurrency(d.dibayar)}</td></tr>
         <tr><td><b>${lunas ? 'Status' : 'Sisa pembayaran'}</b></td><td class="r"><b style="color:${lunas ? '#059669' : '#b91c1c'}">${lunas ? 'LUNAS' : fmtCurrency(sisa)}</b></td></tr>
       </tbody></table>
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:22px;gap:12px;flex-wrap:wrap">
         <div class="jumlah">${fmtCurrency(d.jumlah)}</div>
-        <div class="ttd"><div>${esc(order.lokasiNama || 'Makassar')}, ${esc(tglPanjang(d.tgl))}<br>Penerima,<div style="height:56px"></div><b>${esc(profile?.name || 'Harmoni')}</b></div></div>
+        <div class="ttd"><div>${esc(order.lokasiNama || 'Makassar')}, ${esc(tglPanjang(d.tgl))}<br>Penerima,<div style="height:56px"></div><b>${esc(d.penerima)}</b></div></div>
       </div>`
   }
 
   window.kirimWa = () => {
-    const d = data(), sisa = (Number(order.totalPrice) || 0) - (Number(order.depositPaid) || 0)
+    const d = data(), sisa = d.sisa
     const teks = [`*KWITANSI HARMONI*`, `No. ${d.no}`, ``, `Telah terima dari: *${order.customerName}*`, `Sejumlah: *${fmtCurrency(d.jumlah)}*`, `(${rapih(terbilang(d.jumlah) + ' rupiah')})`, `Untuk: ${d.untuk} pesanan ${order.orderNumber}`, ``,
-      ...d.rincian.map(x => `• ${tglPanjang(x.tgl)} — ${labelRekening(x)} — ${fmtCurrency(x.jumlah)}`), ``,
-      `Total pesanan: ${fmtCurrency(order.totalPrice || 0)}`, `Sudah dibayar: ${fmtCurrency(order.depositPaid || 0)}`, sisa <= 0 ? `✅ *LUNAS*` : `Sisa: *${fmtCurrency(sisa)}*`, ``, `Terima kasih 🙏 — Harmoni`].join('\n')
+      ...d.rincian.map(x => `• ${tglPanjang(x.tgl)} — ${labelRekening(x)} — ${x.jumlah < 0 ? '−' + fmtCurrency(-x.jumlah) : fmtCurrency(x.jumlah)}`), ``,
+      `Total pesanan: ${fmtCurrency(order.totalPrice || 0)}`, `Sudah dibayar: ${fmtCurrency(d.dibayar)}`, sisa <= 0 ? `✅ *LUNAS*` : `Sisa: *${fmtCurrency(sisa)}*`, ``, `Terima kasih 🙏 — Harmoni`].join('\n')
     // Kontak customer disembunyikan dari Pemilik Divisi
     const no = profile?.role === 'divisi' ? '' : String(order.customerContact || '').replace(/\D/g, '').replace(/^0/, '62')
     window.open(no.startsWith('62') ? `https://api.whatsapp.com/send?phone=${no}&text=${encodeURIComponent(teks)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(teks)}`, '_blank')

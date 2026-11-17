@@ -82,7 +82,7 @@
 </div>
 
 <script type="module">
-  import { db, storage } from './js/config.js'
+  import { db, storage, auth } from './js/config.js'
   import { requireAuth, getProfile, dataAuthReady, hasProductionAccess, divisiSaya, canSeeOrder } from './js/auth.js'
   import { doc, getDoc, updateDoc, addDoc, collection, query, orderBy, where, getDocs, Timestamp, deleteDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, deleteField, increment, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { compressImage } from './js/image.js'
@@ -1164,15 +1164,16 @@
   async function loadManagers() {
     if (managers.length) return
     const snap = await getDocs(query(collection(db,'users')))
-    managers = snap.docs.map(d => ({id:d.id,...d.data()})).filter(u => u.role === 'manager' && u.pin)
+    // PIN tidak dibaca di sini — dicek di server (Worker /cek-pin)
+    managers = snap.docs.map(d => ({id:d.id,...d.data()})).filter(u => u.role === 'manager')
   }
 
   async function openPinModal(action) {
     await loadManagers()
-    if (!managers.length) { alert('Belum ada Kepala Cabang dengan PIN. Minta Owner tambahkan PIN di Kelola Pengguna.'); return }
+    if (!managers.length) { alert('Belum ada Kepala Cabang. Minta Owner mengatur PIN di Kelola Pengguna.'); return }
     pinAction = action
     const sel = document.getElementById('pinManagerSelect')
-    sel.innerHTML = managers.map(m => `<option value="${m.id}">${m.name}${m.branch ? ' — ' + m.branch : ''}</option>`).join('')
+    sel.innerHTML = managers.map(m => `<option value="${esc(m.id)}">${esc(m.name)}${m.lokasiNama || m.branch ? ' — ' + esc(m.lokasiNama || m.branch) : ''}</option>`).join('')
     document.getElementById('pinInput').value = ''
     document.getElementById('pinError').style.display = 'none'
     document.getElementById('pinModalTitle').textContent = action === 'edit' ? '✏️ Approval Edit Order' : '🚫 Approval Void Order'
@@ -1196,8 +1197,17 @@
     const btn = document.getElementById('pinConfirmBtn')
 
     if (!pin) { errEl.textContent = 'Masukkan PIN'; errEl.style.display = ''; return }
-    if (!manager || manager.pin !== pin) {
-      errEl.textContent = 'PIN salah, coba lagi'; errEl.style.display = ''
+    btn.disabled = true; btn.textContent = 'Memeriksa…'
+    let hasil = {}
+    try {
+      const idToken = await auth.currentUser?.getIdToken()
+      const res = await fetch(`${WORKER_URL}/cek-pin`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ managerId, pin }) })
+      hasil = await res.json().catch(() => ({}))
+      if (!res.ok) hasil.ok = false
+    } catch (e) { hasil = { ok: false, error: 'Tidak bisa memeriksa PIN (cek internet)' } }
+    btn.disabled = false; btn.textContent = 'Konfirmasi'
+    if (!manager || !hasil.ok) {
+      errEl.textContent = hasil.error === 'PIN salah' || !hasil.error ? 'PIN salah, coba lagi' : hasil.error; errEl.style.display = ''
       document.getElementById('pinInput').value = ''
       document.getElementById('pinInput').focus()
       return
@@ -1306,9 +1316,12 @@
       const batchEdit = writeBatch(db)
       batchEdit.update(doc(db,'orders',orderId), editUpdates)
       if (dpBaru !== lamaDp) {
+        const k = dpBaru < lamaDp ? await pilihKoreksi(lamaDp - dpBaru) : null
+        if (dpBaru < lamaDp && !k) return
         const e = entriPembayaran(order, orderId, profile, { jumlah: dpBaru - lamaDp, metode: order.paymentMethod || '',
           jenis: dpBaru < lamaDp ? 'koreksi' : jenisDari(lamaDp, dpBaru, editUpdates.totalPrice),
           catatan: `Diubah lewat Edit Order${approvedBy?.name ? ' (disetujui ' + approvedBy.name + ')' : ''}` })
+        terapkanKoreksi(e, k)
         batchEdit.set(e.ref, e.data)
       }
       await batchEdit.commit()
@@ -2247,6 +2260,38 @@
     return { dueDate: newDueDate, status: newStatus }
   }
 
+  // ── Koreksi DP: pilih pembayaran yang dikoreksi + jenisnya, supaya metode/rekening/lokasi/laci tepat ──
+  // Hasil: { asal, salahInput } atau null (batal). asal = dokumen pembayaran positif milik order ini.
+  function pilihKoreksi(kurang) {
+    return new Promise(async selesai => {
+      let list = []
+      try { list = (await getDocs(query(collection(db, 'pembayaran'), where('orderId', '==', orderId)))).docs.map(d => ({ id: d.id, ...d.data() })).filter(p => (Number(p.jumlah) || 0) > 0).sort((a, b) => String(b.tgl).localeCompare(String(a.tgl))) } catch (e) {}
+      const bg = document.createElement('div')
+      bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px'
+      bg.innerHTML = `<div style="background:#fff;border-radius:16px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow:auto">
+        <div style="font-size:16px;font-weight:800;margin-bottom:4px">↩ Koreksi DP −${fmtCurrency(kurang)}</div>
+        <div style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Pilih pembayaran yang dikoreksi, supaya metode, rekening & laci kasirnya tepat.</div>
+        ${list.length ? list.map((p, i) => `<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid rgba(3,69,67,.12);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:13px;cursor:pointer">
+          <input type="radio" name="kAsal" value="${i}" ${i === 0 ? 'checked' : ''} style="width:auto;margin-top:3px"><span><b>${fmtCurrency(p.jumlah)}</b> · ${esc(labelRekening(p))}<div style="font-size:11px;color:rgba(3,69,67,.5)">${esc(p.tgl)} · ${esc(p.olehNama || '')}${p.pegang === 'staf' ? ' · 🤝 dipegang' : ''}</div></span></label>`).join('') : '<p style="font-size:12px;color:#b45309">Belum ada riwayat pembayaran — koreksi dicatat tanpa pasangan.</p>'}
+        <div style="font-size:12px;font-weight:700;margin:10px 0 4px">Jenis koreksi</div>
+        <label style="display:flex;gap:8px;font-size:13px;margin-bottom:4px"><input type="radio" name="kJenis" value="salah" checked style="width:auto">Salah input (tidak ada uang keluar)</label>
+        <label style="display:flex;gap:8px;font-size:13px"><input type="radio" name="kJenis" value="kembali" style="width:auto">Uang dikembalikan ke customer hari ini</label>
+        <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" id="kBatal">Batal</button><button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" id="kOk">Lanjut</button></div></div>`
+      document.body.appendChild(bg)
+      bg.querySelector('#kBatal').onclick = () => { bg.remove(); selesai(null) }
+      bg.querySelector('#kOk').onclick = () => { const i = bg.querySelector('input[name=kAsal]:checked')?.value; const j = bg.querySelector('input[name=kJenis]:checked').value
+        bg.remove(); selesai({ asal: i != null ? list[+i] : null, salahInput: j === 'salah' }) }
+    })
+  }
+  // Isi dokumen koreksi dari pembayaran asal
+  function terapkanKoreksi(e, k) {
+    if (!k) return
+    if (k.asal) Object.assign(e.data, { metode: k.asal.metode || e.data.metode, rekeningNo: k.asal.rekeningNo || '', lokasiId: k.asal.lokasiId || e.data.lokasiId, lokasiNama: k.asal.lokasiNama || e.data.lokasiNama,
+      koreksiDari: k.asal.id, koreksiTgl: k.asal.tgl || '', ...(k.asal.pegang ? { pegang: k.asal.pegang } : {}) })
+    e.data.jenis = 'koreksi'; e.data.salahInput = !!k.salahInput
+    e.data.catatan = (e.data.catatan ? e.data.catatan + ' · ' : '') + (k.salahInput ? 'salah input' : 'uang dikembalikan')
+  }
+
   window.savePayment = async function() {
     const btn = document.getElementById('savePayBtn')
     btn.disabled=true; btn.textContent='Menyimpan…'
@@ -2276,8 +2321,11 @@
       batch.update(doc(db,'orders',orderId), updates)
       // Catat selisih DP sebagai pembayaran (atau koreksi bila berkurang) untuk Laporan Harian
       if (newDp !== lamaDp) {
+        const k = newDp < lamaDp ? await pilihKoreksi(lamaDp - newDp) : null
+        if (newDp < lamaDp && !k) return
         const e = entriPembayaran(order, orderId, getProfile(), { jumlah: newDp - lamaDp, metode: pm || order.paymentMethod || '',
           jenis: jenisDari(lamaDp, newDp, updates.totalPrice), catatan: newDp < lamaDp ? 'DP dikurangi lewat Edit Pembayaran' : '' })
+        terapkanKoreksi(e, k)
         batch.set(e.ref, e.data)
       }
       await batch.commit()

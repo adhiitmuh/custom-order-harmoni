@@ -94,37 +94,26 @@
     throw authErr
   }
 
-  // Load supplier token doc
-  const tokenSnap = await getDoc(doc(db, 'supplier_tokens', token)).catch(() => null)
-  if (!tokenSnap?.exists()) {
-    el.innerHTML = '<div class="error">Link tidak valid atau sudah kedaluwarsa.</div>'
-    throw new Error('token not found')
-  }
-
-  const tokenData = tokenSnap.data()
-  const { orderId, supplierId, supplierNama, itemIndexes } = tokenData
-
-  let orderSnap
+  // Data pesanan diambil lewat Worker (versi bersih: tanpa harga, modal, kontak & nama customer)
+  let sup
   try {
-    orderSnap = await getDoc(doc(db, 'orders', orderId))
-  } catch(err) {
-    console.error('Order fetch error:', err)
-    el.innerHTML = '<div class="error">Gagal memuat data pesanan (' + (err.code || err.message) + '). Coba refresh halaman.</div>'
+    const res = await fetch(`https://harmoni-order-api.adhiitmuh.workers.dev/supplier-order?token=${encodeURIComponent(token)}`)
+    sup = await res.json().catch(() => ({}))
+    if (!res.ok) { el.innerHTML = `<div class="error">${(sup.error || 'Link tidak valid atau sudah kedaluwarsa.').replace(/</g, '&lt;')}</div>`; throw new Error(sup.error || 'token') }
+  } catch (err) {
+    if (!el.querySelector('.error')) el.innerHTML = '<div class="error">Gagal memuat data pesanan. Coba refresh halaman.</div>'
     throw err
   }
-  if (!orderSnap.exists()) {
-    el.innerHTML = '<div class="error">Data pesanan tidak ditemukan.</div>'
-    throw new Error('order not found')
-  }
-
-  const order = orderSnap.data()
+  const tokenData = { orderCode: sup.orderCode, divisiLabel: sup.divisiLabel, fileUrls: sup.fileUrls || [] }
+  const { orderId, supplierId, supplierNama } = sup
+  const order = { dueDate: sup.dueDate, varian: sup.varian, notes: sup.notes, sizeBreakdown: sup.sizeBreakdown, designFiles: sup.designFiles, progressPercentage: sup.progressPercentage, status: sup.status }
 
   // Load progress updates
   const progressSnap = await getDocs(query(collection(db, 'orders', orderId, 'progress_updates'), orderBy('createdAt', 'asc'))).catch(() => ({ docs: [] }))
   const progressList = progressSnap.docs.map(d => d.data())
 
   // Filter items assigned to this supplier
-  const assignedItems = (order.orderItems || []).filter((_, i) => (itemIndexes || []).includes(i))
+  const assignedItems = sup.items || []
 
   // Sisa hari
   function sisaHari(dueDate) {
