@@ -1084,8 +1084,10 @@
       delete contentCache[division]
       delete contentCache['__all__']
       // Pakai versi yang benar-benar tersimpan (kolom yang tidak diizinkan dikembalikan)
-      if (hasil.ditolak.length || hasil.usulan) {
-        // Ada yang ditolak / jadi usulan → tampilkan versi tersimpan, tapi baris/varian yang belum bernama tetap dipertahankan
+      // Hanya jadi usulan (menunggu Owner) → angka yang sedang diketik TIDAK dikembalikan, supaya pengisi bisa terus mengetik
+      // (dulu tabel dibangun ulang dengan harga lama → angka hilang di tengah ketikan & usulan tersimpan setengah, mis. Rp3)
+      if (hasil.ditolak.length) {
+        // Ada yang ditolak → tampilkan versi tersimpan, tapi baris/varian yang belum bernama tetap dipertahankan
         const kosong = (priceDataStore[division].items || []).filter(it => !String(it.name || '').trim())
         const lokal = new Map((priceDataStore[division].items || []).map(it => [kunciNama(it.name), it]))
         hasil.items.forEach(it => { const l = lokal.get(kunciNama(it.name)); const vKosong = (l?.variants || []).filter(v => !String(v.name || '').trim()); if (vKosong.length) it.variants = [...(it.variants || []), ...vKosong] })
