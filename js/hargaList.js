@@ -46,7 +46,7 @@ export function bolehIsiHarga(profile, k, lama = 0, baru = false, division = '')
   return iz.ubah.includes(k) || (iz.isiKosong.includes(k) && (!(Number(lama) > 0) || baru === true))
 }
 export const bolehHapusItem = profile => profile?.role === 'owner'
-export const keteranganIzin = (profile, division = '') => roleHarga(profile, division) === 'pemilik' ? 'Pemilik Divisi: semua kolom harga divisi ini bisa diubah, termasuk ganti nama, ✓ cek item baru & menyetujui usulan harga.' : roleHarga(profile, division) === 'pengisi' ? 'Izin pengisi daftar harga divisi ini: bisa mengisi Normal, Cabang, Promo & Modal. Harga Admin diisi Owner.' : ({
+export const keteranganIzin = (profile, division = '') => roleHarga(profile, division) === 'pemilik' ? 'Pemilik Divisi: semua kolom harga divisi ini bisa diubah, termasuk ganti nama, ✓ cek item baru & menyetujui usulan harga.' : roleHarga(profile, division) === 'pengisi' ? 'Izin pengisi daftar harga divisi ini: Modal langsung tersimpan; Normal, Cabang & Promo pada item yang sudah dicek jadi usulan untuk disetujui Owner / Pemilik Divisi. Harga Admin diisi Owner.' : ({
   owner: 'Owner: semua kolom bisa diubah.',
   manager: 'Kepala Cabang: bisa mengisi Normal, Cabang & Promo. Admin & Modal diisi Owner.',
   cs: 'CS: bisa menambah item baru & mengisi harga Normal/Cabang yang masih kosong. Mengubah harga yang sudah ada → Kepala Cabang/Owner.',

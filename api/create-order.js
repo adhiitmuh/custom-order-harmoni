@@ -1791,7 +1791,8 @@ function gabungHarga(lamaItems, baruItems, role, nama) {
       const nb = Number(baru?.[k]) || 0, nl = Number(lama?.[k]) || 0
       if (nb === nl) continue
       if (!boleh(k, nl, lama)) { ditolak.push(`${label}: ${k.replace('price', 'Harga ')} tidak boleh diubah oleh akun ini`); continue }
-      if (perluSetuju) usulan.push({ ...ref, label, kolom: k, dari: nl, ke: nb })
+      // Harga Modal dari pengisi langsung berlaku (pengisi yang tahu modalnya); harga jual tetap lewat usulan
+      if (perluSetuju && k !== 'priceModal') usulan.push({ ...ref, label, kolom: k, dari: nl, ke: nb })
       else out[k] = nb
     }
     for (const k of ['unit', 'note']) if (baru?.[k] !== undefined && String(baru[k]).trim() !== String(lama?.[k] || '')) {
