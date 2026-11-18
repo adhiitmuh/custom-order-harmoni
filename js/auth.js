@@ -279,6 +279,8 @@ export function requireAuth(callback) {
       await setDoc(doc(db, 'users', snap.id), roleDoc, { merge: true }).catch(() => {})
       fresh.sesiAman = !!dataUser && !dataUser.isAnonymous
 
+      // Data yang ditambahkan halaman ke profil (mis. izinHarga di Daftar Harga) jangan hilang saat profil diperbarui
+      if (_profile?.izinHarga && !fresh.izinHarga) fresh.izinHarga = _profile.izinHarga
       _profile = fresh
       renderSidebar(fresh)
       // Pre-fetch divisions in background; re-render sidebar when done so dynamic divs appear

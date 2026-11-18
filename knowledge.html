@@ -156,6 +156,8 @@
       const izSaya = window._izinHarga[profile.id]
       const hariIni = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)   // WITA
       profile.izinHarga = izSaya && (!izSaya.sampai || hariIni <= izSaya.sampai) ? (izSaya.divisions || []) : []
+      // Profil bisa sudah diganti versi terbaru dari Portal selama menunggu — pasang izin di profil yang aktif juga
+      const aktif = getProfile(); if (aktif && aktif !== profile) aktif.izinHarga = profile.izinHarga
     } catch { profile.izinHarga = [] }
     if (profile.role === 'owner') {
       document.getElementById('pageTitle').insertAdjacentHTML('afterend', `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="bukaIzinHarga()">👥 Izin isi daftar harga</button>`)
