@@ -67,6 +67,12 @@
     .inp-inline[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     .inp-inline[type=number] { -moz-appearance: textfield; }
   </style>
+<style>
+  #izinModal .izDivs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}
+  #izinModal .izChip{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.3;border:1.5px solid rgba(3,69,67,.15);border-radius:10px;padding:7px 10px;cursor:pointer;background:#fff}
+  #izinModal .izChip input{width:18px;height:18px;flex:0 0 18px;margin:0;accent-color:#034543}
+  #izinModal .izChip:has(input:checked){background:#e7f3ef;border-color:#034543;font-weight:700}
+</style>
 </head>
 <body>
 <div class="layout">
@@ -296,15 +302,17 @@
 
   window.bukaIzinHarga = async function() {
     const { loadStaff } = await import('./js/mentions.js')
-    const staf = (await loadStaff()).filter(u => u.role !== 'owner')
     const map = window._izinHarga || {}
+    // Yang sudah punya izin di atas, lalu urut nama
+    const punya = u => (map[u.id]?.divisions || []).length ? 0 : 1
+    const staf = (await loadStaff()).filter(u => u.role !== 'owner').sort((a, b) => punya(a) - punya(b) || String(a.name).localeCompare(String(b.name)))
     const divs = (await getActiveDivisions()).map(d => d.key ? d : { key: d })
     document.getElementById('izinModal')?.remove()
     const m = document.createElement('div'); m.id = 'izinModal'
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px'
     m.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:18px;max-height:88vh;overflow:auto">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px">👥 Izin isi daftar harga</div>
-      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Orang yang dicentang bisa menambah item & mengisi harga <b>Normal, Cabang, Promo, Modal</b> di divisi itu. Harga Admin, hapus & ganti nama item tetap hanya Owner. <b>Berlaku sampai</b> kosong = tanpa batas; lewat tanggal itu izin mati sendiri.</p>
+      <p style="font-size:12px;color:rgba(3,69,67,.55);margin-bottom:10px">Divisi yang dicentang (hijau) = orang itu boleh menambah item & mengisi harga di divisi tersebut. <b>Modal</b> langsung tersimpan; <b>Normal, Cabang, Promo</b> pada item yang sudah dicek jadi usulan untuk Bapak setujui. Harga Admin, hapus & ganti nama item tetap hanya Owner. <b>Berlaku sampai</b> kosong = tanpa batas; lewat tanggal itu izin mati sendiri.</p>
       <input type="search" id="izCari" placeholder="Cari nama…" style="margin-bottom:8px">
       <div id="izList">${staf.map(u => `<div class="izRow" data-nama="${escAttr(u.name.toLowerCase())}" style="border-top:1px solid rgba(3,69,67,.08);padding:8px 0">
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
@@ -314,7 +322,7 @@
             <input type="date" data-sampai="${escAttr(u.id)}" value="${escAttr(map[u.id]?.sampai || '')}" style="font-size:11px;padding:2px 4px;width:auto">
             <button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="const i=this.previousElementSibling;const d=new Date(Date.now()+8*3600e3);d.setMonth(d.getMonth()+1);i.value=d.toISOString().slice(0,10)">+1 bln</button></label>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px">${divs.map(d => `<label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" data-uid="${escAttr(u.id)}" data-nama="${escAttr(u.name)}" value="${escAttr(d.key)}" ${(map[u.id]?.divisions || []).includes(d.key) ? 'checked' : ''}>${escAttr((DIVISION_META[d.key]?.icon || '') + ' ' + (DIVISION_META[d.key]?.label || d.label || d.key))}</label>`).join('')}</div></div>`).join('')}</div>
+        <div class="izDivs">${divs.map(d => `<label class="izChip"><input type="checkbox" data-uid="${escAttr(u.id)}" data-nama="${escAttr(u.name)}" value="${escAttr(d.key)}" ${(map[u.id]?.divisions || []).includes(d.key) ? 'checked' : ''}><span>${escAttr((DIVISION_META[d.key]?.icon || '') + ' ' + (DIVISION_META[d.key]?.label || d.label || d.key))}</span></label>`).join('')}</div></div>`).join('')}</div>
       <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('izinModal').remove()">Batal</button><button class="btn btn-primary" style="flex:1" onclick="simpanIzinHarga()">Simpan</button></div></div>`
     document.body.appendChild(m)
     m.querySelector('#izCari').oninput = e => { const q = e.target.value.toLowerCase(); m.querySelectorAll('.izRow').forEach(r => { r.style.display = r.dataset.nama.includes(q) ? '' : 'none' }) }
