@@ -16,13 +16,17 @@
   <link rel="stylesheet" href="css/style.css?v=20261108a">
   <style>
     .price-table { table-layout:fixed; width:max-content; min-width:100%; border-collapse:collapse; font-size:13px; }
-    .price-table th { position:relative; text-align:left; padding:8px 6px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; overflow:hidden; user-select:none; }
+    /* Judul kolom menempel di atas saat tabel di-scroll (tabel punya area scroll sendiri, setinggi layar) */
+    .price-scroll { overflow:auto; max-height:calc(100vh - 120px); max-height:calc(100dvh - 120px); }
+    .price-table thead th { position:sticky; top:0; z-index:3; background:#fbfdfc; box-shadow:0 1px 0 rgba(3,69,67,.1); }
+    .price-table th { position:sticky; text-align:left; padding:8px 6px; font-size:10px; font-weight:700; letter-spacing:.05em; color:rgba(3,69,67,.45); border-bottom:2px solid rgba(3,69,67,.1); white-space:nowrap; overflow:hidden; user-select:none; }
     .price-table th:first-child { padding-left:10px; }
     .price-table td { padding:9px 6px; border-bottom:1px solid rgba(3,69,67,.06); color:var(--black); vertical-align:middle; white-space:nowrap; overflow:hidden; }
     .price-table td:first-child { white-space:normal; padding-left:10px; }
     .price-table tr:last-child td { border-bottom:none; }
     /* HP: tiap baris jadi kartu — semua kolom terlihat dengan labelnya */
     @media (max-width:640px) {
+      .price-scroll { max-height:none; overflow:visible; }
       .price-table { width:100% !important; table-layout:auto; }
       .price-table thead { display:none; }
       .price-table, .price-table tbody { display:block; }
@@ -895,7 +899,7 @@
       return [itemRow, ...variantRows, ...addVariantBtn]
     }).join('')
 
-    return `<div style="overflow-x:auto"><table class="price-table">
+    return `<div class="price-scroll"><table class="price-table">
       <thead><tr>
         <th style="width:200px;min-width:80px">LAYANAN / PRODUK</th>
         <th style="width:90px;min-width:55px">VARIAN</th>
