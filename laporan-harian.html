@@ -108,7 +108,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script type="module">
   import { db } from './js/config.js'
-  import { requireAuth, dataAuthReady } from './js/auth.js'
+  import { requireAuth, dataAuthReady, canSeeOrder } from './js/auth.js'
   import { collection, getDocs, getDoc, doc, setDoc, updateDoc, where, query, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
   import { labelMetode, labelRekening, grupMetode, tglLokal } from './js/pembayaran.js?v=20261116a'
   import { normalNoWa } from './js/notifwa.js'
@@ -127,6 +127,9 @@
   const pemilikRek = p => p.rekeningNo && atasNama[p.rekeningNo] ? ' (a.n. ' + atasNama[p.rekeningNo] + ')' : ''
   let profile, lokasiList = [], bulanData = [], laporan = [], waAdi = '', bulanDimuat = ''
   const isOwner = () => profile.role === 'owner'
+  // CS pusat melihat lintas lokasi (sama seperti daftar order: semua, atau divisinya bila merangkap produksi)
+  const lintasLokasi = () => isOwner() || (profile.role === 'cs' && (!profile.lokasiTipe || profile.lokasiTipe === 'pusat'))
+  const lokSaya = () => profile.lokasiId || TANPA
 
   requireAuth(async p => {
     profile = p
@@ -140,7 +143,7 @@
     lokasiList = lSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.nama).localeCompare(String(b.nama)))
     waAdi = sSnap?.exists?.() ? (sSnap.data().waOwner || '') : ''
     const sel = document.getElementById('lokasi')
-    if (isOwner()) {
+    if (lintasLokasi()) {
       sel.innerHTML = '<option value="">Semua lokasi</option>' + lokasiList.map(l => `<option value="${esc(l.id)}">${esc(l.nama)}</option>`).join('') + `<option value="${TANPA}">Tanpa lokasi</option>`
     } else {
       const lid = p.lokasiId || TANPA
@@ -150,7 +153,8 @@
     }
     const t = document.getElementById('tgl')
     t.value = new URLSearchParams(location.search).get('tgl') || tglLokal()
-    const lq = new URLSearchParams(location.search).get('lokasi'); if (lq && isOwner()) sel.value = lq
+    if (!isOwner() && lintasLokasi()) sel.value = lokSaya()
+    const lq = new URLSearchParams(location.search).get('lokasi'); if (lq && lintasLokasi()) sel.value = lq
     t.onchange = () => muat()
     sel.onchange = () => render()
     document.getElementById('divisi').onchange = () => render()
@@ -168,7 +172,8 @@
         getDocs(query(collection(db, 'pembayaran'), where('tgl', '>=', bulan + '-01'), where('tgl', '<=', bulan + '-31'))),
         getDocs(collection(db, 'laporan_harian')),
       ])
-      bulanData = bSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Uang masuk yang terlihat = order yang boleh dilihat akun ini (aturan sama dengan daftar order), bukan hanya yang dicatat sendiri
+      bulanData = bSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => isOwner() || canSeeOrder(p, profile))
       laporan = lpSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       bulanDimuat = bulan
       isiPilihanDivisi()
@@ -226,7 +231,8 @@
     // Laporan & tunai hanya per satu lokasi
     const kirimWrap = document.getElementById('kartuKirim')
     const stEl = document.getElementById('statusLaporan')
-    if (!lok || dv) { kirimWrap.style.display = 'none'; stEl.innerHTML = ''; renderRekap(); return }
+    // Kirim laporan hanya untuk lokasi sendiri (Owner: lokasi mana saja)
+    if (!lok || dv || (!isOwner() && lok !== lokSaya())) { kirimWrap.style.display = 'none'; stEl.innerHTML = ''; renderRekap(); return }
     kirimWrap.style.display = ''
     const lp = laporanDari(lok, tgl)
     const setorEl = document.getElementById('setor'), catEl = document.getElementById('catatan')
@@ -372,7 +378,7 @@
     html += `</tbody><tfoot><tr style="font-weight:800"><td>Total</td>${loks.map(k => `<td class="r">${rp(tot[k] || 0)}</td>`).join('')}${loks.length > 1 ? `<td class="r">${rp(semua)}</td>` : ''}</tr></tfoot>`
     document.getElementById('rekap').innerHTML = loks.length ? html : '<tr><td style="color:rgba(3,69,67,.4);padding:14px">Belum ada data bulan ini</td></tr>'
   }
-  window.lompat = (tgl, lok) => { document.getElementById('tgl').value = tgl; if (isOwner()) document.getElementById('lokasi').value = lok; render(); scrollTo({ top: 0, behavior: 'smooth' }) }
+  window.lompat = (tgl, lok) => { document.getElementById('tgl').value = tgl; if (lintasLokasi()) document.getElementById('lokasi').value = lok; render(); scrollTo({ top: 0, behavior: 'smooth' }) }
 
   window.unduhExcel = function() {
     if (typeof XLSX === 'undefined') { alert('Library Excel belum termuat, muat ulang halaman'); return }
