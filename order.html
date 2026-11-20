@@ -93,7 +93,7 @@
   import { daftarPenjahit, pembayaranPenjahit, statusUpahPenjahit } from './js/penjahit.js?v=20261117a'
   import { pasangBacaFoto } from './js/ocrNama.js?v=20261112b'
   import { hitungNama, labelNama } from './js/namaPapan.js?v=20261112d'
-  import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER, cariMirip, skorMirip } from './js/hargaList.js?v=20261110a'
+  import { nilaiTierOrder, bolehSetujui, URUTAN_TIER, LABEL_TIER, cariMirip, skorMirip, simpanDaftarHarga, kunciNama } from './js/hargaList.js?v=20261110a'
   import { entriPembayaran, jenisDari, labelMetode, labelRekening, opsiMetode, pisahMetode, banksCustomer, qrisCustomer, bankTerimaCustomer, htmlPegang, aturPegang, nilaiPegang } from './js/pembayaran.js?v=20261116a'
 
   const params = new URLSearchParams(location.search)
@@ -2659,7 +2659,7 @@
             ${it.alasanBeda ? `<div style="font-size:11px;color:#b45309">≈ mirip <b>${esc(it.miripDengan || '')}</b> — kata CS bedanya: <i>${esc(it.alasanBeda)}</i></div>` : ''}
             ${t ? `<div style="font-size:11px">Ditolak ${esc(t.oleh || '')}: ${esc(t.alasan || '')}</div>` : ok ? `<div style="font-size:11px">Disetujui ${esc(ok.oleh || '')}</div>` : ''}</span>
           ${bisa ? (t || ok ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="${t ? 'batalTolakItem' : 'batalSetujuiItem'}(${i})">↩ Batal</button>`
-                      : `<button class="btn btn-green btn-sm" style="padding:2px 8px;font-size:11px" onclick="setujuiItem(${i})">✓ Setujui</button><button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="gantiItemKatalog(${i})" title="Item ini sebenarnya sama dengan item di daftar harga">🔁 Sama dgn…</button><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="tolakItem(${i})">✕ Tolak</button>`) : ''}
+                      : `<button class="btn btn-green btn-sm" style="padding:2px 8px;font-size:11px" onclick="setujuiItem(${i})">✓ Setujui</button><button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="gantiItemKatalog(${i})" title="Ganti nama/varian, atau pilih item yang sudah ada di daftar harga">✏️ Ganti nama / 🔁 Sama dgn…</button><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="tolakItem(${i})">✕ Tolak</button>`) : ''}
         </div>` }).join('')}
       ${tolak.size ? `<div style="font-size:11px;color:#b91c1c;margin-top:4px;font-weight:700">${tolak.size} item ditolak — CS perbaiki lewat <b>Edit</b> (ganti dengan item yang ada di daftar harga, ubah harga, atau hapus item). Item yang sudah ✓ tidak perlu dicek lagi selama harganya tidak berubah.</div>` : ''}
     </div>`
@@ -2682,7 +2682,6 @@
   window.gantiItemKatalog = async function(i) {
     const it = (order.orderItems || [])[i]; if (!it) return
     const daftar = await daftarHargaOrder()
-    if (!daftar.length) { alert('Daftar harga divisi ini kosong'); return }
     const diCabang = !!order.lokasiTipe && order.lokasiTipe !== 'pusat'
     const harga = o => (diCabang && o?.priceCabang) ? o.priceCabang : (o?.priceNormal || 0)
     const pilihan = []   // { label, name, varian, harga }
@@ -2692,24 +2691,49 @@
     const wrap = document.createElement('div')
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px'
     wrap.innerHTML = `<div class="card" style="max-width:480px;width:100%;max-height:85vh;display:flex;flex-direction:column">
-      <h3 style="font-size:15px;font-weight:800;margin-bottom:2px">Ganti dengan item daftar harga</h3>
+      <h3 style="font-size:15px;font-weight:800;margin-bottom:2px">✏️ Ganti nama / varian item</h3>
       <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:8px">Item order: <b>${esc(nmIt)}</b> · ${it.qty} × ${fmtCurrency(Number(it.pricePerUnit ?? it.price ?? 0))}</p>
-      <input id="gkCari" placeholder="Cari item…" style="width:100%;text-transform:uppercase;margin-bottom:8px" autocomplete="off">
-      <div id="gkList" style="overflow:auto;flex:1;border:1px solid rgba(3,69,67,.1);border-radius:8px"></div>
-      <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:8px 0"><input type="checkbox" id="gkHarga" checked> Pakai harga daftar (kalau tidak dicentang, harga order tetap)</label>
+      <div style="display:grid;grid-template-columns:3fr 2fr;gap:6px;margin-bottom:6px">
+        <div><label style="font-size:11px;color:rgba(3,69,67,.55)">Nama item</label><input id="gkCari" list="gkNamaList" placeholder="Ketik nama item…" style="width:100%;text-transform:uppercase" autocomplete="off"></div>
+        <div><label style="font-size:11px;color:rgba(3,69,67,.55)">Varian (opsional)</label><input id="gkVarian" list="gkVarList" placeholder="cth: S, M, XL" style="width:100%;text-transform:uppercase" autocomplete="off"></div>
+      </div>
+      <datalist id="gkNamaList">${[...new Set(daftar.map(d => d.name))].map(n => `<option value="${esc(n)}">`).join('')}</datalist><datalist id="gkVarList"></datalist>
+      <div style="font-size:11px;font-weight:700;color:rgba(3,69,67,.55);margin:2px 0 4px">Sudah ada di daftar harga — klik untuk pakai (supaya tidak dobel):</div>
+      <div id="gkList" style="overflow:auto;flex:1;min-height:90px;border:1px solid rgba(3,69,67,.1);border-radius:8px"></div>
+      <div id="gkBaruWrap" style="margin-top:8px"></div>
+      <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:8px 0"><input type="checkbox" id="gkHarga" checked style="width:16px;height:16px;flex:0 0 16px;margin:0"> Pakai harga daftar (kalau tidak dicentang, harga order tetap)</label>
       <div style="text-align:right"><button class="btn btn-ghost btn-sm" id="gkBatal">Batal</button></div></div>`
     document.body.appendChild(wrap)
-    const list = wrap.querySelector('#gkList'), cari = wrap.querySelector('#gkCari')
+    const list = wrap.querySelector('#gkList'), cari = wrap.querySelector('#gkCari'), varEl = wrap.querySelector('#gkVarian')
+    // Isi awal: nama terakhir yang dipakai di order ini; "UKURAN S" → varian S
+    const ukuran = String(it.name || '').match(/^UKURAN\s+(.+)$/i)
+    let terakhir = ''; try { terakhir = sessionStorage.getItem('gk_nama_' + orderId) || '' } catch {}
+    cari.value = ukuran && terakhir ? terakhir : (ukuran ? '' : String(it.name || '').toUpperCase())
+    varEl.value = ukuran ? ukuran[1].toUpperCase() : String(it.varian || '').toUpperCase()
     const tampil = () => {
-      const q = cari.value.trim().toUpperCase()
-      const hasil = pilihan.map((x, j) => ({ x, j, s: q ? Math.max(skorMirip(q, `${x.name} ${x.varian}`), `${x.name} ${x.varian}`.toUpperCase().includes(q) ? 1 : 0) : skor(x) }))
+      const nm = cari.value.trim().toUpperCase(), vr = varEl.value.trim().toUpperCase()
+      const q = `${nm} ${vr}`.trim()
+      const induk = daftar.find(d => kunciNama(d.name) === kunciNama(nm))
+      wrap.querySelector('#gkVarList').innerHTML = (induk?.variants || []).map(v => `<option value="${esc(v.name)}">`).join('')
+      // Persis sama (nama + varian) paling atas, lalu nama sama, lalu yang mirip
+      const tambahan = x => (kunciNama(x.name) === kunciNama(nm) ? (kunciNama(x.varian) === kunciNama(vr) ? 3 : vr && !x.varian ? 0.5 : 1) : 0)
+      const hasil = pilihan.map((x, j) => ({ x, j, s: (q ? Math.max(skorMirip(q, `${x.name} ${x.varian}`), `${x.name} ${x.varian}`.toUpperCase().includes(q) ? 1 : 0) : skor(x)) + (q ? tambahan(x) : 0) }))
         .filter(h => !q || h.s >= 0.5).sort((a, b) => b.s - a.s).slice(0, 30)
       list.innerHTML = hasil.length ? hasil.map(h => `<div data-j="${h.j}" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid rgba(3,69,67,.07);display:flex;justify-content:space-between;gap:8px;font-size:12px">
         <span><b>${esc(h.x.name)}</b>${h.x.varian ? ` <span style="color:#7c3aed">· ${esc(h.x.varian)}</span>` : ''}</span><span style="white-space:nowrap;color:rgba(3,69,67,.6)">${fmtCurrency(h.x.harga)}</span></div>`).join('')
         : '<div style="padding:12px;font-size:12px;color:rgba(3,69,67,.5)">Tidak ada yang cocok</div>'
       list.querySelectorAll('[data-j]').forEach(el => el.onclick = () => pilih(pilihan[+el.dataset.j]))
+      // Nama baru: hanya kalau persis sama belum ada; kalau mirip, beri peringatan
+      const sama = pilihan.find(x => kunciNama(x.name) === kunciNama(nm) && kunciNama(x.varian) === kunciNama(vr))
+      const namaAda = !sama && daftar.some(d => kunciNama(d.name) === kunciNama(nm))
+      const mirip = !sama && !namaAda && nm ? hasil.find(h => h.s >= 0.75) : null
+      wrap.querySelector('#gkBaruWrap').innerHTML = !nm ? '' : sama
+        ? `<div style="font-size:12px;color:#15803d">✓ <b>${esc(sama.name)}${sama.varian ? ' – ' + esc(sama.varian) : ''}</b> sudah ada di daftar — klik di daftar di atas.</div>`
+        : `${namaAda ? `<div style="font-size:11px;color:#0369a1;margin-bottom:4px">Item <b>${esc(nm)}</b> sudah ada — varian <b>${esc(vr || '(tanpa varian)')}</b> akan ditambahkan ke item itu.</div>` : ''}${mirip ? `<div style="font-size:11px;color:#b45309;margin-bottom:4px">⚠ Mirip dengan <b>${esc(mirip.x.name)}${mirip.x.varian ? ' – ' + esc(mirip.x.varian) : ''}</b> yang sudah ada. Kalau sama, klik itu saja supaya tidak dobel.</div>` : ''}
+           <button class="btn btn-primary btn-sm" id="gkPakaiBaru" style="width:100%;justify-content:center">Pakai nama baru: ${esc(nm)}${vr ? ' – ' + esc(vr) : ''}</button>`
+      const bb = wrap.querySelector('#gkPakaiBaru'); if (bb) bb.onclick = () => pilih({ name: nm, varian: vr, harga: 0, baruNama: true })
     }
-    cari.oninput = tampil; tampil(); cari.focus()
+    cari.oninput = tampil; varEl.oninput = tampil; tampil(); cari.focus()
     wrap.querySelector('#gkBatal').onclick = () => wrap.remove()
     const pilih = async x => {
       const pakaiHarga = wrap.querySelector('#gkHarga').checked && x.harga > 0
@@ -2717,7 +2741,7 @@
       const sub = y => Number(y.subtotal ?? (Number(y.qty) || 0) * Number(y.pricePerUnit ?? y.price ?? 0)) || 0
       const totalLama = (order.orderItems || []).reduce((t, y) => t + sub(y), 0)
       const totalBaruCek = totalLama - sub(it) + (Number(it.qty) || 0) * hargaBaru
-      if (!confirm(`Ganti "${nmIt}" menjadi "${x.name}${x.varian ? ' – ' + x.varian : ''}"${pakaiHarga ? ` dengan harga ${fmtCurrency(hargaBaru)}` : ''}?${totalBaruCek !== totalLama ? `\n\nTotal order berubah: ${fmtCurrency(totalLama)} → ${fmtCurrency(totalBaruCek)}` : ''}`)) return
+      if (!confirm(`Ganti "${nmIt}" menjadi "${x.name}${x.varian ? ' – ' + x.varian : ''}"${pakaiHarga ? ` dengan harga ${fmtCurrency(hargaBaru)}` : ''}?${x.baruNama ? '\n\nNama baru ini juga ditambahkan ke daftar harga divisi ini.' : ''}${totalBaruCek !== totalLama ? `\n\nTotal order berubah: ${fmtCurrency(totalLama)} → ${fmtCurrency(totalBaruCek)}` : ''}`)) return
       const p = getProfile()
       const { alasanBeda, miripDengan, ...sisa } = it
       const baru = { ...sisa, name: x.name, varian: x.varian || '', pricePerUnit: hargaBaru, subtotal: (Number(it.qty) || 0) * hargaBaru }
@@ -2734,6 +2758,14 @@
         if (order.createdBy && order.createdBy !== p.id)
           writeMentionNotifs([{ id: order.createdBy }], p.id, p.name, `Item diganti: ${nmIt} → ${baru.name}${baru.varian ? ' – ' + baru.varian : ''} (sudah ada di daftar harga)`, orderId, order.orderNumber).catch(() => {})
         wrap.remove()
+        try { sessionStorage.setItem('gk_nama_' + orderId, baru.name) } catch {}
+        // Nama baru → masukkan ke daftar harga (mode tambah: item lama tidak disentuh) supaya order berikutnya tinggal pilih
+        if (x.baruNama) {
+          const kol = diCabang ? 'priceCabang' : 'priceNormal'
+          const entri = baru.varian ? { name: baru.name, variants: [{ name: baru.varian, [kol]: hargaBaru }] } : { name: baru.name, [kol]: hargaBaru }
+          await simpanDaftarHarga(p, order.division, [entri], 'tambah').catch(e => console.warn('daftar harga:', e.message))
+          _daftarHargaOrder = null
+        }
         Object.assign(order, { orderItems: items, totalPrice, itemDisetujui: disetujui, itemDitolak: (order.itemDitolak || []).filter(y => y.kunci !== kLama) })
         const semua = items.every(y => itemDisetujuiAktif().some(z => z.kunci === kunciItemOrder(y)))
         if (semua && !itemDitolakAktif().length) return approvePrice()
