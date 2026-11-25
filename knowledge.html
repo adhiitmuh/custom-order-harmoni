@@ -960,7 +960,11 @@
     rerenderUpahWrap(division)
     const el = document.getElementById(`price-wrap-${division}`)
     if (!el) return
+    // Simpan posisi scroll (tabel punya area scroll sendiri) supaya tidak melompat ke atas setelah digambar ulang
+    const scLama = el.querySelector('.price-scroll'), posY = scLama?.scrollTop || 0, posX = scLama?.scrollLeft || 0, winY = window.scrollY
     el.innerHTML = renderInlinePriceTable(division)
+    const scBaru = el.querySelector('.price-scroll'); if (scBaru) { scBaru.scrollTop = posY; scBaru.scrollLeft = posX }
+    if (Math.abs(window.scrollY - winY) > 2) window.scrollTo(0, winY)
     const tbl = el.querySelector('.price-table')
     labelKolom(tbl)
     initResizableTable(tbl)
@@ -1067,7 +1071,9 @@
       if (mirip.some(m => kunciNama(m.it.name) === kunciNama(value))) {
         alert(`"${mirip[0].it.name}" sudah ada di daftar harga — tidak perlu dibuat lagi.`); rerenderPriceWrap(division); return
       }
-      if (mirip.length && !confirm(`"${value}" mirip dengan:\n${mirip.slice(0, 3).map(m => '• ' + m.it.name).join('\n')}\n\nKalau barangnya sama, batalkan dan pakai item itu (atau tambahkan varian). Tetap buat item baru?`)) { rerenderPriceWrap(division); return }
+      if (mirip.length && !confirm(`"${value}" mirip dengan item yang sudah ada:\n${mirip.slice(0, 3).map(m => '• ' + m.it.name).join('\n')}\n\nOK = barangnya BERBEDA, simpan sebagai item baru.\nBatal = barangnya SAMA, jangan dibuat (pakai item yang sudah ada).`)) {
+        // Batal: nama tidak disimpan, tapi posisi layar tetap (tidak melompat ke atas) & kursor kembali ke kolom nama
+        rerenderPriceWrap(division); setTimeout(() => { const el = document.querySelectorAll(`#price-wrap-${division} input[placeholder="Nama produk"]`)[index]; if (el) el.focus() }, 30); return }
     }
     // Ganti nama item tersimpan → kirim nama asal supaya server mengganti (bukan membuat item baru)
     if (field === 'name' && item._tersimpan && !item.namaLama && item.name !== value) item.namaLama = item.name
