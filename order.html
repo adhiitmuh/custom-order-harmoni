@@ -2148,8 +2148,10 @@
     const totalPrice = items.reduce((s, item) => s + (item.subtotal||0), 0)
     try {
       const cek = await cekUlangHarga(items, totalPrice)
-      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now(), ...cek, ...(order.marketplace ? { depositPaid: totalPrice } : {}) })
-      if (cek.priceApprovalStatus) { await loadOrder(getProfile()); return }
+      const kIt = kunciItemOrder(it), adaTolak = (order.itemDitolak || []).some(y => y.kunci === kIt)
+      await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, updatedAt: Timestamp.now(), ...cek, ...(order.marketplace ? { depositPaid: totalPrice } : {}),
+        ...(adaTolak ? { itemDitolak: order.itemDitolak.filter(y => y.kunci !== kIt) } : {}) })
+      if (cek.priceApprovalStatus || adaTolak) { await loadOrder(getProfile()); return }
       order.orderItems = items
       order.totalPrice = totalPrice
       document.getElementById(`pval-${i}`).textContent = fmtCurrency(pricePerUnit)
@@ -2668,7 +2670,7 @@
           ${bisa ? (t || ok ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="${t ? 'batalTolakItem' : 'batalSetujuiItem'}(${i})">↩ Batal</button>`
                       : `<button class="btn btn-green btn-sm" style="padding:2px 8px;font-size:11px" onclick="setujuiItem(${i})">✓ Setujui</button><button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="gantiItemKatalog(${i})" title="Ganti nama/varian, atau pilih item yang sudah ada di daftar harga">✏️ Ganti nama / 🔁 Sama dgn…</button><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="tolakItem(${i})">✕ Tolak</button>`) : ''}
         </div>` }).join('')}
-      ${tolak.size ? `<div style="font-size:11px;color:#b91c1c;margin-top:4px;font-weight:700">${tolak.size} item ditolak — CS perbaiki lewat <b>Edit</b> (ganti dengan item yang ada di daftar harga, ubah harga, atau hapus item). Item yang sudah ✓ tidak perlu dicek lagi selama harganya tidak berubah.</div>` : ''}
+      ${tolak.size ? `<div style="font-size:11px;color:#b91c1c;margin-top:4px;font-weight:700">${tolak.size} item ditolak — CS perbaiki di <b>📋 Rincian Item</b> di bawah: ketuk <b>✏️ Ubah nama</b> untuk ganti nama/harga (harga di bawah normal otomatis diajukan lagi ke Owner), atau hapus item lewat Edit. Item yang sudah ✓ tidak perlu dicek lagi selama harganya tidak berubah.</div>` : ''}
     </div>`
   }
   window.setujuiItem = async function(i) {
@@ -2709,6 +2711,11 @@
       <div id="gkList" style="overflow:auto;flex:1;min-height:90px;border:1px solid rgba(3,69,67,.1);border-radius:8px"></div>
       <div id="gkBaruWrap" style="margin-top:8px"></div>
       <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:8px 0"><input type="checkbox" id="gkHarga" checked style="width:16px;height:16px;flex:0 0 16px;margin:0"> Pakai harga daftar (kalau tidak dicentang, harga order tetap)</label>
+      <div style="border:1px dashed rgba(3,69,67,.25);border-radius:8px;padding:8px;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:4px">💰 Harga salah? Isi harga/pcs yang benar</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="gkHargaSendiri" type="text" inputmode="numeric" placeholder="Rp …" oninput="this.value=fmtInputPrice(this.value)" style="width:130px;flex:1 1 120px">
+          <button class="btn btn-primary btn-sm" id="gkHargaSaja" style="white-space:nowrap">Simpan harga (nama tetap)</button></div>
+        <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:4px">Harga di bawah harga normal otomatis <b>diajukan ke Owner</b> (wajib tulis alasan). Kalau diisi, harga ini juga dipakai saat memilih nama di daftar atas.</div></div>
       <div style="text-align:right"><button class="btn btn-ghost btn-sm" id="gkBatal">Batal</button></div></div>`
     document.body.appendChild(wrap)
     const list = wrap.querySelector('#gkList'), cari = wrap.querySelector('#gkCari'), varEl = wrap.querySelector('#gkVarian')
@@ -2742,13 +2749,20 @@
     }
     cari.oninput = tampil; varEl.oninput = tampil; tampil(); cari.focus()
     wrap.querySelector('#gkBatal').onclick = () => wrap.remove()
+    wrap.querySelector('#gkHargaSaja').onclick = () => {
+      const h = parsePrice(wrap.querySelector('#gkHargaSendiri').value)
+      if (!h) { alert('Isi dulu harga/pcs yang benar'); return wrap.querySelector('#gkHargaSendiri').focus() }
+      if (h === Number(it.pricePerUnit ?? it.price ?? 0)) return alert('Harganya sama dengan yang sekarang')
+      pilih({ name: it.name, varian: it.varian || '', harga: 0, hanyaHarga: true })
+    }
     const pilih = async x => {
-      const pakaiHarga = wrap.querySelector('#gkHarga').checked && x.harga > 0
-      const hargaBaru = pakaiHarga ? x.harga : Number(it.pricePerUnit ?? it.price ?? 0)
+      const hargaSendiri = parsePrice(wrap.querySelector('#gkHargaSendiri').value)
+      const pakaiHarga = !hargaSendiri && wrap.querySelector('#gkHarga').checked && x.harga > 0
+      const hargaBaru = hargaSendiri > 0 ? hargaSendiri : pakaiHarga ? x.harga : Number(it.pricePerUnit ?? it.price ?? 0)
       const sub = y => Number(y.subtotal ?? (Number(y.qty) || 0) * Number(y.pricePerUnit ?? y.price ?? 0)) || 0
       const totalLama = (order.orderItems || []).reduce((t, y) => t + sub(y), 0)
       const totalBaruCek = totalLama - sub(it) + (Number(it.qty) || 0) * hargaBaru
-      if (!confirm(`Ganti "${nmIt}" menjadi "${x.name}${x.varian ? ' – ' + x.varian : ''}"${pakaiHarga ? ` dengan harga ${fmtCurrency(hargaBaru)}` : ''}?${x.baruNama ? '\n\nNama baru ini juga ditambahkan ke daftar harga divisi ini.' : ''}${totalBaruCek !== totalLama ? `\n\nTotal order berubah: ${fmtCurrency(totalLama)} → ${fmtCurrency(totalBaruCek)}` : ''}`)) return
+      if (!confirm(x.hanyaHarga ? `Ubah harga "${nmIt}": ${fmtCurrency(Number(it.pricePerUnit ?? it.price ?? 0))} → ${fmtCurrency(hargaBaru)} per pcs?` + (totalBaruCek !== totalLama ? `\n\nTotal order: ${fmtCurrency(totalLama)} → ${fmtCurrency(totalBaruCek)}` : '') : `Ganti "${nmIt}" menjadi "${x.name}${x.varian ? ' – ' + x.varian : ''}"${pakaiHarga ? ` dengan harga ${fmtCurrency(hargaBaru)}` : ''}?${x.baruNama ? '\n\nNama baru ini juga ditambahkan ke daftar harga divisi ini.' : ''}${totalBaruCek !== totalLama ? `\n\nTotal order berubah: ${fmtCurrency(totalLama)} → ${fmtCurrency(totalBaruCek)}` : ''}`)) return
       const p = getProfile()
       const { alasanBeda, miripDengan, ...sisa } = it
       const baru = { ...sisa, name: x.name, varian: x.varian || '', pricePerUnit: hargaBaru, subtotal: (Number(it.qty) || 0) * hargaBaru }
