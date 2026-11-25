@@ -2694,7 +2694,8 @@
     const diCabang = !!order.lokasiTipe && order.lokasiTipe !== 'pusat'
     const harga = o => (diCabang && o?.priceCabang) ? o.priceCabang : (o?.priceNormal || 0)
     const pilihan = []   // { label, name, varian, harga }
-    daftar.forEach(d => { pilihan.push({ name: d.name, varian: '', harga: harga(d) }); (d.variants || []).forEach(v => pilihan.push({ name: d.name, varian: v.name, harga: harga(v) || harga(d) })) })
+    // Item yang punya varian: harga induk tidak tampil di Product Knowledge (hanya "N varian"), jadi jangan ditawarkan
+    daftar.forEach(d => { if (!(d.variants || []).length) pilihan.push({ name: d.name, varian: '', harga: harga(d) }); (d.variants || []).forEach(v => pilihan.push({ name: d.name, varian: v.name, harga: harga(v) || harga(d) })) })
     const nmIt = `${it.name} ${it.varian || ''}`.trim()
     const skor = x => skorMirip(nmIt, `${x.name} ${x.varian}`.trim())
     const wrap = document.createElement('div')
