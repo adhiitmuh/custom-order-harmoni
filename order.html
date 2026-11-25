@@ -257,7 +257,7 @@
     const showContact  = profile.role === 'owner'
     const canEdit        = profile.role === 'owner' || profile.role === 'cs'
     const canEditLokasi  = profile.role === 'owner' || profile.role === 'data'
-    const canEditItemPrice = profile.role === 'owner' || profile.role === 'manager'
+    const canEditItemPrice = profile.role === 'owner' || profile.role === 'manager' || profile.role === 'cs'  // CS: harga di bawah normal otomatis diajukan ke Owner
     const canEditModal   = profile.role === 'owner'
     const canSubmitModal = profile.role === 'data'
     const canSeeModal    = canEditModal || canSubmitModal
@@ -428,7 +428,7 @@
           <div class="card" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <h2 style="font-size:14px;font-weight:700">📋 Rincian Item</h2>
-              ${canEdit ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">Klik qty atau harga untuk edit</span>` : ''}
+              ${canEdit || canEditItemPrice ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">${canEditItemPrice && canEdit ? 'Klik qty atau harga untuk edit' : canEditItemPrice ? 'Klik harga untuk edit' : 'Klik qty untuk edit'} · ✏️ ganti nama/varian</span>` : ''}
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead>
@@ -446,6 +446,7 @@
                   <td style="padding:9px 0">
                     <div style="font-weight:500">${esc(it.name||'-')}</div>
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
+                    ${canEdit || canEditItemPrice ? `<button onclick="gantiItemKatalog(${i})" class="btn btn-ghost btn-sm no-print" style="padding:2px 8px;font-size:11px;margin-top:3px;border:1px solid rgba(3,69,67,.25);white-space:nowrap;border-radius:6px" title="Ganti nama/varian, atau pilih item yang sudah ada di daftar harga">✏️ Ubah nama</button>` : ''}
                     ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean); const q = Number(it.qty) || 0, h = hitungNama(it.namaCustom, q), curiga = !h.ok || (!h.baris.some(x => x.jml > 1 && h.perRata == null) && q > 3 && q / ns.length > 3); return `<div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px">🏷 ${(l => esc(l.judul) + l.daftar.map(esc).join(' · '))(labelNama(it.namaCustom, q))}</div>${curiga ? `<div style="font-size:10px;color:#b45309">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — lengkapi daftar nama' : esc(h.pesan)}</div>` : ''}` })() : ''}
                     ${(profile.role === 'owner' || profile.role === 'cs' || profile.role === 'manager') && (order.division === 'papan-nama' || /papan/i.test(it.name || '')) ? `<button onclick="editNamaPapan(${i})" class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:10px;margin-top:3px">✏️ Daftar nama${it.namaCustom ? '' : ' (belum diisi)'}</button>` : ''}
                   </td>
@@ -2510,8 +2511,14 @@
       throw new Error(`Harga ${r?.name || ''} ${r?.alasan || 'di bawah batas'} — tidak bisa disimpan`)
     }
     const disetujui = order.priceApprovalStatus === 'approved' ? (order.priceApprovalTier || 'normal') : order.priceApprovalStatus === 'pending' ? (order.priceApprovalTier || 'normal') : 'normal'
-    if (URUTAN_TIER[tier] <= URUTAN_TIER[disetujui]) return {}
-    const alasan = prompt(`Harga ini termasuk ${LABEL_TIER[tier]}. Tulis alasan / justifikasi:`)
+    // Yang tidak berhak menyetujui (mis. CS): setiap ubah harga di bawah normal harus diajukan lagi, walau tier-nya sama
+    const kunciH = x => `${kunciNama(x.name)}|${kunciNama(x.varian || '')}|${Number(x.pricePerUnit ?? x.price ?? 0)}`
+    const lama = new Set((order.orderItems || []).map(kunciH))
+    const diubah = new Set((itemsBaru || []).filter(x => !lama.has(kunciH(x))).map(x => `${kunciNama(x.name)}|${kunciNama(x.varian || '')}`))
+    const ubahDiBawahNormal = h.rincian.some(r => r.tier && !['normal', 'baru'].includes(r.tier) && diubah.has(`${kunciNama(r.name)}|${kunciNama(r.varian || '')}`))
+    const wajibAjukan = tier !== 'normal' && ubahDiBawahNormal && !bolehSetujui(prof, tier, order.division)
+    if (URUTAN_TIER[tier] <= URUTAN_TIER[disetujui] && !wajibAjukan) return {}
+    const alasan = prompt(wajibAjukan ? `Harga ini termasuk ${LABEL_TIER[tier]} — perlu disetujui ${tier === 'promo' ? 'Kepala Cabang/Owner' : 'Owner'}.\nTulis alasan perubahan harga (cth: salah input, harga sebenarnya Rp…):` : `Harga ini termasuk ${LABEL_TIER[tier]}. Tulis alasan / justifikasi:`)
     if (alasan === null || !alasan.trim()) throw new Error('Dibatalkan — alasan wajib diisi untuk harga di bawah normal')
     const now = Timestamp.now()
     if (bolehSetujui(prof, tier, order.division)) {
@@ -2746,13 +2753,19 @@
       const { alasanBeda, miripDengan, ...sisa } = it
       const baru = { ...sisa, name: x.name, varian: x.varian || '', pricePerUnit: hargaBaru, subtotal: (Number(it.qty) || 0) * hargaBaru }
       delete baru.price
+      if (pakaiHarga) delete baru.tier  // harga daftar = harga normal, label PROMO/ADMIN lama tidak berlaku
       const items = (order.orderItems || []).map((y, j) => j === i ? baru : y)
       const totalPrice = items.reduce((t, y) => t + sub(y), 0)
+      let cekHarga = {}
+      if (!bolehSetujui(p, order.priceApprovalTier, order.division)) {
+        try { cekHarga = await cekUlangHarga(items, totalPrice) } catch (e) { return alert(e.message) } }
       const kLama = kunciItemOrder(it), kBaru = kunciItemOrder(baru)
-      const disetujui = [...(order.itemDisetujui || []).filter(y => y.kunci !== kBaru), { kunci: kBaru, name: baru.name, varian: baru.varian, harga: hargaBaru, oleh: p.name, olehUid: p.id, at: new Date().toISOString() }]
+      const penyetuju = bolehSetujui(p, order.priceApprovalTier, order.division)
+      const disetujuiLain = (order.itemDisetujui || []).filter(y => y.kunci !== kBaru && y.kunci !== kLama)
+      const disetujui = !penyetuju ? disetujuiLain : [...disetujuiLain, { kunci: kBaru, name: baru.name, varian: baru.varian, harga: hargaBaru, oleh: p.name, olehUid: p.id, at: new Date().toISOString() }]
       try {
         await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, itemDisetujui: disetujui, ...(order.marketplace ? { depositPaid: totalPrice } : {}),
-          itemDitolak: (order.itemDitolak || []).filter(y => y.kunci !== kLama),
+          ...cekHarga, itemDitolak: (order.itemDitolak || []).filter(y => y.kunci !== kLama),
           itemDiganti: arrayUnion({ dari: nmIt, ke: `${baru.name}${baru.varian ? ' – ' + baru.varian : ''}`, hargaDari: Number(it.pricePerUnit ?? it.price ?? 0), hargaKe: hargaBaru, oleh: p.name, olehUid: p.id, at: new Date().toISOString() }),
           updatedAt: Timestamp.now() })
         if (order.createdBy && order.createdBy !== p.id)
@@ -2768,7 +2781,7 @@
         }
         Object.assign(order, { orderItems: items, totalPrice, itemDisetujui: disetujui, itemDitolak: (order.itemDitolak || []).filter(y => y.kunci !== kLama) })
         const semua = items.every(y => itemDisetujuiAktif().some(z => z.kunci === kunciItemOrder(y)))
-        if (semua && !itemDitolakAktif().length) return approvePrice()
+        if (penyetuju && order.priceApprovalStatus === 'pending' && semua && !itemDitolakAktif().length) return approvePrice()
         await loadOrder(p)
       } catch (e) { alert('Gagal mengganti item: ' + e.message) }
     }
