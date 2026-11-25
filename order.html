@@ -427,7 +427,8 @@
           ${order.orderItems?.length ? `
           <div class="card" style="margin-bottom:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <h2 style="font-size:14px;font-weight:700">📋 Rincian Item</h2>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="font-size:14px;font-weight:700">📋 Rincian Item</h2>
+              <a href="knowledge.html?div=${encodeURIComponent(order.division || '')}" class="no-print" style="font-size:11px;font-weight:700;color:#034543;border:1px solid rgba(3,69,67,.25);border-radius:6px;padding:2px 8px;text-decoration:none;white-space:nowrap">📖 Daftar harga ${esc(DIVISION_META[order.division]?.label || '')} →</a></div>
               ${canEdit || canEditItemPrice ? `<span style="font-size:11px;color:rgba(3,69,67,.4)">${canEditItemPrice && canEdit ? 'Klik qty atau harga untuk edit' : canEditItemPrice ? 'Klik harga untuk edit' : 'Klik qty untuk edit'} · ✏️ ganti nama/varian</span>` : ''}
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:13px">
