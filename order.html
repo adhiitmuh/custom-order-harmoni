@@ -2122,6 +2122,8 @@
   }
 
   window.editItemPrice = function(i) {
+    // Yang tidak berhak menyetujui (CS): pilih harga dari daftar harga (Normal/Promo/Admin) di jendela Ubah nama
+    if (!bolehSetujui(getProfile(), 'admin', order.division)) return gantiItemKatalog(i, { fokusHarga: true })
     document.getElementById(`pval-${i}`).style.display = 'none'
     const inp = document.getElementById(`pinp-${i}`)
     inp.style.display = 'inline-block'
@@ -2689,7 +2691,7 @@
     } catch (e) { alert('Gagal menyetujui item: ' + e.message) }
   }
   // Item baru ternyata sama dengan item di daftar harga → ganti langsung (nama, varian, harga), lalu ✓
-  window.gantiItemKatalog = async function(i) {
+  window.gantiItemKatalog = async function(i, opsi = {}) {
     const it = (order.orderItems || [])[i]; if (!it) return
     const daftar = await daftarHargaOrder()
     const diCabang = !!order.lokasiTipe && order.lokasiTipe !== 'pusat'
@@ -2714,7 +2716,8 @@
       <div id="gkBaruWrap" style="margin-top:8px"></div>
       <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:8px 0"><input type="checkbox" id="gkHarga" checked style="width:16px;height:16px;flex:0 0 16px;margin:0"> Pakai harga daftar (kalau tidak dicentang, harga order tetap)</label>
       <div style="border:1px dashed rgba(3,69,67,.25);border-radius:8px;padding:8px;margin-bottom:8px">
-        <div style="font-size:12px;font-weight:700;margin-bottom:4px">💰 Harga salah? Isi harga/pcs yang benar</div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:4px">💰 Harga salah? Pilih dari daftar harga atau isi sendiri</div>
+        <div id="gkTier" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="gkHargaSendiri" type="text" inputmode="numeric" placeholder="Rp …" oninput="this.value=fmtInputPrice(this.value)" style="width:130px;flex:1 1 120px">
           <button class="btn btn-primary btn-sm" id="gkHargaSaja" style="white-space:nowrap">Simpan harga (nama tetap)</button></div>
         <div style="font-size:11px;color:rgba(3,69,67,.55);margin-top:4px">Harga di bawah harga normal otomatis <b>diajukan ke Owner</b> (wajib tulis alasan). Kalau diisi, harga ini juga dipakai saat memilih nama di daftar atas.</div></div>
@@ -2749,7 +2752,24 @@
            <button class="btn btn-primary btn-sm" id="gkPakaiBaru" style="width:100%;justify-content:center">Pakai nama baru: ${esc(nm)}${vr ? ' – ' + esc(vr) : ''}</button>`
       const bb = wrap.querySelector('#gkPakaiBaru'); if (bb) bb.onclick = () => pilih({ name: nm, varian: vr, harga: 0, baruNama: true })
     }
-    cari.oninput = tampil; varEl.oninput = tampil; tampil(); cari.focus()
+    // Pilihan harga dari daftar harga (Normal / Cabang / Promo / Admin) untuk nama + varian yang sedang diketik
+    const hsEl = wrap.querySelector('#gkHargaSendiri')
+    const isiTier = () => {
+      const nm = cari.value.trim() || it.name, vr = varEl.value.trim() || it.varian || ''
+      const induk = daftar.find(d => kunciNama(d.name) === kunciNama(nm))
+      const va = induk && vr ? (induk.variants || []).find(v => kunciNama(v.name) === kunciNama(vr)) : null
+      const sumber = va || (induk && !(induk.variants || []).length ? induk : null)
+      const ambil = k => Number(sumber?.[k]) || (va ? Number(induk?.[k]) || 0 : 0)
+      const opsi = [['Normal', ambil('priceNormal')], ...(diCabang ? [['Cabang', ambil('priceCabang')]] : []), ['Promo', ambil('pricePromo')], ['Admin', ambil('priceAdmin')]].filter(([, h]) => h > 0)
+      const pilihH = parsePrice(hsEl.value)
+      wrap.querySelector('#gkTier').innerHTML = !sumber ? `<span style="font-size:11px;color:rgba(3,69,67,.5)">${induk && vr ? `Varian ${esc(vr)} belum ada di daftar harga` : 'Item ini belum ada di daftar harga'} — isi harga sendiri.</span>`
+        : !opsi.length ? `<span style="font-size:11px;color:rgba(3,69,67,.5)">Harga untuk ${esc(sumber.name || nm)} belum diisi di daftar harga.</span>`
+        : opsi.map(([l, h]) => `<button type="button" class="btn btn-sm ${pilihH === h ? 'btn-primary' : 'btn-ghost'}" data-h="${h}" style="padding:4px 10px;font-size:12px;border:1px solid rgba(3,69,67,.3);white-space:nowrap">${l} <b>${fmtCurrency(h)}</b></button>`).join('')
+      wrap.querySelectorAll('#gkTier [data-h]').forEach(b => b.onclick = () => { hsEl.value = fmtPrice(+b.dataset.h); isiTier() })
+    }
+    hsEl.addEventListener('input', isiTier)
+    cari.oninput = () => { tampil(); isiTier() }; varEl.oninput = () => { tampil(); isiTier() }; tampil(); isiTier()
+    if (opsi.fokusHarga) { const kotak = wrap.querySelector('#gkTier'); kotak.parentElement.style.borderColor = '#034543'; kotak.parentElement.scrollIntoView({ block: 'center' }) } else cari.focus()
     wrap.querySelector('#gkBatal').onclick = () => wrap.remove()
     wrap.querySelector('#gkHargaSaja').onclick = () => {
       const h = parsePrice(wrap.querySelector('#gkHargaSendiri').value)
