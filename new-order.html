@@ -613,6 +613,7 @@
           style="text-transform:uppercase;width:100%;border:none;border-bottom:1px dashed rgba(3,69,67,.15);padding:3px 2px;font-size:11px;color:rgba(3,69,67,.55);outline:none;margin-top:3px;background:transparent;border-radius:0"
           onfocus="this.style.borderBottomColor='#034543';saranVarianKolom(${id})" onblur="this.style.borderBottomColor='rgba(3,69,67,.15)';setTimeout(()=>tutupSaran(this),200)"
           onchange="showTierButtons(${id})">
+        <div id="stokYH-${id}" style="font-size:11px;margin-top:2px"></div>
         <div id="namaCustomWrap-${id}" style="display:none;margin-top:4px">
           <textarea rows="2" placeholder="Nama yang dicetak — SATU NAMA PER BARIS. Jumlah beda per nama? tulis: NAMA x2"
             data-field="namaCustom" data-row="${id}" oninput="hitungNamaPapan(${id})"
@@ -1579,5 +1580,24 @@
   })
 </script>
 <script type="module" src="js/tempel-file.js"></script>
+<script type="module">
+  // Stok barang jadi YH (hasil QC penjahit) untuk item yang sudah dihubungkan di Pengaturan
+  let modYH = null, dataYH = null
+  async function tampilStokYH(id) {
+    const el = document.getElementById('stokYH-' + id); if (!el) return
+    const nama = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value || '', varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value || ''
+    if (!nama.trim()) { el.innerHTML = ''; return }
+    try { modYH = modYH || await import('./js/stokYH.js?v=20261126a'); dataYH = dataYH || await modYH.dataYH() } catch { return }
+    const s = modYH.cariStokYH(dataYH, nama, varian)
+    el.innerHTML = !s ? '' : `<span style="color:${s.n > 0 ? '#047857' : 'rgba(3,69,67,.45)'};font-weight:700">📦 Stok jadi YH${s.ukuran ? ' ' + s.ukuran.replace(/</g, '') : ''}: ${dataYH.gagal ? '?' : s.n} pcs</span>${!s.ukuran ? ' <span style="color:rgba(3,69,67,.45)">— isi ukuran di varian</span>' : ''}`
+  }
+  let tunda = {}
+  const jadwal = id => { clearTimeout(tunda[id]); tunda[id] = setTimeout(() => tampilStokYH(id), 350) }
+  document.addEventListener('input', e => { const f = e.target?.dataset?.field; if (f === 'name' || f === 'varian') jadwal(e.target.dataset.row) })
+  document.addEventListener('change', e => { const f = e.target?.dataset?.field; if (f === 'name' || f === 'varian') jadwal(e.target.dataset.row) })
+  setTimeout(() => document.querySelectorAll('[data-field="name"][data-row]').forEach(x => x.value && tampilStokYH(x.dataset.row)), 1500)
+  // Pilih dari saran (nilai diisi lewat kode) → segarkan setelah klik
+  document.addEventListener('click', () => setTimeout(() => document.querySelectorAll('[data-field="name"][data-row]').forEach(x => tampilStokYH(x.dataset.row)), 300))
+</script>
 </body>
 </html>

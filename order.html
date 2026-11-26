@@ -447,6 +447,7 @@
                   <td style="padding:9px 0">
                     <div style="font-weight:500">${esc(it.name||'-')}</div>
                     ${it.varian ? `<div style="font-size:11px;color:rgba(3,69,67,.45);margin-top:1px">${it.varian}</div>` : ''}
+                    <div id="yhs-${i}" class="no-print" style="font-size:11px;margin-top:3px"></div>
                     ${canEdit || canEditItemPrice ? `<button onclick="gantiItemKatalog(${i})" class="btn btn-ghost btn-sm no-print" style="padding:2px 8px;font-size:11px;margin-top:3px;border:1px solid rgba(3,69,67,.25);white-space:nowrap;border-radius:6px" title="Ganti nama/varian, atau pilih item yang sudah ada di daftar harga">✏️ Ubah nama</button>` : ''}
                     ${it.namaCustom ? (() => { const ns = String(it.namaCustom).split(/\n+/).filter(Boolean); const q = Number(it.qty) || 0, h = hitungNama(it.namaCustom, q), curiga = !h.ok || (!h.baris.some(x => x.jml > 1 && h.perRata == null) && q > 3 && q / ns.length > 3); return `<div style="font-size:11px;color:#7c3aed;font-weight:600;margin-top:2px">🏷 ${(l => esc(l.judul) + l.daftar.map(esc).join(' · '))(labelNama(it.namaCustom, q))}</div>${curiga ? `<div style="font-size:10px;color:#b45309">⚠ ${h.ok ? ns.length + ' nama untuk ' + q + ' pcs — lengkapi daftar nama' : esc(h.pesan)}</div>` : ''}` })() : ''}
                     ${(profile.role === 'owner' || profile.role === 'cs' || profile.role === 'manager') && (order.division === 'papan-nama' || /papan/i.test(it.name || '')) ? `<button onclick="editNamaPapan(${i})" class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:10px;margin-top:3px">✏️ Daftar nama${it.namaCustom ? '' : ' (belum diisi)'}</button>` : ''}
@@ -1006,6 +1007,42 @@
 
     renderInvoiceDoc()
     loadSupplierAssignUI()
+    isiStokYH(profile)
+  }
+
+  // ── Stok barang jadi YH (hasil QC penjahit) per item + ambil langsung dari order ──
+  async function isiStokYH(profile) {
+    const items = order.orderItems || []; if (!items.length || !document.getElementById('yhs-0')) return
+    let mod, d; try { mod = await import('./js/stokYH.js?v=20261126a'); d = await mod.dataYH() } catch { return }
+    const boleh = ['owner', 'cs', 'manager'].includes(profile.role)
+    items.forEach((it, i) => {
+      const el = document.getElementById('yhs-' + i); if (!el) return
+      const s = mod.cariStokYH(d, it.name, it.varian); if (!s) { el.innerHTML = ''; return }
+      const sudah = (order.ambilStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
+      const perlu = Math.max(0, (+it.qty || 0) - sudah)
+      el.innerHTML = `<span style="background:${s.n > 0 ? '#ecfdf5' : '#f1f5f9'};color:${s.n > 0 ? '#047857' : 'rgba(3,69,67,.5)'};border-radius:5px;padding:1px 6px;font-weight:700">📦 Stok jadi YH${s.ukuran ? ' ' + esc(s.ukuran) : ''}: ${d.gagal ? '?' : s.n} pcs</span>`
+        + (sudah ? ` <span style="color:#047857">· ✓ ${sudah} pcs sudah diambil</span>` : '')
+        + (boleh && perlu > 0 && s.n > 0 ? ` <button class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:11px;border:1px solid rgba(4,120,87,.4);white-space:nowrap" onclick="ambilDariStokYH(${i})">Ambil dari stok</button>` : '')
+    })
+  }
+  window.ambilDariStokYH = async function(i) {
+    const it = (order.orderItems || [])[i]; if (!it) return
+    const mod = await import('./js/stokYH.js?v=20261126a'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
+    if (!s || s.n <= 0) { alert('Stok YH untuk item ini kosong'); return isiStokYH(getProfile()) }
+    const sudah = (order.ambilStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
+    const usul = Math.min(s.n, Math.max(1, (+it.qty || 0) - sudah))
+    const j = prompt(`Ambil dari stok jadi YH:\n${s.namaYH} ukuran ${s.ukuran || '-'} — stok ${s.n} pcs\nItem order: ${it.name}${it.varian ? ' – ' + it.varian : ''} (${it.qty} pcs${sudah ? ', sudah diambil ' + sudah : ''})\n\nJumlah yang diambil:`, String(usul))
+    if (j === null) return
+    const pcs = Math.floor(+String(j).replace(/\D/g, '')); if (!pcs || pcs < 1) return alert('Jumlah tidak valid')
+    if (pcs > s.n) return alert(`Stok YH hanya ${s.n} pcs`)
+    const p = getProfile()
+    try {
+      const r = await mod.ambilStokYH({ kunciAsli: s.kunciAsli, namaYH: s.namaYH, ukuran: s.ukuran, pcs, orderNumber: order.orderNumber, customer: order.customerName, oleh: p.name })
+      const catat = { idx: i, nama: it.name, varian: it.varian || '', namaYH: s.namaYH, ukuran: s.ukuran, pcs, idKeluarYH: r.idKeluar, tgl: r.tgl, oleh: p.name, olehUid: p.id, at: new Date().toISOString() }
+      await updateDoc(doc(db, 'orders', orderId), { ambilStokYH: arrayUnion(catat), updatedAt: Timestamp.now() })
+      order.ambilStokYH = [...(order.ambilStokYH || []), catat]
+      isiStokYH(p)
+    } catch (e) { alert('Gagal mengambil stok: ' + e.message) }
   }
 
   function renderPaymentInfoBlock(order, sisa, isPaid) {

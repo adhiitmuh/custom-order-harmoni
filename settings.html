@@ -168,6 +168,14 @@
       </div>
     </div>
 
+    <!-- Penghubung item YH ↔ daftar harga CO -->
+    <div class="card" style="margin-bottom:20px">
+      <h2 style="font-size:15px;font-weight:700;margin-bottom:4px">🔗 Hubungkan item YH (penjahit) dengan daftar harga</h2>
+      <p style="font-size:12px;color:rgba(3,69,67,.5);margin-bottom:10px">Nama di YH tetap seperti sekarang. Pilih nama yang sama di daftar harga Custom Order supaya saat membuat order terlihat <b>stok barang jadi YH</b> (hasil QC) dan bisa diambil langsung dari order. Ukuran YH = varian di daftar harga.</p>
+      <div id="linkYhIsi" style="font-size:13px">Memuat…</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="simpanLinkYH()" id="btnLinkYh">Simpan hubungan</button>
+    </div>
+
     <!-- Kapasitas produksi -->
     <div class="card" style="margin-bottom:20px">
       <h2 style="font-size:15px;font-weight:700;margin-bottom:4px">🏭 Kapasitas produksi per minggu</h2>
@@ -385,6 +393,35 @@
     return [...document.querySelectorAll('.bankDivCheck:checked')].map(c => c.value)
   }
 
+  // ── Penghubung item YH ↔ daftar harga CO ──
+  async function muatLinkYH() {
+    const el = document.getElementById('linkYhIsi'); if (!el) return
+    try {
+      const { daftarItemYH, linkYH } = await import('./js/stokYH.js?v=20261126a')
+      const { skorMirip } = await import('./js/hargaList.js?v=20261110a')
+      const [yh, link, pl] = await Promise.all([daftarItemYH(), linkYH(), getDocs(collection(db, 'price_list'))])
+      const namaCO = [...new Set(pl.docs.flatMap(d => (d.data().items || []).map(i => i.name)).filter(Boolean))].sort()
+      if (!yh.length) { el.textContent = 'Item master YH belum ada.'; return }
+      const saran = n => namaCO.map(c => [c, skorMirip(n, c)]).sort((a, b) => b[1] - a[1])[0]
+      el.innerHTML = `<datalist id="linkYhCO">${namaCO.map(c => `<option value="${c.replace(/"/g, '&quot;')}">`).join('')}</datalist>
+        <div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,2fr);gap:6px 10px;align-items:center">
+        <b style="font-size:11px;color:rgba(3,69,67,.5)">ITEM DI YH</b><b style="font-size:11px;color:rgba(3,69,67,.5)">NAMA DI DAFTAR HARGA CO</b>
+        ${yh.map(n => { const s = saran(n), ada = link[n] || ''
+          return `<span>${n.replace(/</g, '&lt;')}</span><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input list="linkYhCO" data-yh="${n.replace(/"/g, '&quot;')}" value="${ada.replace(/"/g, '&quot;')}" placeholder="— belum dihubungkan —" style="flex:1;min-width:160px;font-size:12px;padding:6px 8px">
+            ${!ada && s && s[1] >= 0.45 ? `<button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" data-saran="${s[0].replace(/"/g, '&quot;')}">saran: ${s[0].replace(/</g, '&lt;')}</button>` : ''}</div>` }).join('')}</div>`
+      el.querySelectorAll('[data-saran]').forEach(b => b.onclick = () => { b.previousElementSibling.value = b.dataset.saran; b.remove() })
+      window._namaCO = namaCO
+    } catch (e) { el.innerHTML = `<span style="color:#b91c1c">Gagal memuat data YH: ${e.message}</span>` }
+  }
+  window.simpanLinkYH = async function() {
+    const map = {}, salah = []
+    document.querySelectorAll('#linkYhIsi [data-yh]').forEach(i => { const v = i.value.trim(); if (!v) return; if (!(window._namaCO || []).includes(v)) salah.push(v); else map[i.dataset.yh] = v })
+    if (salah.length) return alert('Nama ini tidak ada di daftar harga — pilih dari saran:\n' + salah.join('\n'))
+    const btn = document.getElementById('btnLinkYh'); btn.disabled = true
+    try { await setDoc(doc(db, 'settings', 'link_yh'), { map, updatedAt: Timestamp.now() }); alert(`✓ ${Object.keys(map).length} item terhubung`) }
+    catch (e) { alert('Gagal: ' + e.message) } finally { btn.disabled = false }
+  }
+
   requireAuth((profile) => {
     if (profile.role !== 'owner') {
       document.querySelector('.main').innerHTML = `
@@ -395,6 +432,7 @@
         </div>`
       return
     }
+    muatLinkYH()
     populateDivisionSelects()
     renderBankList()
     loadPaymentInfo()
