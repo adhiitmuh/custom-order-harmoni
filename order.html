@@ -1013,21 +1013,91 @@
   // ── Stok barang jadi YH (hasil QC penjahit) per item + ambil langsung dari order ──
   async function isiStokYH(profile) {
     const items = order.orderItems || []; if (!items.length || !document.getElementById('yhs-0')) return
-    let mod, d; try { mod = await import('./js/stokYH.js?v=20261127a'); d = await mod.dataYH() } catch { return }
+    let mod, d; try { mod = await import('./js/stokYH.js?v=20261127b'); d = await mod.dataYH() } catch { return }
     const boleh = ['owner', 'cs', 'manager'].includes(profile.role)
     items.forEach((it, i) => {
       const el = document.getElementById('yhs-' + i); if (!el) return
       const s = mod.cariStokYH(d, it.name, it.varian); if (!s) { el.innerHTML = ''; return }
       const sudah = (order.ambilStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
-      const perlu = Math.max(0, (+it.qty || 0) - sudah)
+      const diretur = (order.returStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
+      const perlu = Math.max(0, (+it.qty || 0) - sudah + diretur)
       el.innerHTML = `<span style="background:${s.n > 0 ? '#ecfdf5' : '#f1f5f9'};color:${s.n > 0 ? '#047857' : 'rgba(3,69,67,.5)'};border-radius:5px;padding:1px 6px;font-weight:700">📦 Stok jadi YH${s.ukuran ? ' ' + esc(s.ukuran) : ''}: ${d.gagal ? '?' : s.n} pcs</span>`
         + (sudah ? ` <span style="color:#047857">· ✓ ${sudah} pcs sudah diambil</span>` : '')
+        + (diretur ? ` <span style="color:#7c3aed">· ↩️ ${diretur} pcs diretur</span>` : '')
+        + (boleh && sudah - diretur > 0 ? ` <button class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:11px;border:1px solid rgba(124,58,237,.4);color:#7c3aed;white-space:nowrap" onclick="returDariStokYH(${i})">↩️ Retur / tukar</button>` : '')
         + (boleh && perlu > 0 && s.n > 0 ? ` <button class="btn btn-ghost btn-sm" style="padding:1px 8px;font-size:11px;border:1px solid rgba(4,120,87,.4);white-space:nowrap" onclick="ambilDariStokYH(${i})">Ambil dari stok</button>` : '')
     })
   }
+  // Retur barang yang diambil dari stok YH: tukar ukuran / ganti (cacat) / uang kembali. Barang masuk antrean QC retur di YH.
+  window.returDariStokYH = async function(i) {
+    const it = (order.orderItems || [])[i]; if (!it) return
+    const mod = await import('./js/stokYH.js?v=20261127b'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
+    const diambil = (order.ambilStokYH || []).filter(a => a.idx === i), sudah = diambil.reduce((t, a) => t + (+a.pcs || 0), 0)
+    const diretur = (order.returStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0), maks = sudah - diretur
+    if (maks <= 0) return alert('Tidak ada barang dari stok YH yang bisa diretur di item ini')
+    const namaYH = diambil[0]?.namaYH || s?.namaYH, ukLama = diambil[0]?.ukuran || s?.ukuran || ''
+    const ukStok = Object.entries(d.stokNorm).filter(([k, v]) => k.startsWith(namaYH + '||') && v.n > 0).map(([k, v]) => [k.split('||')[1], v.n])
+    const wrap = document.createElement('div')
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px'
+    wrap.innerHTML = `<div class="card" style="max-width:460px;width:100%;max-height:90vh;overflow:auto">
+      <h3 style="font-size:15px;font-weight:800;margin-bottom:2px">↩️ Retur / tukar barang</h3>
+      <p style="font-size:12px;color:rgba(3,69,67,.6);margin-bottom:10px">${esc(it.name)}${it.varian ? ' – ' + esc(it.varian) : ''} · diambil dari stok YH ${sudah} pcs${diretur ? `, sudah diretur ${diretur}` : ''}</p>
+      <div class="form-group"><label>Jumlah diretur (maks ${maks})</label><input type="number" id="rtJml" min="1" max="${maks}" value="1"></div>
+      <div class="form-group"><label>Tindakan</label><select id="rtJenis">
+        <option value="tukar">Tukar ukuran</option><option value="ganti">Ganti barang sama (cacat)</option><option value="refund">Uang kembali (item dikurangi)</option></select></div>
+      <div class="form-group" id="rtUkWrap"><label>Ukuran pengganti (stok YH)</label><select id="rtUk">${ukStok.filter(([u]) => u !== ukLama).map(([u, n]) => `<option value="${esc(u)}">${esc(u)} — stok ${n}</option>`).join('') || '<option value="">Stok ukuran lain kosong</option>'}</select></div>
+      <div class="form-group"><label>Penyebab</label><select id="rtPenyebab">${Object.entries(PENYEBAB).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Alasan / keterangan (wajib)</label><input type="text" id="rtAlasan" placeholder="cth: kekecilan, jahitan ketiak lepas"></div>
+      <p id="rtInfo" style="font-size:11px;color:rgba(3,69,67,.6);margin:6px 0">Barang yang dikembalikan masuk antrean <b>Retur, belum QC</b> di YH. Admin YH yang memutuskan layak jual, diperbaiki, atau afkir.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" id="rtBatal">Batal</button><button class="btn btn-primary btn-sm" id="rtSimpan">Simpan retur</button></div></div>`
+    document.body.appendChild(wrap)
+    const jenisEl = wrap.querySelector('#rtJenis'), atur = () => { wrap.querySelector('#rtUkWrap').style.display = jenisEl.value === 'tukar' ? '' : 'none'
+      if (jenisEl.value === 'ganti') wrap.querySelector('#rtPenyebab').value = 'produksi'; if (jenisEl.value === 'tukar') wrap.querySelector('#rtPenyebab').value = 'customer' }
+    jenisEl.onchange = atur; atur()
+    wrap.querySelector('#rtBatal').onclick = () => wrap.remove()
+    wrap.querySelector('#rtSimpan').onclick = async () => {
+      const n = Math.floor(+wrap.querySelector('#rtJml').value || 0), jenis = jenisEl.value, uk = wrap.querySelector('#rtUk').value, penyebab = wrap.querySelector('#rtPenyebab').value, alasan = wrap.querySelector('#rtAlasan').value.trim()
+      if (n < 1 || n > maks) return alert(`Jumlah 1–${maks}`)
+      if (!alasan) return alert('Alasan wajib diisi')
+      if (jenis === 'tukar' && !uk) return alert('Pilih ukuran pengganti yang ada stoknya')
+      const sPengganti = jenis === 'tukar' ? d.stokNorm[`${namaYH}||${uk}`] : jenis === 'ganti' ? d.stokNorm[`${namaYH}||${ukLama}`] : null
+      if (sPengganti && sPengganti.n < n) return alert(`Stok pengganti hanya ${sPengganti.n} pcs`)
+      const harga = Number(it.pricePerUnit ?? it.price ?? 0)
+      if (!confirm(`Simpan retur ${n} pcs ${it.name} ${ukLama}?\n` + (jenis === 'tukar' ? `Ditukar ke ukuran ${uk} (diambil dari stok YH).` : jenis === 'ganti' ? 'Diganti barang yang sama dari stok YH.' : `Item dikurangi ${n} pcs → uang kembali ${fmtCurrency(n * harga)}.`))) return
+      const p = getProfile(), b = wrap.querySelector('#rtSimpan'); b.disabled = true
+      try {
+        await mod.returStokYH({ order: order.orderNumber, customer: order.customerName, jenis, penyebab, penyebabLabel: PENYEBAB[penyebab] || penyebab, alasan, items: [{ nama: namaYH, ukuran: ukLama, pcs: n }] })
+        let items = (order.orderItems || []).map(x => ({ ...x })), ambil = [...(order.ambilStokYH || [])], retur = [...(order.returStokYH || []), { idx: i, nama: it.name, varian: it.varian || '', namaYH, ukuran: ukLama, pcs: n, jenis, penyebab, alasan, tgl: new Date().toISOString().slice(0, 10), oleh: p.name, olehUid: p.id }]
+        let ket = `${n} pcs ${it.name} ${ukLama}`, refund = 0
+        if (jenis === 'tukar' || jenis === 'ganti') {
+          const ukBaru = jenis === 'tukar' ? uk : ukLama, kunciAsli = (d.stokNorm[`${namaYH}||${ukBaru}`] || {}).kunciAsli || `${namaYH}||${ukBaru}`
+          const r = await mod.ambilStokYH({ kunciAsli, namaYH, ukuran: ukBaru, pcs: n, orderNumber: order.orderNumber, customer: order.customerName, oleh: p.name })
+          let idxBaru = i
+          if (jenis === 'tukar') {
+            const cur = items[i]
+            if (n >= (+cur.qty || 0)) cur.varian = ukBaru
+            else { cur.qty = (+cur.qty || 0) - n; cur.subtotal = cur.qty * harga; items.push({ ...cur, varian: ukBaru, qty: n, subtotal: n * harga }); idxBaru = items.length - 1 }
+            ket += ` ditukar ke ${ukBaru}`
+          } else ket += ' diganti barang baru'
+          ambil.push({ idx: idxBaru, nama: items[idxBaru].name, varian: items[idxBaru].varian || '', namaYH, ukuran: ukBaru, pcs: n, idKeluarYH: r.idKeluar, tgl: r.tgl, oleh: p.name, olehUid: p.id, at: new Date().toISOString(), dariRetur: true })
+        } else {
+          const cur = items[i]; cur.qty = Math.max(0, (+cur.qty || 0) - n); cur.subtotal = cur.qty * harga; refund = n * harga
+          if (cur.qty === 0) { items.splice(i, 1); const geser = a => a.idx === i ? { ...a, idx: -1 } : a.idx > i ? { ...a, idx: a.idx - 1 } : a; ambil = ambil.map(geser); retur = retur.map(geser) }
+          ket += ` dikembalikan, uang kembali ${fmtCurrency(refund)}`
+        }
+        const totalPrice = items.reduce((t, y) => t + (Number(y.subtotal) || 0), 0)
+        const komplain = { id: Date.now().toString(36), jenis: 'retur', penyebab, ket: `${ket} — ${alasan}`, biaya: 0, oleh: p.name, tgl: new Date().toISOString().slice(0, 10), selesai: jenis !== 'refund' }
+        await updateDoc(doc(db, 'orders', orderId), { orderItems: items, totalPrice, ambilStokYH: ambil, returStokYH: retur, komplain: arrayUnion(komplain), adaKomplain: true,
+          ...(refund ? { refundRetur: arrayUnion({ jumlah: refund, ket, tgl: komplain.tgl, oleh: p.name }) } : {}), ...(order.marketplace ? { depositPaid: totalPrice } : {}), updatedAt: Timestamp.now() })
+        wrap.remove()
+        if (refund) alert(`Retur tersimpan. Uang kembali ${fmtCurrency(refund)} ke pelanggan — catat juga pengeluarannya di Laporan Keuangan (Kasir), dan kirim ulang invoice yang sudah direvisi.`)
+        await loadOrder(p)
+      } catch (e) { b.disabled = false; alert('Gagal menyimpan retur: ' + e.message) }
+    }
+  }
   window.ambilDariStokYH = async function(i) {
     const it = (order.orderItems || [])[i]; if (!it) return
-    const mod = await import('./js/stokYH.js?v=20261127a'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
+    const mod = await import('./js/stokYH.js?v=20261127b'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
     if (!s || s.n <= 0) { alert('Stok YH untuk item ini kosong'); return isiStokYH(getProfile()) }
     const sudah = (order.ambilStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
     const usul = Math.min(s.n, Math.max(1, (+it.qty || 0) - sudah))

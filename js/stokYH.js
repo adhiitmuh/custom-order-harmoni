@@ -107,3 +107,26 @@ export async function ambilStokYH({ kunciAsli, namaYH, ukuran, pcs, orderNumber,
   _cache = null; _lewatWorker = null
   return { idKeluar, tgl }
 }
+
+// Retur barang ke YH: masuk antrean "Retur, belum QC" (Admin YH yang memutuskan layak / perbaiki / afkir)
+export async function returStokYH({ order, customer, jenis, penyebab, penyebabLabel, alasan, items }) {
+  const body = { order, customer, jenis, penyebab, penyebabLabel, alasan, items }
+  const idToken = await auth.currentUser?.getIdToken().catch(() => null)
+  if (idToken) {
+    const w = await fetch('https://harmoni-order-api.adhiitmuh.workers.dev/yh/retur', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) }).catch(() => null)
+    if (w && w.ok) { _cache = null; _lewatWorker = null; return await w.json() }
+    if (w && w.status !== 503 && w.status !== 404) { let m = ''; try { m = (await w.json()).error } catch {} throw new Error(m || 'Gagal (' + w.status + ')') }
+  }
+  // Cadangan selama Worker belum diberi kunci YH
+  const now = new Date().toISOString(), id = 'rt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const fp = k => '`' + k.replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`'
+  const writes = [
+    { transform: { document: `${DOCS}/config/stok_retur`, fieldTransforms: items.map(i => ({ fieldPath: fp(i.nama + '||' + i.ukuran), increment: { integerValue: String(i.pcs) } })) } },
+    { update: { name: `${DOCS}/retur/${id}`, fields: Object.fromEntries(Object.entries({ tanggal: now.slice(0, 10), order, customer, jenis, penyebab, penyebabLabel, alasan, status: 'belum_qc', sumber: 'custom-order', oleh: '', items })
+      .map(([k, v]) => [k, keFs(v)]).concat([['createdAt', { timestampValue: now }]])) }, currentDocument: { exists: false } },
+  ]
+  const r = await fetch(`${FS}:commit?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) })
+  if (!r.ok) throw new Error('Gagal mencatat retur di YH (' + r.status + ')')
+  _cache = null
+  return { ok: true, id }
+}

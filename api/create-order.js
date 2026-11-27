@@ -143,6 +143,7 @@ export default {
     if (request.method === 'POST' && url.pathname === '/yh/token') return handleYhToken(request, env)
     if (request.method === 'POST' && url.pathname === '/yh/ambil-stok') return handleYhAmbilStok(request, env)
     if (request.method === 'GET' && url.pathname === '/yh/stok') return handleYhStokBaca(request, env)
+    if (request.method === 'POST' && url.pathname === '/yh/retur') return handleYhRetur(request, env)
     if (request.method === 'GET' && url.pathname === '/qris-img') {
       return handleQrisImg(url)
     }
@@ -1231,6 +1232,32 @@ async function handleYhStokBaca(request, env) {
   const [st, se] = await Promise.all([firestoreGet(YH_PROJECT_ID, token, 'config/stok'), firestoreGet(YH_PROJECT_ID, token, 'config/settings')])
   const items = (parseFields(se?.fields || {}).items || []).map(i => i?.nama).filter(Boolean)
   return json({ stok: parseFields(st?.fields || {}), items })
+}
+// Retur barang dari Custom Order → antrean "Retur, belum QC" di YH (config/stok_retur) + dokumen retur untuk QC Admin YH
+async function handleYhRetur(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const fu = await verifyFirebaseIdToken(idToken, env); if (!fu) return json({ error: 'Sesi login habis' }, 401)
+  const staff = await getPortalStaff(idToken, fu)
+  if (!staff || !['owner', 'cs', 'manager'].includes(staff.role)) return json({ error: 'Tidak punya akses' }, 403)
+  if (!env.YH_SERVICE_ACCOUNT_KEY) return json({ error: 'YH_SERVICE_ACCOUNT_KEY belum diatur', belumDiatur: true }, 503)
+  let b; try { b = await request.json() } catch { return json({ error: 'Data tidak valid' }, 400) }
+  const items = (b.items || []).map(i => ({ nama: String(i.nama || '').slice(0, 100), ukuran: String(i.ukuran || '').slice(0, 20), pcs: Math.floor(+i.pcs || 0) })).filter(i => i.nama && i.pcs > 0 && i.pcs <= 10000)
+  if (!items.length || items.length > 20) return json({ error: 'Data tidak valid' }, 400)
+  const token = await getFirebaseToken(env, env.YH_SERVICE_ACCOUNT_KEY)
+  const DOCS = `projects/${YH_PROJECT_ID}/databases/(default)/documents`
+  const str = v => ({ stringValue: String(v ?? '').slice(0, 300) }), now = new Date().toISOString()
+  const fp = k => '`' + k.replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`'
+  const id = 'rt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const writes = [
+    { transform: { document: `${DOCS}/config/stok_retur`, fieldTransforms: items.map(i => ({ fieldPath: fp(i.nama + '||' + i.ukuran), increment: { integerValue: String(i.pcs) } })) } },
+    { update: { name: `${DOCS}/retur/${id}`, fields: { tanggal: str(now.slice(0, 10)), order: str(b.order), customer: str(b.customer), jenis: str(b.jenis), penyebab: str(b.penyebab), penyebabLabel: str(b.penyebabLabel),
+      alasan: str(b.alasan), status: str('belum_qc'), sumber: str('custom-order'), oleh: str(staff.nama || ''), createdAt: { timestampValue: now },
+      items: { arrayValue: { values: items.map(i => ({ mapValue: { fields: { nama: str(i.nama), ukuran: str(i.ukuran), pcs: { integerValue: String(i.pcs) } } } })) } } } }, currentDocument: { exists: false } },
+  ]
+  const r = await fetch(`https://firestore.googleapis.com/v1/${DOCS}:commit`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) })
+  if (!r.ok) return json({ error: 'Gagal mencatat retur di YH (' + r.status + ')' }, 502)
+  return json({ ok: true, id })
 }
 // Ambil dari stok barang jadi YH untuk order Custom Order: cek stok, kurangi, catat Stok Keluar YH (atomik)
 async function handleYhAmbilStok(request, env) {

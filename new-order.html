@@ -1587,7 +1587,7 @@
     const el = document.getElementById('stokYH-' + id); if (!el) return
     const nama = document.querySelector(`[data-field="name"][data-row="${id}"]`)?.value || '', varian = document.querySelector(`[data-field="varian"][data-row="${id}"]`)?.value || ''
     if (!nama.trim()) { el.innerHTML = ''; return }
-    try { modYH = modYH || await import('./js/stokYH.js?v=20261127a'); dataYH = dataYH || await modYH.dataYH() } catch { return }
+    try { modYH = modYH || await import('./js/stokYH.js?v=20261127b'); dataYH = dataYH || await modYH.dataYH() } catch { return }
     const s = modYH.cariStokYH(dataYH, nama, varian)
     el.innerHTML = !s ? '' : `<span style="color:${s.n > 0 ? '#047857' : 'rgba(3,69,67,.45)'};font-weight:700">📦 Stok jadi YH${s.ukuran ? ' ' + s.ukuran.replace(/</g, '') : ''}: ${dataYH.gagal ? '?' : s.n} pcs</span>${!s.ukuran ? ' <span style="color:rgba(3,69,67,.45)">— isi ukuran di varian</span>' : ''}`
   }

@@ -397,7 +397,7 @@
   async function muatLinkYH() {
     const el = document.getElementById('linkYhIsi'); if (!el) return
     try {
-      const { daftarItemYH, linkYH } = await import('./js/stokYH.js?v=20261127a')
+      const { daftarItemYH, linkYH } = await import('./js/stokYH.js?v=20261127b')
       const { skorMirip } = await import('./js/hargaList.js?v=20261110a')
       const [yh, link, pl] = await Promise.all([daftarItemYH(), linkYH(), getDocs(collection(db, 'price_list'))])
       const namaCO = [...new Set(pl.docs.flatMap(d => (d.data().items || []).map(i => i.name)).filter(Boolean))].sort()
