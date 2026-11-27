@@ -2,7 +2,7 @@
 // Nama item YH (mis. "Baju Korpri Pria") dihubungkan ke nama di daftar harga CO
 // (mis. "BAJU KORPRI KERAH HITAM ( PRIA )") lewat settings/link_yh { map: { [namaYH]: namaCO } }.
 // Ukuran YH = varian CO (S, M, L, …). Stok YH: config/stok { "NamaYH||UK": pcs } — hanya bertambah lewat QC di YH.
-import { db } from './config.js'
+import { db, auth } from './config.js'
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
 import { kunciNama } from './hargaList.js?v=20261110a'
 
@@ -34,8 +34,21 @@ async function bacaDocYH(path) {
 }
 
 export const kunciStokYH = (namaYH, ukuran) => `${namaYH}||${String(ukuran || '').trim().toUpperCase()}`
-export async function daftarItemYH() { return ((await bacaDocYH('config/settings')).items || []).map(i => i.nama).filter(Boolean) }
-export async function stokYH() { return bacaDocYH('config/stok') }
+// Baca lewat Worker dulu (data YH nanti dikunci untuk umum); cadangan: baca langsung selama aturan YH masih terbuka
+let _lewatWorker = null
+async function bacaWorker() {
+  if (_lewatWorker !== null) return _lewatWorker
+  try {
+    const idToken = await auth.currentUser?.getIdToken()
+    if (!idToken) return (_lewatWorker = false)
+    const r = await fetch('https://harmoni-order-api.adhiitmuh.workers.dev/yh/stok', { headers: { Authorization: 'Bearer ' + idToken } })
+    _lewatWorker = r.ok ? await r.json() : false
+    setTimeout(() => { _lewatWorker = null }, 30000)
+  } catch { _lewatWorker = false }
+  return _lewatWorker
+}
+export async function daftarItemYH() { const w = await bacaWorker(); if (w) return w.items || []; return ((await bacaDocYH('config/settings')).items || []).map(i => i.nama).filter(Boolean) }
+export async function stokYH() { const w = await bacaWorker(); if (w) return w.stok || {}; return bacaDocYH('config/stok') }
 export async function linkYH() { try { return (await getDoc(doc(db, 'settings', 'link_yh'))).data()?.map || {} } catch { return {} } }
 
 // Data sekali muat per halaman (stok dimuat ulang setelah ambil)
@@ -69,6 +82,15 @@ async function tokenYH() {
 
 // Ambil dari stok jadi YH: kurangi config/stok + catat di Stok Keluar YH (sekali kirim, atomik)
 export async function ambilStokYH({ kunciAsli, namaYH, ukuran, pcs, orderNumber, customer, oleh }) {
+  // Utama: lewat Worker (server memakai akun layanan YH, data YH tidak perlu terbuka untuk umum)
+  const idToken = await auth.currentUser?.getIdToken().catch(() => null)
+  if (idToken) {
+    const w = await fetch('https://harmoni-order-api.adhiitmuh.workers.dev/yh/ambil-stok', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken },
+      body: JSON.stringify({ kunciAsli, namaYH, ukuran, pcs, orderNumber, customer }) }).catch(() => null)
+    if (w && w.ok) { _cache = null; _lewatWorker = null; return await w.json() }
+    if (w && w.status !== 503 && w.status !== 404) { let m = ''; try { m = (await w.json()).error } catch {} throw new Error(m || 'Gagal (' + w.status + ')') }
+  }
+  // Cadangan selama Worker belum diberi kunci YH: tulis langsung (aturan YH masih terbuka)
   const now = new Date().toISOString(), tgl = now.slice(0, 10)
   const idKeluar = 'co_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const writes = [
@@ -82,6 +104,6 @@ export async function ambilStokYH({ kunciAsli, namaYH, ukuran, pcs, orderNumber,
   const tok = await tokenYH()
   const r = await fetch(`${FS}:commit?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) }, body: JSON.stringify({ writes }) })
   if (!r.ok) throw new Error('Gagal mencatat di YH (' + r.status + ')')
-  _cache = null
+  _cache = null; _lewatWorker = null
   return { idKeluar, tgl }
 }

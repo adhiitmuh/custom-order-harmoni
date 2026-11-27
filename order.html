@@ -1013,7 +1013,7 @@
   // ── Stok barang jadi YH (hasil QC penjahit) per item + ambil langsung dari order ──
   async function isiStokYH(profile) {
     const items = order.orderItems || []; if (!items.length || !document.getElementById('yhs-0')) return
-    let mod, d; try { mod = await import('./js/stokYH.js?v=20261126a'); d = await mod.dataYH() } catch { return }
+    let mod, d; try { mod = await import('./js/stokYH.js?v=20261127a'); d = await mod.dataYH() } catch { return }
     const boleh = ['owner', 'cs', 'manager'].includes(profile.role)
     items.forEach((it, i) => {
       const el = document.getElementById('yhs-' + i); if (!el) return
@@ -1027,7 +1027,7 @@
   }
   window.ambilDariStokYH = async function(i) {
     const it = (order.orderItems || [])[i]; if (!it) return
-    const mod = await import('./js/stokYH.js?v=20261126a'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
+    const mod = await import('./js/stokYH.js?v=20261127a'); const d = await mod.dataYH(true); const s = mod.cariStokYH(d, it.name, it.varian)
     if (!s || s.n <= 0) { alert('Stok YH untuk item ini kosong'); return isiStokYH(getProfile()) }
     const sudah = (order.ambilStokYH || []).filter(a => a.idx === i).reduce((t, a) => t + (+a.pcs || 0), 0)
     const usul = Math.min(s.n, Math.max(1, (+it.qty || 0) - sudah))

@@ -139,6 +139,10 @@ export default {
     // Sistem Produksi YH (konveksi): daftar order Konveksi & kirim progres produksi
     if (request.method === 'GET' && url.pathname === '/yh/orders') return handleYhOrders(request, env)
     if (request.method === 'POST' && url.pathname === '/yh/progress') return handleYhProgress(request, env)
+    // Pengamanan data YH: token login YH (custom token) & ambil stok YH dari Custom Order lewat server
+    if (request.method === 'POST' && url.pathname === '/yh/token') return handleYhToken(request, env)
+    if (request.method === 'POST' && url.pathname === '/yh/ambil-stok') return handleYhAmbilStok(request, env)
+    if (request.method === 'GET' && url.pathname === '/yh/stok') return handleYhStokBaca(request, env)
     if (request.method === 'GET' && url.pathname === '/qris-img') {
       return handleQrisImg(url)
     }
@@ -1195,6 +1199,73 @@ async function createDataCustomToken(env, staff) {
   return `${header}.${payload}.${sigB64}`
 }
 
+// ── YH Sistem Produksi (project yh-sistem-produksi) ──
+// Secret Worker YH_SERVICE_ACCOUNT_KEY = JSON service account project yh-sistem-produksi.
+// Selama belum diatur, endpoint menjawab 503 dan aplikasi memakai cara lama (aturan YH masih terbuka).
+const YH_PROJECT_ID = 'yh-sistem-produksi'
+async function createYhCustomToken(env, staff) {
+  const sa = parseServiceAccountKey(env.YH_SERVICE_ACCOUNT_KEY)
+  const now = Math.floor(Date.now() / 1000)
+  const b64url = (s) => btoa(unescape(encodeURIComponent(s))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = b64url(JSON.stringify({ iss: sa.client_email, sub: sa.client_email,
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+    iat: now, exp: now + 3600, uid: staff.uid, claims: { yh: true, role: staff.role } }))
+  const privateKey = await crypto.subtle.importKey('pkcs8', pemToBuffer(sa.private_key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${header}.${payload}`))
+  return `${header}.${payload}.${btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`
+}
+async function handleYhToken(request, env) {
+  const { staff, err } = await authYh(request, env); if (err) return err
+  if (!env.YH_SERVICE_ACCOUNT_KEY) return json({ error: 'YH_SERVICE_ACCOUNT_KEY belum diatur', belumDiatur: true }, 503)
+  return json({ token: await createYhCustomToken(env, staff), role: staff.role })
+}
+// Stok barang jadi YH + daftar item YH untuk staf Custom Order (hanya baca)
+async function handleYhStokBaca(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const fu = await verifyFirebaseIdToken(idToken, env); if (!fu) return json({ error: 'Sesi login habis' }, 401)
+  if (!await getPortalStaff(idToken, fu)) return json({ error: 'Tidak punya akses' }, 403)
+  if (!env.YH_SERVICE_ACCOUNT_KEY) return json({ error: 'YH_SERVICE_ACCOUNT_KEY belum diatur', belumDiatur: true }, 503)
+  const token = await getFirebaseToken(env, env.YH_SERVICE_ACCOUNT_KEY)
+  const [st, se] = await Promise.all([firestoreGet(YH_PROJECT_ID, token, 'config/stok'), firestoreGet(YH_PROJECT_ID, token, 'config/settings')])
+  const items = (parseFields(se?.fields || {}).items || []).map(i => i?.nama).filter(Boolean)
+  return json({ stok: parseFields(st?.fields || {}), items })
+}
+// Ambil dari stok barang jadi YH untuk order Custom Order: cek stok, kurangi, catat Stok Keluar YH (atomik)
+async function handleYhAmbilStok(request, env) {
+  const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
+  if (!idToken) return json({ error: 'Authorization required' }, 401)
+  const fu = await verifyFirebaseIdToken(idToken, env); if (!fu) return json({ error: 'Sesi login habis — muat ulang halaman' }, 401)
+  const staff = await getPortalStaff(idToken, fu)
+  if (!staff || !['owner', 'cs', 'manager'].includes(staff.role)) return json({ error: 'Tidak punya akses' }, 403)
+  if (!env.YH_SERVICE_ACCOUNT_KEY) return json({ error: 'YH_SERVICE_ACCOUNT_KEY belum diatur', belumDiatur: true }, 503)
+  let b; try { b = await request.json() } catch { return json({ error: 'Data tidak valid' }, 400) }
+  const pcs = Math.floor(+b.pcs || 0), kunci = String(b.kunciAsli || '')
+  if (pcs < 1 || pcs > 10000 || !kunci.includes('||') || kunci.length > 200) return json({ error: 'Data tidak valid' }, 400)
+  const token = await getFirebaseToken(env, env.YH_SERVICE_ACCOUNT_KEY)
+  const DOCS = `projects/${YH_PROJECT_ID}/databases/(default)/documents`
+  const cur = await firestoreGet(YH_PROJECT_ID, token, 'config/stok')
+  const ada = +(parseFields(cur?.fields || {})[kunci] || 0)
+  if (ada < pcs) return json({ error: `Stok YH hanya ${ada} pcs` }, 409)
+  const now = new Date().toISOString(), tgl = now.slice(0, 10)
+  const idKeluar = 'co_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const str = v => ({ stringValue: String(v ?? '') })
+  const fp = '`' + kunci.replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`'
+  const writes = [
+    { transform: { document: `${DOCS}/config/stok`, fieldTransforms: [{ fieldPath: fp, increment: { integerValue: String(-pcs) } }] } },
+    { update: { name: `${DOCS}/keluar/${idKeluar}`, fields: {
+      tujuan: str('Custom Order' + (b.customer ? ' — ' + String(b.customer).slice(0, 80) : '')), order: str(String(b.orderNumber || '').slice(0, 40)), tanggal: str(tgl),
+      ket: str(`Diambil dari Custom Order oleh ${staff.name || staff.nama || '-'}`), fotos: { arrayValue: {} },
+      items: { arrayValue: { values: [{ mapValue: { fields: { nama: str(b.namaYH), ukuran: str(b.ukuran), pcs: { integerValue: String(pcs) } } } }] } },
+      totalPcs: { integerValue: String(pcs) }, sumber: str('custom-order'), createdByNama: str(staff.name || staff.nama || ''), createdAt: { timestampValue: now } } },
+      currentDocument: { exists: false } },
+  ]
+  const r = await fetch(`https://firestore.googleapis.com/v1/${DOCS}:commit`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ writes }) })
+  if (!r.ok) return json({ error: 'Gagal mencatat di YH (' + r.status + ')' }, 502)
+  return json({ ok: true, idKeluar, tgl })
+}
+
 async function handleCustomToken(request, env) {
   const idToken = request.headers.get('Authorization')?.replace('Bearer ', '').trim()
   if (!idToken) return json({ error: 'Authorization required' }, 401)
@@ -1684,8 +1755,8 @@ function parseServiceAccountKey(raw) {
   }
 }
 
-async function getFirebaseToken(env) {
-  const sa = parseServiceAccountKey(env.FIREBASE_SERVICE_ACCOUNT_KEY)
+async function getFirebaseToken(env, keyStr) {
+  const sa = parseServiceAccountKey(keyStr || env.FIREBASE_SERVICE_ACCOUNT_KEY)
   const now = Math.floor(Date.now() / 1000)
 
   const b64url = (s) => btoa(s).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
